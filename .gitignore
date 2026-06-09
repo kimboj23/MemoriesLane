@@ -1,0 +1,14 @@
+# secrets — never commit
+backend/.env
+backend/*.db
+backend/*.db-shm
+backend/*.db-wal
+backend/uploads/
+
+# node
+node_modules/
+backend/node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
