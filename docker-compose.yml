@@ -1,0 +1,35 @@
+services:
+
+  # ── Frontend ───────────────────────────────────────────────────────────────
+  # nginx serves the static HTML/JSX files and proxies /api to the backend.
+  # Open http://localhost:8080 in your browser.
+  frontend:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./index.html:/usr/share/nginx/html/index.html:ro
+      - ./app:/usr/share/nginx/html/app:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - backend
+
+  # ── Backend ────────────────────────────────────────────────────────────────
+  # Node.js API (Express + SQLite). Reads secrets from backend/.env.
+  # Database and uploaded photos are stored in the named volume below.
+  backend:
+    build: ./backend
+    env_file: ./backend/.env          # copy backend/.env.example → backend/.env first
+    environment:
+      - NODE_ENV=development
+      # In docker-compose the frontend is served from localhost:8080,
+      # so we allow both that origin and file:// (null) for convenience.
+      - ALLOWED_ORIGINS=http://localhost:8080,null
+      - BIND_ADDR=0.0.0.0             # must listen on all interfaces inside Docker
+    ports:
+      - "3001:3001"                   # also reachable directly for API testing
+    volumes:
+      - memorieslane-data:/data       # SQLite DB + uploaded photos persist here
+
+volumes:
+  memorieslane-data:
