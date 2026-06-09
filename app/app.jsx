@@ -338,7 +338,7 @@ function App() {
   const handleCancelDraw = () => { setQueryMode(null); drawApiRef.current && drawApiRef.current.cancelDraw(); };
 
   return (
-    <div className={"app-root " + (composing ? "is-composing" : "") + (selected ? " has-selected" : "")}>
+    <div className={"app " + (composing ? "is-composing" : "") + (selected ? " has-selected" : "")}>
       {/* ── Topbar ── */}
       <header className="topbar">
         <button className="topbar-city" onClick={() => setCityOpen((v) => !v)}>

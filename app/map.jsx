@@ -185,7 +185,7 @@ function MapView({
     const startCircle = () => {
       window.__drawing = true;
       ds.active = true; ds.type = "circle";
-      map.getContainer().classList.add("drawing-circle");
+      map.getContainer().classList.add("drawing-circle", "drawing");
       let startLL = null, circLayer = null;
       const onDown = (e) => {
         startLL = e.latlng;
@@ -203,7 +203,7 @@ function MapView({
         map.off("mousedown", onDown);
         map.off("mousemove", onMove);
         map.off("mouseup", onUp);
-        map.getContainer().classList.remove("drawing-circle");
+        map.getContainer().classList.remove("drawing-circle", "drawing");
         window.__drawing = false; ds.active = false;
       };
       map.on("mousedown", onDown);
@@ -214,7 +214,7 @@ function MapView({
     const startPolygon = () => {
       window.__drawing = true;
       ds.active = true; ds.type = "polygon"; ds.pts = [];
-      map.getContainer().classList.add("drawing-polygon");
+      map.getContainer().classList.add("drawing-polygon", "drawing");
       let polyLayer = null;
       const pts = [];
       const addPt = (e) => {
@@ -231,7 +231,7 @@ function MapView({
       const finish = () => {
         map.off("click", addPt);
         map.off("dblclick", finish);
-        map.getContainer().classList.remove("drawing-polygon");
+        map.getContainer().classList.remove("drawing-polygon", "drawing");
         if (polyLayer) map.removeLayer(polyLayer);
         window.__drawing = false; ds.active = false;
         if (pts.length >= 3 && onShapeUpdate) onShapeUpdate({ type: "polygon", latlngs: pts, closed: true });
@@ -262,7 +262,11 @@ function MapView({
     map.panTo([selected.lat, targetLng], { animate: true, duration: 0.5 });
   }, [selected]);
 
-  return <div ref={mapRef} id="map" className="map-root" />;
+  return (
+    <div className="map-wrap">
+      <div ref={mapRef} id="map" className="leaflet-map" />
+    </div>
+  );
 }
 
 window.MapView = MapView;
