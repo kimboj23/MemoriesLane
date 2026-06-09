@@ -1,0 +1,14 @@
+# Never copy host-compiled node_modules into the Linux container.
+# Native modules like better-sqlite3 and sharp compile platform-specific
+# binaries — the Windows .node files are invalid ELF and crash on Linux.
+# The Dockerfile's RUN npm install step rebuilds them for Linux instead.
+node_modules
+
+# Data files — the container uses a mounted volume at /data
+*.db
+*.db-shm
+*.db-wal
+uploads/
+
+# Secrets
+.env
