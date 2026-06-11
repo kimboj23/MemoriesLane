@@ -26,7 +26,8 @@
       "PowerShell(Invoke-WebRequest -Uri \"https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe\" -OutFile \"C:\\\\Users\\\\NinaTran\\\\Downloads\\\\aos\\\\MemoriesLane\\\\cloudflared.exe\" -UseBasicParsing)",
       "Bash(node -e \"const d=require\\('fs'\\).readFileSync\\('/dev/stdin','utf8'\\);const j=JSON.parse\\(d\\);console.log\\('total:',j.memories.length,'cities:',{...j.memories.reduce\\(\\(a,m\\)=>{a[m.city]=\\(a[m.city]||0\\)+1;return a},{}\\)}\\)\")",
       "Bash(node -e \"process.stdin.resume\\(\\);let d='';process.stdin.on\\('data',c=>d+=c\\);process.stdin.on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\);console.log\\('count:',j.memories.length\\);}\\)\")",
-      "Bash(node -e \"process.stdin.resume\\(\\);let d='';process.stdin.on\\('data',c=>d+=c\\);process.stdin.on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\);console.log\\('count:',j.memories.length,'hasMore:',j.hasMore,'offset:',j.offset,'limit:',j.limit\\);}\\)\")"
+      "Bash(node -e \"process.stdin.resume\\(\\);let d='';process.stdin.on\\('data',c=>d+=c\\);process.stdin.on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\);console.log\\('count:',j.memories.length,'hasMore:',j.hasMore,'offset:',j.offset,'limit:',j.limit\\);}\\)\")",
+      "Bash(node -e \"process.stdin.resume\\(\\);let d='';process.stdin.on\\('data',c=>d+=c\\);process.stdin.on\\('end',\\(\\)=>{try{const j=JSON.parse\\(d\\);console.log\\('backend ok, memories:',j.memories.length\\);}catch\\(e\\){console.log\\('parse error:',d.slice\\(0,200\\)\\);}}\\)\")"
     ]
   }
 }
