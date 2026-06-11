@@ -1,7 +1,7 @@
 {
-  "name": "memorieslane-backend",
+  "name": "memorylane-backend",
   "version": "1.0.0",
-  "description": "MemoriesLane API — anonymous civic memory archive",
+  "description": "memorylane API — anonymous civic memory archive",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

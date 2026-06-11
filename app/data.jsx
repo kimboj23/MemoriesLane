@@ -1,5 +1,5 @@
 /* ============================================================================
-   MemoriesLane — Ký Ức Hà Nội
+   memorylane — Ký Ức Hà Nội
    data.jsx : i18n strings, categories, the proposed clearance zone, the seed
               archive of civic memories (real Hà Nội coordinates), utilities.
    The map is now a real OpenStreetMap-based slippy map (Leaflet), so memories
@@ -92,7 +92,7 @@ const STR = {
     network: "Mạng lưới ký ức",
   },
   en: {
-    siteName: "Memories of Hà Nội",
+    siteName: "Memory Lane",
     tagline: "A map of memory, made of voices",
     addMemory: "Leave a memory",
     tapToPlace: "Touch the map, where your memory belongs",

@@ -1,270 +1,242 @@
 /* ============================================================================
-   map.jsx — Leaflet-based interactive slippy map
-   MapView: wraps the Leaflet instance, manages markers, basemap, selection,
-   placement pulse, spatial drawing, clearance overlay.
+   map.jsx — real OpenStreetMap slippy map (Leaflet).
+   Selectable OSM-based basemaps, glowing memory-embers (category-coloured),
+   the proposed clearance zone, click-to-place, and a placement pulse.
+   Memories passed in are already time-filtered by the App.
    ============================================================================ */
 
 function MapView({
-  lang, basemap, city, memories, selected, composing, placePoint, onPlace,
-  queryShape, onShapeUpdate, queryMode, zone, accent, overview, cityCounts,
-  onCityDrillDown, onSelectMemory, drawApiRef,
+  memories, placing, onPlace, onSelect, selectedId, focus = null, placingMode = false,
+  basemap = "streets", accent = "#d8552f", accumulation = "subtle",
+  showZone = true, lang = "vi",
+  queryMode = null, queryShape = null, onShape = null, onDraftChange = null, drawApiRef = null,
+  cityObj = null, zone = null, overview = null, onPickCity = null,
 }) {
+  const elRef = React.useRef(null);
   const mapRef = React.useRef(null);
-  const leafRef = React.useRef(null);
-  const markersRef = React.useRef({});
   const tileRef = React.useRef(null);
-  const zoneLayerRef = React.useRef(null);
-  const pulsePinRef = React.useRef(null);
-  const shapeLayerRef = React.useRef(null);
-  const bubbleLayersRef = React.useRef([]);
-  const drawStateRef = React.useRef({ active: false, type: null, startLatLng: null, circle: null, polygon: null, pts: [] });
+  const markersRef = React.useRef({});
+  const placeRef = React.useRef(null);
+  const zoneRef = React.useRef(null);
+  const shapeRef = React.useRef(null);
+  const aggRef = React.useRef([]);
+  const firstFit = React.useRef(true);
+  // keep latest callbacks without re-initialising the map
+  const cb = React.useRef({});
+  cb.current = { onPlace, onSelect, queryMode, onPickCity };
 
-  // ----- initialise map once -----
+  // --- init once ---
   React.useEffect(() => {
-    if (!mapRef.current || leafRef.current) return;
-    const map = L.map(mapRef.current, {
-      zoomControl: false,
-      attributionControl: true,
-      preferCanvas: true,
+    const map = L.map(elRef.current, {
+      center: HANOI_CENTER, zoom: 14, minZoom: 5, maxZoom: 19,
+      zoomControl: false, attributionControl: true,
     });
-    map.setView(HANOI_CENTER, 13);
-    L.control.zoom({ position: "bottomright" }).addTo(map);
-
+    map.attributionControl.setPrefix(false).setPosition("bottomleft");
     map.on("click", (e) => {
-      if (!composingRef.current) return;
-      if (window.__drawing) return;
-      onPlaceRef.current && onPlaceRef.current({ lat: e.latlng.lat, lng: e.latlng.lng });
+      if (cb.current.queryMode) return; // drawing a spatial query — ignore place clicks
+      cb.current.onPlace({ lat: e.latlng.lat, lng: e.latlng.lng });
     });
-
-    leafRef.current = map;
-    return () => { map.remove(); leafRef.current = null; };
+    mapRef.current = map;
+    setTimeout(() => map.invalidateSize(), 60);
+    const onResize = () => map.invalidateSize();
+    window.addEventListener("resize", onResize);
+    return () => { window.removeEventListener("resize", onResize); map.remove(); mapRef.current = null; };
   }, []);
 
-  // Use refs to keep event closures current without reinstalling handlers
-  const composingRef = React.useRef(composing);
-  const onPlaceRef = React.useRef(onPlace);
-  React.useEffect(() => { composingRef.current = composing; }, [composing]);
-  React.useEffect(() => { onPlaceRef.current = onPlace; }, [onPlace]);
-
-  // ----- basemap swap -----
+  // --- basemap swap ---
   React.useEffect(() => {
-    const map = leafRef.current; if (!map) return;
-    if (tileRef.current) { map.removeLayer(tileRef.current); tileRef.current = null; }
-    const bm = BASEMAP[basemap] || BASEMAP.streets;
-    const layer = L.tileLayer(bm.url, {
-      attribution: bm.attr,
-      subdomains: bm.sub || "",
-      maxZoom: bm.maxZoom || 19,
-      crossOrigin: true,
-    });
-    layer.addTo(map);
-    layer.bringToBack();
-    tileRef.current = layer;
+    const map = mapRef.current; if (!map) return;
+    const b = BASEMAP[basemap] || BASEMAP.streets;
+    if (tileRef.current) tileRef.current.remove();
+    tileRef.current = L.tileLayer(b.url, {
+      subdomains: b.sub, maxZoom: b.maxZoom || 19, attribution: b.attr, crossOrigin: true,
+    }).addTo(map);
+    tileRef.current.bringToBack();
   }, [basemap]);
 
-  // ----- clearance zone -----
+  // --- clearance zone (per active city; only Hà Nội has one) ---
   React.useEffect(() => {
-    const map = leafRef.current; if (!map) return;
-    if (zoneLayerRef.current) { map.removeLayer(zoneLayerRef.current); zoneLayerRef.current = null; }
-    if (!zone || !zone.length) return;
-    const poly = L.polygon(zone, {
-      color: accent || "#d8552f",
-      weight: 2,
-      opacity: 0.8,
-      dashArray: "8 5",
-      fillColor: accent || "#d8552f",
-      fillOpacity: 0.07,
-    });
-    poly.addTo(map);
-    zoneLayerRef.current = poly;
-  }, [zone, accent]);
-
-  // ----- auto-fit bounds -----
-  React.useEffect(() => {
-    const map = leafRef.current; if (!map) return;
-    if (overview) {
-      map.fitBounds(VIETNAM_BOUNDS, { padding: [30, 30] });
-      return;
+    const map = mapRef.current; if (!map) return;
+    if (zoneRef.current) { zoneRef.current.remove(); zoneRef.current = null; }
+    if (showZone && zone && zone.length) {
+      zoneRef.current = L.polygon(zone, {
+        color: accent, weight: 1.6, dashArray: "7 6", fillColor: accent, fillOpacity: 0.1,
+        interactive: false, className: "zone-poly",
+      }).addTo(map);
     }
-    if (city && city.bounds) {
-      map.fitBounds(city.bounds, { padding: [40, 40] });
-    }
-  }, [city, overview]);
+  }, [accent, showZone, zone]);
 
-  // ----- aggregate bubbles (national overview) -----
+  // --- auto-fit: national overview → Vietnam; city → its bounding box ---
   React.useEffect(() => {
-    const map = leafRef.current; if (!map) return;
-    bubbleLayersRef.current.forEach((l) => map.removeLayer(l));
-    bubbleLayersRef.current = [];
+    const map = mapRef.current; if (!map) return;
+    const animate = !firstFit.current; firstFit.current = false;
+    if (overview) map.fitBounds(VIETNAM_BOUNDS, { padding: [36, 36], animate });
+    else if (cityObj) map.fitBounds(cityObj.bounds, { padding: [28, 28], maxZoom: 15, animate });
+  }, [cityObj && cityObj.key, !!overview]);
+
+  // --- national aggregate bubbles (Level 1 overview, drill-down on click) ---
+  React.useEffect(() => {
+    const map = mapRef.current; if (!map) return;
+    aggRef.current.forEach((m) => m.remove()); aggRef.current = [];
     if (!overview) return;
-    CITIES.forEach((c) => {
-      const count = (cityCounts && cityCounts[c.key]) || 0;
-      const r = Math.max(20, Math.min(60, 14 + Math.sqrt(count) * 4));
-      const html = `<div class="city-bubble" style="width:${r * 2}px;height:${r * 2}px;line-height:${r * 2}px;border-radius:50%;">
-        <span class="cb-city">${c[lang]}</span><span class="cb-count">${count}</span>
-      </div>`;
-      const icon = L.divIcon({ className: "", html, iconSize: [r * 2, r * 2], iconAnchor: [r, r] });
-      const m = L.marker(c.center, { icon, interactive: true });
-      m.on("click", () => { if (onCityDrillDown) onCityDrillDown(c.key); });
-      m.addTo(map);
-      bubbleLayersRef.current.push(m);
+    overview.forEach((o) => {
+      const size = Math.round(46 + Math.min(38, o.count * 1.6));
+      const icon = L.divIcon({
+        className: "agg-icon",
+        html: `<div class="agg-bubble" style="width:${size}px;height:${size}px;--c:${accent}"><b>${o.count}</b><span>${o.name}</span></div>`,
+        iconSize: [size, size], iconAnchor: [size / 2, size / 2],
+      });
+      const mk = L.marker([o.lat, o.lng], { icon, riseOnHover: true }).addTo(map);
+      mk.on("click", () => cb.current.onPickCity && cb.current.onPickCity(o.key));
+      aggRef.current.push(mk);
     });
-  }, [overview, cityCounts, lang]);
+  }, [overview, accent]);
 
-  // ----- memory markers -----
+  // --- memory markers (rebuild on data / accumulation change) ---
   React.useEffect(() => {
-    const map = leafRef.current; if (!map) return;
-    if (overview) {
-      Object.values(markersRef.current).forEach((mk) => map.removeLayer(mk));
-      markersRef.current = {};
-      return;
-    }
-
-    const existing = new Set(Object.keys(markersRef.current));
-    const toShow = new Set(memories.map((m) => m.id));
-
-    // remove stale
-    existing.forEach((id) => {
-      if (!toShow.has(id)) { map.removeLayer(markersRef.current[id]); delete markersRef.current[id]; }
-    });
-
-    // add / update
+    const map = mapRef.current; if (!map) return;
+    Object.values(markersRef.current).forEach((m) => m.remove());
+    markersRef.current = {};
+    const glow = accumulation === "off" ? 0 : accumulation === "bold" ? 1 : 0.5;
     memories.forEach((m) => {
-      const isSel = selected && selected.id === m.id;
-      const c = catOf(m.cat);
-      const hasPhoto = m.photo || m.photoData;
-      const html = `<div class="ember-dot${hasPhoto ? " ember-ring" : ""}${isSel ? " sel" : ""}" style="background:${c.color};${isSel ? `box-shadow:0 0 0 4px ${c.color}55` : ""}"></div>`;
-      const icon = L.divIcon({ className: "", html, iconSize: [14, 14], iconAnchor: [7, 7] });
-
-      if (markersRef.current[m.id]) {
-        markersRef.current[m.id].setIcon(icon);
-      } else {
-        const mk = L.marker([m.lat, m.lng], { icon });
-        mk.on("click", (e) => { L.DomEvent.stopPropagation(e); onSelectMemory && onSelectMemory(m); });
-        mk.addTo(map);
-        markersRef.current[m.id] = mk;
-      }
+      const c = catOf(m.cat).color;
+      const icon = L.divIcon({
+        className: "ember-icon",
+        html: `<span class="ember-dot${m.id === selectedId ? " sel" : ""}" style="--c:${c};--glow:${glow}"></span>${m.photo ? '<span class="ember-ring" style="--c:' + c + '"></span>' : ""}`,
+        iconSize: [16, 16], iconAnchor: [8, 8],
+      });
+      const mk = L.marker([m.lat, m.lng], { icon, riseOnHover: true, keyboard: false }).addTo(map);
+      mk.on("click", () => cb.current.onSelect(m));
+      markersRef.current[m.id] = mk;
     });
-  }, [memories, selected, overview]);
+  }, [memories, accumulation, accent]);
 
-  // ----- placement pulse pin -----
+  // --- selection highlight without rebuild ---
   React.useEffect(() => {
-    const map = leafRef.current; if (!map) return;
-    if (pulsePinRef.current) { map.removeLayer(pulsePinRef.current); pulsePinRef.current = null; }
-    if (!placePoint) return;
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 36" width="24" height="36">
-      <path class="place-pin-body" d="M12 0C6.48 0 2 4.48 2 10c0 8.33 10 22 10 22s10-13.67 10-22C22 4.48 17.52 0 12 0z" fill="#f0a721"/>
-      <circle cx="12" cy="10" r="4" fill="#fff" opacity="0.85"/>
-    </svg>`;
-    const icon = L.divIcon({ className: "place-pin-wrap", html: `<div class="place-pin-pulse">${svg}</div>`, iconSize: [24, 36], iconAnchor: [12, 36] });
-    pulsePinRef.current = L.marker([placePoint.lat, placePoint.lng], { icon, interactive: false });
-    pulsePinRef.current.addTo(map);
-  }, [placePoint]);
+    Object.entries(markersRef.current).forEach(([id, mk]) => {
+      const el = mk.getElement && mk.getElement();
+      if (!el) return;
+      const dot = el.querySelector(".ember-dot");
+      if (dot) dot.classList.toggle("sel", id === selectedId);
+    });
+  }, [selectedId, memories]);
 
-  // ----- spatial query shape -----
+  // --- placement pulse (panned to sit beside the compose dock) ---
   React.useEffect(() => {
-    const map = leafRef.current; if (!map) return;
-    if (shapeLayerRef.current) { map.removeLayer(shapeLayerRef.current); shapeLayerRef.current = null; }
-    if (!queryShape) return;
-    const style = { color: accent || "#d8552f", weight: 2, dashArray: "6 4", fillOpacity: 0.06, fillColor: accent || "#d8552f" };
-    let layer;
-    if (queryShape.type === "circle") {
-      layer = L.circle(queryShape.center, { ...style, radius: queryShape.radius });
-    } else if (queryShape.type === "polygon" && queryShape.latlngs && queryShape.latlngs.length >= 3) {
-      layer = L.polygon(queryShape.latlngs, style);
+    const map = mapRef.current; if (!map) return;
+    if (placeRef.current) { placeRef.current.remove(); placeRef.current = null; }
+    if (placing) {
+      const icon = L.divIcon({ className: "place-icon", html: '<svg class="place-pin" width="32" height="42" viewBox="0 0 32 42"><path class="place-pin-body" d="M16 1 C8.3 1 2 7.3 2 15 C2 24 16 40 16 40 C16 40 30 24 30 15 C30 7.3 23.7 1 16 1 Z"/><circle class="place-pin-dot" cx="16" cy="15" r="5"/></svg>', iconSize: [32, 42], iconAnchor: [16, 40] });
+      placeRef.current = L.marker([placing.lat, placing.lng], { icon, interactive: false, zIndexOffset: 1000 }).addTo(map);
+      const narrow = window.innerWidth <= 760;
+      const z = map.getZoom();
+      const off = narrow
+        ? L.point(0, Math.round(window.innerHeight * 0.20))
+        : L.point(Math.round(Math.min(430, window.innerWidth * 0.34) / 2), 0);
+      const center = map.unproject(map.project([placing.lat, placing.lng], z).add(off), z);
+      map.setView(center, z, { animate: true });
     }
-    if (layer) { layer.addTo(map); shapeLayerRef.current = layer; }
+  }, [placing]);
+
+  // --- persisted spatial query shape (circle / polygon) ---
+  React.useEffect(() => {
+    const map = mapRef.current; if (!map) return;
+    if (shapeRef.current) { shapeRef.current.remove(); shapeRef.current = null; }
+    if (queryShape) {
+      const opts = { color: accent, weight: 1.8, dashArray: "6 5", fillColor: accent,
+        fillOpacity: 0.08, interactive: false, className: "query-shape" };
+      if (queryShape.type === "circle")
+        shapeRef.current = L.circle(queryShape.center, { ...opts, radius: queryShape.radius }).addTo(map);
+      else if (queryShape.type === "polygon" && queryShape.latlngs.length >= 3)
+        shapeRef.current = L.polygon(queryShape.latlngs, opts).addTo(map);
+    }
   }, [queryShape, accent]);
 
-  // ----- drawing API exposed via ref -----
+  // --- drawing interaction (circle drag / polygon clicks) ---
   React.useEffect(() => {
-    if (!drawApiRef) return;
-    const map = leafRef.current; if (!map) return;
-    const ds = drawStateRef.current;
+    const map = mapRef.current, el = elRef.current; if (!map) return;
+    if (!queryMode) { el.classList.remove("drawing"); if (drawApiRef) drawApiRef.current = {}; return; }
+    el.classList.add("drawing");
+    const style = { color: accent, weight: 1.8, dashArray: "6 5", fillColor: accent, fillOpacity: 0.08 };
 
-    const startCircle = () => {
-      window.__drawing = true;
-      ds.active = true; ds.type = "circle";
-      map.getContainer().classList.add("drawing-circle", "drawing");
-      let startLL = null, circLayer = null;
-      const onDown = (e) => {
-        startLL = e.latlng;
-        if (circLayer) { map.removeLayer(circLayer); circLayer = null; }
-      };
-      const onMove = (e) => {
-        if (!startLL) return;
-        const r = haversineM(startLL.lat, startLL.lng, e.latlng.lat, e.latlng.lng);
-        if (circLayer) map.removeLayer(circLayer);
-        circLayer = L.circle(startLL, { radius: r, color: "#f0a721", weight: 2, dashArray: "5 4", fillOpacity: 0.08 });
-        circLayer.addTo(map);
-        if (onShapeUpdate) onShapeUpdate({ type: "circle", center: [startLL.lat, startLL.lng], radius: r });
-      };
-      const onUp = () => {
-        map.off("mousedown", onDown);
-        map.off("mousemove", onMove);
-        map.off("mouseup", onUp);
-        map.getContainer().classList.remove("drawing-circle", "drawing");
-        window.__drawing = false; ds.active = false;
-      };
-      map.on("mousedown", onDown);
-      map.on("mousemove", onMove);
-      map.on("mouseup", onUp);
-    };
-
-    const startPolygon = () => {
-      window.__drawing = true;
-      ds.active = true; ds.type = "polygon"; ds.pts = [];
-      map.getContainer().classList.add("drawing-polygon", "drawing");
-      let polyLayer = null;
-      const pts = [];
-      const addPt = (e) => {
-        if (pts.length > 0 && haversineM(pts[0][0], pts[0][1], e.latlng.lat, e.latlng.lng) < 20 && pts.length >= 3) {
-          finish(); return;
+    if (queryMode === "circle") {
+      map.dragging.disable();
+      let center = null, circle = null, done = false;
+      const down = (e) => { center = e.latlng; circle = L.circle(center, { ...style, radius: 1 }).addTo(map); };
+      const move = (e) => { if (center && circle) circle.setRadius(Math.max(map.distance(center, e.latlng), 1)); };
+      const up = (e) => {
+        if (center) {
+          const r = Math.max(map.distance(center, e.latlng), 25);
+          done = true; onShape && onShape({ type: "circle", center: [center.lat, center.lng], radius: r });
         }
-        pts.push([e.latlng.lat, e.latlng.lng]);
-        if (polyLayer) map.removeLayer(polyLayer);
-        if (pts.length >= 2) {
-          polyLayer = L.polyline(pts, { color: "#f0a721", weight: 2, dashArray: "5 4" }).addTo(map);
-        }
-        if (onShapeUpdate) onShapeUpdate({ type: "polygon", latlngs: [...pts] });
       };
-      const finish = () => {
-        map.off("click", addPt);
-        map.off("dblclick", finish);
-        map.getContainer().classList.remove("drawing-polygon", "drawing");
-        if (polyLayer) map.removeLayer(polyLayer);
-        window.__drawing = false; ds.active = false;
-        if (pts.length >= 3 && onShapeUpdate) onShapeUpdate({ type: "polygon", latlngs: pts, closed: true });
+      map.on("mousedown", down); map.on("mousemove", move); map.on("mouseup", up);
+      if (drawApiRef) drawApiRef.current = { cancel: () => onShape && onShape(null) };
+      return () => {
+        map.off("mousedown", down); map.off("mousemove", move); map.off("mouseup", up);
+        map.dragging.enable(); el.classList.remove("drawing");
+        if (circle && !done) circle.remove();
       };
-      map.on("click", addPt);
-      map.on("dblclick", finish);
+    }
+
+    // polygon
+    map.doubleClickZoom.disable();
+    let pts = [], line = null, dots = [], done = false;
+    const redraw = () => {
+      if (line) line.remove();
+      line = (pts.length >= 3 ? L.polygon(pts, style) : L.polyline(pts, style)).addTo(map);
+      dots.forEach((d) => d.remove()); dots = pts.map((p, i) =>
+        L.circleMarker(p, { radius: i === 0 ? 6 : 4, color: accent, weight: 2,
+          fillColor: "#fff", fillOpacity: 1, interactive: false }).addTo(map));
+      onDraftChange && onDraftChange(pts.length);
     };
-
-    const cancelDraw = () => {
-      map.getContainer().classList.remove("drawing-circle", "drawing-polygon");
-      window.__drawing = false; ds.active = false;
+    const finish = () => {
+      if (pts.length >= 3) { done = true; onShape && onShape({ type: "polygon", latlngs: pts.map((p) => [p.lat, p.lng]) }); }
     };
+    const click = (e) => {
+      if (pts.length >= 3) {
+        const first = map.latLngToContainerPoint(pts[0]);
+        const here = map.latLngToContainerPoint(e.latlng);
+        if (first.distanceTo(here) < 14) { finish(); return; } // click first vertex to close
+      }
+      pts.push(e.latlng); redraw();
+    };
+    const dbl = () => finish();
+    map.on("click", click); map.on("dblclick", dbl);
+    if (drawApiRef) drawApiRef.current = { finish, cancel: () => onShape && onShape(null), count: () => pts.length };
+    return () => {
+      map.off("click", click); map.off("dblclick", dbl);
+      map.doubleClickZoom.enable(); el.classList.remove("drawing");
+      if (line && !done) line.remove(); dots.forEach((d) => d.remove());
+      onDraftChange && onDraftChange(0);
+    };
+  }, [queryMode, accent]);
 
-    drawApiRef.current = { startCircle, startPolygon, cancelDraw };
-  }, [drawApiRef, onShapeUpdate]);
-
-  // ----- map cursor class -----
+  // --- crosshair cursor while waiting for a location pick ---
   React.useEffect(() => {
-    const el = mapRef.current; if (!el) return;
-    if (composing && !placePoint) el.classList.add("placing-mode");
-    else el.classList.remove("placing-mode");
-  }, [composing, placePoint]);
+    const el = elRef.current; if (!el) return;
+    el.classList.toggle("placing-mode", !!placingMode);
+  }, [placingMode]);
 
-  // ----- pan to selected memory -----
+  // --- focus the selected memory beside the reading dock (Airbnb-style) ---
   React.useEffect(() => {
-    const map = leafRef.current; if (!map || !selected) return;
-    const targetLng = selected.lng + 0.01;
-    map.panTo([selected.lat, targetLng], { animate: true, duration: 0.5 });
-  }, [selected]);
+    const map = mapRef.current; if (!map || !focus) return;
+    const narrow = window.innerWidth <= 760;
+    const z = Math.max(map.getZoom(), 15);
+    const off = narrow
+      ? L.point(0, Math.round(window.innerHeight * 0.20))
+      : L.point(Math.round(Math.min(430, window.innerWidth * 0.34) / 2), 0);
+    const center = map.unproject(map.project([focus.lat, focus.lng], z).add(off), z);
+    map.setView(center, z, { animate: true });
+  }, [focus && focus.id]);
 
   return (
     <div className="map-wrap">
-      <div ref={mapRef} id="map" className="leaflet-map" />
+      <div ref={elRef} className="leaflet-map"></div>
+      <div className="map-zoom">
+        <button onClick={() => mapRef.current && mapRef.current.zoomIn()} aria-label="Zoom in">+</button>
+        <button onClick={() => mapRef.current && mapRef.current.zoomOut()} aria-label="Zoom out">–</button>
+      </div>
     </div>
   );
 }

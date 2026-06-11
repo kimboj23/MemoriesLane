@@ -40,7 +40,7 @@ function requireAdmin(req, res, next) {
 
   if (!verifyAdminToken(token)) {
     // 401 with WWW-Authenticate so clients know what scheme to use.
-    res.set("WWW-Authenticate", 'Bearer realm="MemoriesLane moderation"');
+    res.set("WWW-Authenticate", 'Bearer realm="memorylane moderation"');
     return res.status(401).json({ error: "Unauthorized" });
   }
   next();

@@ -22,14 +22,33 @@ services:
     env_file: ./backend/.env          # copy backend/.env.example → backend/.env first
     environment:
       - NODE_ENV=development
-      # In docker-compose the frontend is served from localhost:8080,
-      # so we allow both that origin and file:// (null) for convenience.
       - ALLOWED_ORIGINS=http://localhost:8080,null
-      - BIND_ADDR=0.0.0.0             # must listen on all interfaces inside Docker
+      - BIND_ADDR=0.0.0.0
+      - DB_PATH=/data/memories.db     # store in the persistent volume (overrides .env)
+      - UPLOADS_DIR=/data/uploads     # same volume for photo uploads
     ports:
-      - "3001:3001"                   # also reachable directly for API testing
+      - "3001:3001"
     volumes:
-      - memorieslane-data:/data       # SQLite DB + uploaded photos persist here
+      - memorylane-data:/data
+
+  # ── NocoDB admin panel ─────────────────────────────────────────────────────
+  # Spreadsheet UI for the admin team: browse/query/edit memories, bulk import,
+  # approve rows, add notes/comments. Open http://localhost:8081
+  # First-time setup: create an account, then add a Base:
+  #   New Base → SQLite → File path: /data/memories.db
+  nocodb:
+    image: nocodb/nocodb:latest
+    ports:
+      - "8081:8080"
+    volumes:
+      - memorylane-data:/data         # same volume → can open /data/memories.db
+      - nocodb-meta:/usr/app/data     # NocoDB's own metadata (separate)
+    environment:
+      - NC_DISABLE_TELE=true
+      - NC_INVITE_ONLY_SIGNUP=true    # only the first account can sign up; blocks accidental extra accounts
+    depends_on:
+      - backend
 
 volumes:
-  memorieslane-data:
+  memorylane-data:
+  nocodb-meta:

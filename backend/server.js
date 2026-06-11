@@ -93,6 +93,7 @@ app.use("/api/memories", memoriesRouter);
 app.use("/api/moderate", moderateRouter);
 
 app.get("/health", (req, res) => res.json({ ok: true }));
+app.get("/", (req, res) => res.json({ service: "MemoriesLane API", status: "ok", endpoints: ["/api/memories", "/health"] }));
 
 // ---------------------------------------------------------------------------
 // Error handler — never leak stack traces to clients.
@@ -111,7 +112,7 @@ app.use((err, req, res, next) => {
 assertEnv();
 initDb();
 app.listen(PORT, BIND, () => {
-  console.log(`[server] MemoriesLane backend listening on ${BIND}:${PORT} (${NODE_ENV})`);
+  console.log(`[server] memorylane backend listening on ${BIND}:${PORT} (${NODE_ENV})`);
   if (!IS_PROD) {
     console.log("[server] Development mode — copy .env.example to .env and set RATE_HMAC_SECRET and ADMIN_TOKEN_HASH");
   }

@@ -13,7 +13,7 @@ const token = crypto.randomBytes(32).toString("hex");
 const hash  = crypto.createHash("sha256").update(token).digest("hex");
 const hmacSecret = crypto.randomBytes(32).toString("hex");
 
-console.log("\n=== MemoriesLane — Initial secrets ===\n");
+console.log("\n=== memorylane — Initial secrets ===\n");
 console.log("Add these to your .env file:\n");
 console.log(`ADMIN_TOKEN_HASH=${hash}`);
 console.log(`RATE_HMAC_SECRET=${hmacSecret}`);

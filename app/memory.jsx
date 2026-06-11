@@ -1,93 +1,86 @@
 /* ============================================================================
-   memory.jsx — read-side components: MemoryDetail dock, AboutPanel modal
+   memory.jsx — the reading experience + the about / menu drawer.
+   The interface chrome is the cold "document" (mono); the testimony itself is
+   the warm human voice (serif). That contrast is the whole idea.
    ============================================================================ */
 
-function PhotoPlaceholder({ width = 340, height = 220 }) {
-  const id = "pp" + Math.random().toString(36).slice(2, 7);
+function PhotoPlaceholder({ label }) {
   return (
-    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} xmlns="http://www.w3.org/2000/svg" className="photo-placeholder-svg" aria-hidden="true">
-      <defs>
-        <pattern id={id} patternUnits="userSpaceOnUse" width="12" height="12" patternTransform="rotate(45)">
-          <line x1="0" y1="0" x2="0" y2="12" stroke="currentColor" strokeWidth="1.5" strokeOpacity="0.18" />
-        </pattern>
-      </defs>
-      <rect width={width} height={height} fill={`url(#${id})`} />
-      <text x={width / 2} y={height / 2 + 5} textAnchor="middle" fontSize="11" fill="currentColor" fillOpacity="0.35" fontFamily="IBM Plex Mono, monospace">
-        [ archive image ]
-      </text>
-    </svg>
+    <div className="photo-ph">
+      <svg width="100%" height="100%" preserveAspectRatio="none" viewBox="0 0 100 60">
+        <defs>
+          <pattern id="ph-stripe" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <rect width="6" height="6" fill="transparent" />
+            <line x1="0" y1="0" x2="0" y2="6" stroke="currentColor" strokeOpacity="0.18" strokeWidth="2.4" />
+          </pattern>
+        </defs>
+        <rect width="100" height="60" fill="url(#ph-stripe)" />
+      </svg>
+      <span className="photo-ph-label">{label}</span>
+    </div>
   );
 }
 
-function MemoryDetail({ memory: m, lang, accent, gold, onClose, onPrev, onNext, quoteFont }) {
+function MemoryDetail({ memory, lang, onClose, onPrev, onNext }) {
   const t = STR[lang];
+  const m = memory;
+  const c0 = catOf(m.cat);
+  const cc = c0.color;
 
   React.useEffect(() => {
-    const handler = (e) => {
-      if (e.key === "Escape") onClose && onClose();
-      if (e.key === "ArrowLeft") onPrev && onPrev();
-      if (e.key === "ArrowRight") onNext && onNext();
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose();
+      if (e.key === "ArrowLeft") onPrev();
+      if (e.key === "ArrowRight") onNext();
     };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, [onClose, onPrev, onNext]);
 
-  if (!m) return null;
-  const c = catOf(m.cat);
-  const text = lang === "vi" ? m.vi : m.en;
-  const when = lang === "vi" ? m.date : (m.dateEn || m.date);
-  const approx = isApprox(m);
-  const fqFont = quoteFont === "mono" ? "'IBM Plex Mono', monospace" : quoteFont === "sans" ? "'Be Vietnam Pro', sans-serif" : "'Lora', serif";
-
   return (
-    <aside className="read-dock" role="dialog" aria-modal="false">
-      <button className="dock-close" onClick={onClose} aria-label={t.close}>✕</button>
+    <aside className="read-dock" role="dialog" aria-label={t.yourMemory}>
+      <div className="read-panel">
+        <button className="sheet-close" onClick={onClose} aria-label={t.close}>✕</button>
 
-      <div className="read-cat-pill" style={{ background: c.color + "22", color: c.color, borderColor: c.color + "55" }}>
-        <span className="cat-dot" style={{ background: c.color }} />
-        {c[lang]}
-      </div>
+        <header className="read-head">
+          <span className="read-cat" style={{ color: cc, borderColor: cc }}>
+            <span className="cat-dot" style={{ background: cc }} />{c0[lang]}
+          </span>
+          <span className="read-coord">{fauxCoord(m.lat, m.lng)}</span>
+        </header>
 
-      <div className="read-coord">{fauxCoord(m.lat, m.lng)}</div>
-
-      <div className="read-photo">
-        {m.photoData
-          ? <img src={m.photoData} alt={t.photoPlaceholder} className="read-photo-img" />
-          : <PhotoPlaceholder width={340} height={200} />}
-      </div>
-
-      <blockquote className="read-quote" style={{ fontFamily: fqFont }}>
-        {text}
-      </blockquote>
-
-      <div className="read-footer">
-        <div className="read-footer-row">
-          <span className="read-footer-label">{t.timeWhen}</span>
-          <span className="read-footer-val">{approx ? "~" : ""}{when}</span>
-        </div>
-        <div className="read-footer-row">
-          <span className="read-footer-label">{t.ward}</span>
-          <span className="read-footer-val">{m.ward}</span>
-        </div>
-        {m.mine && (
-          <div className="read-footer-row">
-            <span className="read-footer-label">Status</span>
-            <span className="read-footer-val pending">● {lang === "vi" ? "Đang chờ duyệt" : "Pending review"}</span>
+        {(m.photo || m.photoData) && (
+          <div className="read-photo">
+            {m.photoData
+              ? <img src={m.photoData} alt="" />
+              : <PhotoPlaceholder label={t.photoPlaceholder} />}
           </div>
         )}
-      </div>
 
-      <nav className="read-nav" aria-label="Navigate memories">
-        <button className="nav-btn" onClick={onPrev} aria-label="Previous">
-          ← {lang === "vi" ? "Lân cận" : "Nearby"}
-        </button>
-        <span className="nav-sep">·</span>
-        <span className="nav-drift">{lang === "vi" ? "drift" : "drift"}</span>
-        <span className="nav-sep">·</span>
-        <button className="nav-btn" onClick={onNext} aria-label="Next">
-          {lang === "vi" ? "Lân cận" : "Nearby"} →
-        </button>
-      </nav>
+        <blockquote className="read-quote">{lang === "vi" ? m.vi : m.en}</blockquote>
+
+        <footer className="read-foot">
+          <div className="read-meta">
+            <span className="meta-k">{lang === "vi" ? "Thời gian" : "When"}</span>
+            <span className="meta-v">
+              {isApprox(m) && <span className="approx-mark" title={lang === "vi" ? "Thời gian ước chừng" : "Approximate date"}>~ </span>}
+              {lang === "vi" ? m.date : (m.dateEn || m.date)}
+            </span>
+          </div>
+          {m.mine && (
+            <div className="read-meta">
+              <span className="meta-k">{lang === "vi" ? "Trạng thái" : "Status"}</span>
+              <span className="meta-v pending">{lang === "vi" ? "Đang chờ duyệt" : "Pending review"}</span>
+            </div>
+          )}
+        </footer>
+
+        <nav className="read-nav">
+          <button onClick={onPrev}>← {lang === "vi" ? "Lân cận" : "Wander"}</button>
+          <span className="read-wander">{lang === "vi" ? "lạc giữa những ký ức" : "drift through memories"}</span>
+          <button onClick={onNext}>{lang === "vi" ? "Lân cận" : "Wander"} →</button>
+        </nav>
+      </div>
     </aside>
   );
 }
@@ -95,34 +88,31 @@ function MemoryDetail({ memory: m, lang, accent, gold, onClose, onPrev, onNext, 
 function AboutPanel({ lang, onClose }) {
   const t = STR[lang];
   return (
-    <div className="about-scrim" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="about-modal" role="dialog" aria-modal="true" aria-label={t.aboutTitle}>
-        <button className="about-close" onClick={onClose} aria-label={t.close}>✕</button>
-        <div className="about-kicker">Miền Ký Ức · Memories of Hà Nội</div>
-        <h2 className="about-title">{t.aboutTitle}</h2>
-        <p className="about-body">{t.aboutBody}</p>
+    <div className="read-scrim" onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <aside className="about-card">
+        <button className="sheet-close" onClick={onClose} aria-label={t.close}>✕</button>
+        <h2 className="about-h">{t.aboutTitle}</h2>
+        <p className="about-p">{t.aboutBody}</p>
 
         <h3 className="about-sub">{t.howTitle}</h3>
         <ol className="about-steps">
-          <li>{t.how1}</li>
-          <li>{t.how2}</li>
-          <li>{t.how3}</li>
-          <li>{t.how4}</li>
+          <li><span className="step-n">01</span>{t.how1}</li>
+          <li><span className="step-n">02</span>{t.how2}</li>
+          <li><span className="step-n">03</span>{t.how3}</li>
+          <li><span className="step-n">04</span>{t.how4}</li>
         </ol>
 
         <h3 className="about-sub">{t.guidelinesTitle}</h3>
-        <p className="about-body">{t.guidelinesBody}</p>
+        <p className="about-p small">{t.guidelinesBody}</p>
 
-        <h3 className="about-sub">{lang === "vi" ? "Phân loại ký ức" : "Memory categories"}</h3>
         <div className="about-legend">
           {CATS.map((c) => (
-            <div key={c.key} className="legend-row">
-              <span className="legend-dot" style={{ background: c.color }} />
-              <span className="legend-name">{c[lang]}</span>
-            </div>
+            <span key={c.key} className="legend-item">
+              <span className="cat-dot" style={{ background: c.color }} />{c[lang]}
+            </span>
           ))}
         </div>
-      </div>
+      </aside>
     </div>
   );
 }
