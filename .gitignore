@@ -13,3 +13,7 @@ backend/node_modules/
 .DS_Store
 Thumbs.db
 MemoriesLane.zip
+deployGuide.md
+cloudflared.exe
+# tunnel config has local paths — commit cloudflared-config.yml only after replacing placeholders
+# .cloudflared/

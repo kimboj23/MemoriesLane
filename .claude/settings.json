@@ -18,7 +18,12 @@
       "Bash(git -C \"c:/Users/NinaTran/Downloads/aos/MemoriesLane\" config user.email)",
       "Bash(git -C \"c:/Users/NinaTran/Downloads/aos/MemoriesLane\" config --list)",
       "Bash(cmdkey /list)",
-      "Bash(findstr -i github)"
+      "Bash(findstr -i github)",
+      "Bash(winget install *)",
+      "PowerShell(Get-Command cloudflared -ErrorAction SilentlyContinue; Get-ChildItem \"$env:LOCALAPPDATA\\\\Microsoft\\\\WinGet\\\\Packages\" -Recurse -Filter \"cloudflared.exe\" -ErrorAction SilentlyContinue | Select-Object FullName)",
+      "PowerShell(Get-ChildItem \"C:\\\\Program Files\", \"$env:ProgramFiles\\(x86\\)\", \"$env:LOCALAPPDATA\" -Recurse -Filter \"cloudflared.exe\" -ErrorAction SilentlyContinue | Select-Object FullName)",
+      "PowerShell(Get-ChildItem \"C:\\\\ProgramData\\\\chocolatey\\\\bin\", \"C:\\\\Windows\\\\System32\", \"$env:USERPROFILE\\\\scoop\\\\shims\" -Filter \"cloudflared.exe\" -ErrorAction SilentlyContinue | Select-Object FullName)",
+      "PowerShell(Invoke-WebRequest -Uri \"https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe\" -OutFile \"C:\\\\Users\\\\NinaTran\\\\Downloads\\\\aos\\\\MemoriesLane\\\\cloudflared.exe\" -UseBasicParsing)"
     ]
   }
 }
