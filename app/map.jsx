@@ -175,7 +175,7 @@ function MapView({
       return () => {
         map.off("mousedown", down); map.off("mousemove", move); map.off("mouseup", up);
         map.dragging.enable(); el.classList.remove("drawing");
-        if (circle && !done) circle.remove();
+        if (circle) circle.remove(); // always remove — committed shape is redrawn by the persisted-shape effect
       };
     }
 
@@ -207,7 +207,7 @@ function MapView({
     return () => {
       map.off("click", click); map.off("dblclick", dbl);
       map.doubleClickZoom.enable(); el.classList.remove("drawing");
-      if (line && !done) line.remove(); dots.forEach((d) => d.remove());
+      if (line) line.remove(); dots.forEach((d) => d.remove()); // always remove — committed shape is redrawn by the persisted-shape effect
       onDraftChange && onDraftChange(0);
     };
   }, [queryMode, accent]);

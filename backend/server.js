@@ -6,6 +6,7 @@ const cors = require("cors");
 const { initDb } = require("./db");
 const memoriesRouter = require("./routes/memories");
 const moderateRouter = require("./routes/moderate");
+const casesRouter = require("./routes/cases");
 
 const PORT = parseInt(process.env.PORT, 10) || 3001;
 const BIND = process.env.BIND_ADDR || "127.0.0.1"; // localhost-only by default
@@ -91,6 +92,7 @@ app.set("trust proxy", IS_PROD ? 1 : "loopback");
 // ---------------------------------------------------------------------------
 app.use("/api/memories", memoriesRouter);
 app.use("/api/moderate", moderateRouter);
+app.use("/api/cases", casesRouter);
 
 app.get("/health", (req, res) => res.json({ ok: true }));
 app.get("/", (req, res) => res.json({ service: "MemoriesLane API", status: "ok", endpoints: ["/api/memories", "/health"] }));

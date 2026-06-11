@@ -52,6 +52,23 @@ function initDb() {
       moderated_at  INTEGER          -- unix seconds, set on approve/reject
     ) STRICT;
 
+    CREATE TABLE IF NOT EXISTS cases (
+      id          TEXT PRIMARY KEY,
+      title_vi    TEXT NOT NULL,
+      title_en    TEXT,
+      summary_vi  TEXT NOT NULL,
+      summary_en  TEXT,
+      city        TEXT NOT NULL DEFAULT 'hanoi'
+                       CHECK(city IN ('hanoi','hcmc','hue','danang','cantho')),
+      lat         REAL,
+      lng         REAL,
+      status      TEXT NOT NULL DEFAULT 'active'
+                       CHECK(status IN ('active','resolved','historical')),
+      sections    TEXT NOT NULL DEFAULT '[]',
+      created_at  TEXT NOT NULL,
+      approved    INTEGER NOT NULL DEFAULT 1
+    );
+
     CREATE INDEX IF NOT EXISTS idx_mem_city_approved
       ON memories(city, approved);
     CREATE INDEX IF NOT EXISTS idx_mem_year
@@ -68,7 +85,15 @@ function initDb() {
       ON memories(cat);
     CREATE INDEX IF NOT EXISTS idx_mem_media
       ON memories(media_type);
+    CREATE INDEX IF NOT EXISTS idx_cases_city
+      ON cases(city, approved);
   `);
+
+  // Idempotent migration: add case_id column if this DB predates the feature.
+  const memCols = db.pragma("table_info(memories)").map((r) => r.name);
+  if (!memCols.includes("case_id")) {
+    db.exec("ALTER TABLE memories ADD COLUMN case_id TEXT");
+  }
 
   return db;
 }
@@ -99,7 +124,7 @@ function stmts_() {
     // Public read — approved only, no photo_path (served via separate route)
     publicList: d.prepare(`
       SELECT id, lat, lng, city, ward, cat, year, month, day,
-             date_label, date_label_en, lang, text_vi, text_en, has_photo, media_type
+             date_label, date_label_en, lang, text_vi, text_en, has_photo, media_type, case_id
       FROM memories
       WHERE approved = 1
         AND (:city IS NULL OR city = :city)
@@ -111,8 +136,20 @@ function stmts_() {
 
     publicById: d.prepare(`
       SELECT id, lat, lng, city, ward, cat, year, month, day,
-             date_label, date_label_en, lang, text_vi, text_en, has_photo, media_type
+             date_label, date_label_en, lang, text_vi, text_en, has_photo, media_type, case_id
       FROM memories WHERE id = ? AND approved = 1
+    `),
+
+    caseById: d.prepare(`
+      SELECT id, title_vi, title_en, summary_vi, summary_en, city, lat, lng, status, sections, created_at
+      FROM cases WHERE id = ? AND approved = 1
+    `),
+
+    caseMemories: d.prepare(`
+      SELECT id, lat, lng, city, ward, cat, year, month, day,
+             date_label, date_label_en, lang, text_vi, text_en, has_photo, media_type, case_id
+      FROM memories WHERE case_id = ? AND approved = 1
+      ORDER BY year DESC, month DESC, day DESC
     `),
 
     // Photo path — only for serving images, only for approved memories
@@ -146,13 +183,15 @@ function stmts_() {
 
 // Public API used by route handlers
 const queries = {
-  insert:     (row)             => stmts_().insert.run(row),
-  publicList: (city, minY, maxY, limit = 500, offset = 0) => stmts_().publicList.all({ city: city || null, min_year: minY, max_year: maxY, limit, offset }),
-  publicById: (id)              => stmts_().publicById.get(id),
-  photoPath:  (id)              => stmts_().photoPath.get(id),
-  pending:    ()                => stmts_().pending.all(),
-  approve:    (id)              => stmts_().approve.run(id),
-  reject:     (id, reason)      => stmts_().reject.run(reason, id),
+  insert:       (row)             => stmts_().insert.run(row),
+  publicList:   (city, minY, maxY, limit = 500, offset = 0) => stmts_().publicList.all({ city: city || null, min_year: minY, max_year: maxY, limit, offset }),
+  publicById:   (id)              => stmts_().publicById.get(id),
+  photoPath:    (id)              => stmts_().photoPath.get(id),
+  pending:      ()                => stmts_().pending.all(),
+  approve:      (id)              => stmts_().approve.run(id),
+  reject:       (id, reason)      => stmts_().reject.run(reason, id),
+  caseById:     (id)              => stmts_().caseById.get(id),
+  caseMemories: (caseId)          => stmts_().caseMemories.all(caseId),
 };
 
 module.exports = { initDb, getDb, queries, VALID_CATS, VALID_CITIES, VALID_MEDIA, VALID_LANGS };

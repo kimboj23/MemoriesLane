@@ -189,6 +189,7 @@ function fromApi(r) {
     en: r.text_en || r.text_vi,
     photo: !!r.has_photo,
     media: r.media_type,
+    caseId: r.case_id || null,
   };
 }
 
@@ -213,10 +214,13 @@ function App() {
       })
       .catch((e) => console.warn("Failed to load memories from API:", e));
   }, []);
+
   const [composing, setComposing] = React.useState(false);
   const [placePoint, setPlacePoint] = React.useState(null);
   const [selected, setSelected] = React.useState(null);
   const [aboutOpen, setAboutOpen] = React.useState(false);
+  const [openCaseId, setOpenCaseId] = React.useState(null);
+  const [caseProfile, setCaseProfile] = React.useState(null);
   // --- research mode ---
   const [research, setResearch] = React.useState(false);
   const [exportOpen, setExportOpen] = React.useState(false);
@@ -234,6 +238,20 @@ function App() {
   const accent = t.accent;
 
   React.useEffect(() => { document.documentElement.setAttribute("data-theme", theme); }, [theme]);
+
+  React.useEffect(() => {
+    if (!openCaseId) { setCaseProfile(null); return; }
+    fetch(`/api/cases/${encodeURIComponent(openCaseId)}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (data && data.case) {
+          setCaseProfile({ caseData: data.case, memories: (data.memories || []).map(fromApi) });
+        } else {
+          setOpenCaseId(null);
+        }
+      })
+      .catch((e) => { console.warn("Failed to load case profile:", e); setOpenCaseId(null); });
+  }, [openCaseId]);
 
   const [lo, hi] = range;
   const compiled = React.useMemo(() => compileQuery(adv.query), [adv.query]);
@@ -463,7 +481,16 @@ function App() {
       )}
       {selected && (
         <MemoryDetail memory={selected} lang={lang}
-          onClose={() => setSelected(null)} onPrev={wanderPrev} onNext={wanderNext} />
+          onClose={() => setSelected(null)} onPrev={wanderPrev} onNext={wanderNext}
+          onOpenCase={(id) => setOpenCaseId(id)} />
+      )}
+      {caseProfile && (
+        <CaseProfile
+          caseData={caseProfile.caseData}
+          memories={caseProfile.memories}
+          lang={lang}
+          onClose={() => { setOpenCaseId(null); setCaseProfile(null); }}
+          onSelectMemory={(m) => { setOpenCaseId(null); setCaseProfile(null); setSelected(m); }} />
       )}
       {aboutOpen && <AboutPanel lang={lang} onClose={() => setAboutOpen(false)} />}
 

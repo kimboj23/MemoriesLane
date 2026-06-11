@@ -27,7 +27,12 @@
       "Bash(node -e \"const d=require\\('fs'\\).readFileSync\\('/dev/stdin','utf8'\\);const j=JSON.parse\\(d\\);console.log\\('total:',j.memories.length,'cities:',{...j.memories.reduce\\(\\(a,m\\)=>{a[m.city]=\\(a[m.city]||0\\)+1;return a},{}\\)}\\)\")",
       "Bash(node -e \"process.stdin.resume\\(\\);let d='';process.stdin.on\\('data',c=>d+=c\\);process.stdin.on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\);console.log\\('count:',j.memories.length\\);}\\)\")",
       "Bash(node -e \"process.stdin.resume\\(\\);let d='';process.stdin.on\\('data',c=>d+=c\\);process.stdin.on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\);console.log\\('count:',j.memories.length,'hasMore:',j.hasMore,'offset:',j.offset,'limit:',j.limit\\);}\\)\")",
-      "Bash(node -e \"process.stdin.resume\\(\\);let d='';process.stdin.on\\('data',c=>d+=c\\);process.stdin.on\\('end',\\(\\)=>{try{const j=JSON.parse\\(d\\);console.log\\('backend ok, memories:',j.memories.length\\);}catch\\(e\\){console.log\\('parse error:',d.slice\\(0,200\\)\\);}}\\)\")"
+      "Bash(node -e \"process.stdin.resume\\(\\);let d='';process.stdin.on\\('data',c=>d+=c\\);process.stdin.on\\('end',\\(\\)=>{try{const j=JSON.parse\\(d\\);console.log\\('backend ok, memories:',j.memories.length\\);}catch\\(e\\){console.log\\('parse error:',d.slice\\(0,200\\)\\);}}\\)\")",
+      "Bash(curl -s http://localhost:3001/api/cases/case-phuc-tan)",
+      "Bash(python -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('case:', d['case']['title_en']\\); print\\('status:', d['case']['status']\\); print\\('sections:', len\\(d['case']['sections']\\)\\); print\\('memories:', len\\(d['memories']\\)\\); print\\('memory ids:', [m['id'] for m in d['memories']]\\)\")",
+      "Bash(curl -s \"http://localhost:3001/api/memories?city=hanoi&minYear=2020&maxYear=2024\")",
+      "Bash(python -c \"import json,sys; d=json.load\\(sys.stdin\\); linked=[m for m in d['memories'] if m.get\\('case_id'\\)]; print\\('total memories:', len\\(d['memories']\\)\\); print\\('linked to case:', len\\(linked\\)\\); [print\\(' -', m['id'], m['case_id']\\) for m in linked]\")",
+      "Bash(python -c \"import json,sys; d=json.load\\(sys.stdin\\); linked=[m for m in d['memories'] if m.get\\('case_id'\\)]; print\\('total:', len\\(d['memories']\\)\\); print\\('linked:', len\\(linked\\)\\); [print\\(' -', m['id'], m['case_id']\\) for m in linked[:5]]; print\\('sample keys:', list\\(d['memories'][0].keys\\(\\)\\) if d['memories'] else 'no memories'\\)\")"
     ]
   }
 }

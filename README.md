@@ -81,8 +81,8 @@ Backing up the database is a manual step — copy the Docker volume contents per
 | Service | URL | Hosted on |
 |---------|-----|-----------|
 | **Frontend (app)** | https://memorylane101.pages.dev/ | Cloudflare Pages — always on |
-| **Backend API** | via Cloudflare Tunnel → `localhost:3001` | Nina's machine |
-| **NocoDB admin** | https://supplement-conduct-tied-config.trycloudflare.com/ | Nina's machine via tunnel |
+| **Backend API** | via Cloudflare Tunnel → `localhost:3001` | local machine |
+| **NocoDB admin** | https://supplement-conduct-tied-config.trycloudflare.com/ | local machine via tunnel |
 
 ### What happens when the local machine restarts
 
@@ -146,6 +146,7 @@ MemoriesLane/
 │   ├── map.jsx             ← Leaflet map, markers, spatial drawing
 │   ├── compose.jsx         ← anonymous submission flow
 │   ├── memory.jsx          ← memory reading dock + about modal
+│   ├── case-profile.jsx    ← full-screen case detail panel (Airbnb-style)
 │   ├── research.jsx        ← advanced search (Boolean, spatial, facets)
 │   ├── export.jsx          ← HTML report + CSV / JSON / GeoJSON export
 │   ├── tweaks-panel.jsx    ← design-token playground
@@ -159,10 +160,12 @@ MemoriesLane/
 │   │   └── sanitize.js     ← input validation + HTML stripping
 │   ├── routes/
 │   │   ├── memories.js     ← public submit + read API
-│   │   └── moderate.js     ← authenticated moderation queue
+│   │   ├── moderate.js     ← authenticated moderation queue
+│   │   └── cases.js        ← case profile read API
 │   ├── scripts/
 │   │   ├── setup-admin.js  ← one-time secret generator
-│   │   └── seed-memories.js ← populate DB with pre-approved archive memories
+│   │   ├── seed-memories.js ← populate DB with pre-approved archive memories
+│   │   └── seed-cases.js   ← populate DB with sample case profiles
 │   ├── Dockerfile
 │   ├── .env.example
 │   └── package.json
@@ -230,7 +233,15 @@ After the first startup, load the 27 pre-approved archive memories into the data
 docker exec memorieslane-backend-1 node scripts/seed-memories.js
 ```
 
-Safe to re-run — skips any entry that already exists.
+### Step 5 — Seed the sample case profile (one time only)
+
+Load the sample Phúc Tân–Phúc Xá case (a full case profile with sections, timeline, and linked memories):
+
+```bash
+docker exec memorieslane-backend-1 node scripts/seed-cases.js
+```
+
+Both scripts are safe to re-run — they skip entries that already exist.
 
 ### Stop / reset
 
