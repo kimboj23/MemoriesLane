@@ -1,76 +1,65 @@
-# Miền Ký Ức — memorylane
+# Miền Ký Ức — MemoriesLane
 
 A collective, anonymous civic memory archive. People pin stories to a map of Vietnamese cities, documenting lived experiences around urban restructuring and displacement (2026–2045 relocation zone proposals).
 
-Built with Leaflet, React 18, and Express/SQLite. No build step — the frontend is plain HTML + JSX loaded via CDN.
+**Stack:** Leaflet · React 18 (UMD, no build step) · Express · SQLite · NocoDB · Cloudflare Pages + Tunnel
 
 ---
 
 ## Contents
 
-- [How the project is structured](#project-structure)
-- [Option A — Open the frontend directly (no install)](#option-a--open-the-frontend-directly)
-- [Option B — Run everything locally with Docker](#option-b--run-everything-locally-with-docker)
-- [Option C — Run the backend only (no Docker)](#option-c--run-the-backend-only-no-docker)
-- [Deploy Track 1 — Frontend on Cloudflare Pages](#deploy-track-1--frontend-on-cloudflare-pages)
-- [Deploy Track 2 — Backend on Railway](#deploy-track-2--backend-on-railway)
-- [Open-source & data privacy](#open-source--data-privacy)
+- [Project structure](#project-structure)
+- [Run locally with Docker](#run-locally-with-docker)
+- [Admin panel — NocoDB](#admin-panel--nocodb)
+- [Moderation API](#moderation-api)
+- [Deploy: frontend on Cloudflare Pages](#deploy-frontend-on-cloudflare-pages)
+- [Expose local backend to the internet (Cloudflare Tunnel)](#expose-local-backend-to-the-internet)
+- [Alternative: deploy backend to Koyeb (free, no CC)](#alternative-backend-on-koyeb)
 - [Environment variables reference](#environment-variables-reference)
+- [Data privacy](#data-privacy)
 
 ---
 
 ## Project structure
 
 ```
-memorylane/
-├── index.html          ← entry point (same file as memorylane.html)
-├── memorylane.html   ← original file, kept for reference
+MemoriesLane/
+├── index.html              ← entry point; all CSS lives here
 ├── app/
-│   ├── data.jsx        ← seed memories, i18n strings, utilities
-│   ├── map.jsx         ← Leaflet map, markers, drawing
-│   ├── compose.jsx     ← anonymous submission flow
-│   ├── memory.jsx      ← memory reading dock + about modal
-│   ├── research.jsx    ← advanced search (Boolean query, spatial filters)
-│   ├── export.jsx      ← data export: HTML report + CSV/JSON/GeoJSON
-│   ├── tweaks-panel.jsx← design-token playground (dev only)
-│   └── app.jsx         ← root component, all state
+│   ├── app.jsx             ← root component, all state, API calls
+│   ├── map.jsx             ← Leaflet map, markers, spatial drawing
+│   ├── compose.jsx         ← anonymous submission flow
+│   ├── memory.jsx          ← memory reading dock + about modal
+│   ├── research.jsx        ← advanced search (Boolean, spatial, facets)
+│   ├── export.jsx          ← HTML report + CSV / JSON / GeoJSON export
+│   ├── tweaks-panel.jsx    ← design-token playground
+│   └── data.jsx            ← seed memories, i18n strings, utilities
 ├── backend/
-│   ├── server.js       ← Express app
-│   ├── db.js           ← SQLite schema + prepared statements
+│   ├── server.js           ← Express app
+│   ├── db.js               ← SQLite schema + prepared statements
 │   ├── middleware/
-│   │   ├── auth.js     ← admin Bearer token verification
-│   │   ├── rate-limit.js ← IP-free rate limiting
-│   │   └── sanitize.js ← input validation
+│   │   ├── auth.js         ← admin Bearer token (SHA-256 hash check)
+│   │   ├── rate-limit.js   ← IP-free HMAC rate limiting
+│   │   └── sanitize.js     ← input validation + HTML stripping
 │   ├── routes/
-│   │   ├── memories.js ← public submit + read API
-│   │   └── moderate.js ← authenticated moderation queue
+│   │   ├── memories.js     ← public submit + read API
+│   │   └── moderate.js     ← authenticated moderation queue
 │   ├── scripts/
-│   │   └── setup-admin.js ← one-time secret generator
+│   │   └── setup-admin.js  ← one-time secret generator
 │   ├── Dockerfile
-│   ├── .env.example    ← copy to .env, never commit .env
+│   ├── .env.example
 │   └── package.json
-├── docker-compose.yml  ← runs frontend + backend together locally
-├── nginx.conf          ← used by docker-compose frontend service
-└── .gitignore          ← ensures .env, *.db, uploads/ are never committed
+├── functions/
+│   └── api/[[route]].js    ← Cloudflare Pages Function: proxies /api/* → backend
+├── docker-compose.yml      ← frontend (nginx) + backend + NocoDB admin
+├── nginx.conf              ← proxies /api/* to backend container
+├── cloudflared-config.yml  ← named tunnel config (fill in tunnel ID + domain)
+└── .gitignore
 ```
 
 ---
 
-## Option A — Open the frontend directly
-
-No install, no server. The app ships 37 seed memories and all features work in-browser. Submitted memories only persist for the current tab session.
-
-```
-Double-click index.html   (Windows / macOS)
-```
-
-or drag it into any browser. That's it.
-
----
-
-## Option B — Run everything locally with Docker
-
-This runs the frontend (nginx) and backend (Node + SQLite) together. Submitted memories are saved to a Docker volume and survive restarts.
+## Run locally with Docker
 
 ### Prerequisites
 
@@ -84,8 +73,7 @@ npm install
 node scripts/setup-admin.js
 ```
 
-You will see output like:
-
+Output:
 ```
 ADMIN_TOKEN_HASH=abc123...
 RATE_HMAC_SECRET=def456...
@@ -93,222 +81,235 @@ RATE_HMAC_SECRET=def456...
 Admin Bearer token: 9f3a2b...   ← save this in your password manager
 ```
 
-### Step 2 — Create the backend .env file
+### Step 2 — Create the backend .env
 
 ```bash
 cp backend/.env.example backend/.env
 ```
 
-Open `backend/.env` and paste in the two values from the previous step:
-
-```
-ADMIN_TOKEN_HASH=abc123...   ← the hash, not the token
-RATE_HMAC_SECRET=def456...
-```
-
-Leave all other values as-is for local development.
+Edit `backend/.env` and paste in the two generated values. Leave everything else as-is for local dev.
 
 ### Step 3 — Start everything
 
 ```bash
-docker-compose up --build
+docker compose up --build
 ```
 
-First run pulls images and builds the backend container (~2 min). Subsequent starts take a few seconds.
+| Service | URL |
+|---------|-----|
+| Frontend | http://localhost:8080 |
+| Backend API | http://localhost:3001/api/memories |
+| NocoDB admin | http://localhost:8081 |
 
-- **Frontend → [http://localhost:8080](http://localhost:8080)**
-- **Backend API → [http://localhost:3001](http://localhost:3001)**
+First run builds the backend image (~2 min). Subsequent starts take a few seconds.
 
-### Moderation (reviewing submitted memories)
+The SQLite database is stored in the `memorylane-data` Docker volume at `/data/memories.db` and survives restarts.
 
-Use any HTTP client (curl, Bruno, Postman) with the raw admin token:
+### Stop / reset
 
 ```bash
-# List pending submissions
-curl -H "Authorization: Bearer YOUR_RAW_TOKEN" http://localhost:3001/api/moderate/queue
+docker compose down          # stop containers, keep data
+docker compose down -v       # stop containers AND delete all saved memories
+```
 
-# Approve one
+---
+
+## Admin panel — NocoDB
+
+NocoDB provides a spreadsheet UI over the SQLite database. Use it to browse submissions, bulk-edit rows, approve memories, add notes, and run queries — no SQL needed.
+
+### First-time setup
+
+1. Open **http://localhost:8081**
+2. Create one account (signup is locked after the first account via `NC_INVITE_ONLY_SIGNUP`)
+3. **New Base → SQLite → File path:** `/data/memories.db` → Test → Save
+
+### Useful views to create
+
+| View | Filter |
+|------|--------|
+| Pending queue | `approved = 0` AND `rejected = 0` |
+| Approved | `approved = 1` |
+| Rejected | `rejected = 1` |
+
+To approve a submission: find the row, set `approved` to `1`. It immediately appears on the live map.
+
+### Invite teammates to NocoDB
+
+From inside NocoDB: **Settings → Team & Auth → Invite** — teammates receive an email link; they do not go through the public signup page.
+
+---
+
+## Moderation API
+
+For scripted or bulk operations, the moderation endpoints are also available directly:
+
+```bash
+# List pending submissions (up to 50)
+curl -H "Authorization: Bearer YOUR_RAW_TOKEN" \
+  http://localhost:3001/api/moderate/queue
+
+# Approve
 curl -X POST -H "Authorization: Bearer YOUR_RAW_TOKEN" \
-  http://localhost:3001/api/moderate/MEMORY_ID/approve
+  http://localhost:3001/api/moderate/<id>/approve
 
 # Reject with a reason
 curl -X POST -H "Authorization: Bearer YOUR_RAW_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"reason":"off-topic"}' \
-  http://localhost:3001/api/moderate/MEMORY_ID/reject
-```
-
-### Stopping and data
-
-```bash
-docker-compose down          # stops containers, keeps data volume
-docker-compose down -v       # stops containers AND deletes all saved memories
+  http://localhost:3001/api/moderate/<id>/reject
 ```
 
 ---
 
-## Option C — Run the backend only (no Docker)
+## Deploy: frontend on Cloudflare Pages
 
-If you want to run just the API with Node.js directly:
+The frontend is static files — no build step. CF Pages hosts it for free and redeploys on every push to `main`.
 
-```bash
-cd backend
-npm install
-node scripts/setup-admin.js   # if you haven't yet
-cp .env.example .env          # then fill in the two generated values
-npm run dev
-```
+1. Push the repo to GitHub
+2. Go to [pages.cloudflare.com](https://pages.cloudflare.com) → **New project → Connect to Git**
+3. Select this repository
+4. Build settings:
+   - **Build command:** *(leave empty)*
+   - **Build output directory:** `/`
+5. **Environment variables:**
 
-The API listens on `http://localhost:3001`. Open `index.html` separately in your browser.
+   | Key | Value |
+   |-----|-------|
+   | `BACKEND_URL` | your backend's public URL (tunnel or hosted) |
 
----
+6. Deploy → you get a `*.pages.dev` URL
 
-## Deploy Track 1 — Frontend on Cloudflare Pages
-
-The frontend is static files — no build step, no server needed. Cloudflare Pages hosts it for free and gives your team a public URL in about 30 seconds.
-
-### Step 1 — Push to GitHub
-
-If you haven't already, create a new repository on [github.com](https://github.com/new), then:
-
-```bash
-git remote add origin https://github.com/YOUR_USERNAME/memorylane.git
-git push -u origin main
-```
-
-### Step 2 — Connect to Cloudflare Pages
-
-1. Go to [pages.cloudflare.com](https://pages.cloudflare.com) and log in (free account)
-2. Click **Create a project** → **Connect to Git**
-3. Select your GitHub repository
-4. On the build settings screen:
-   - **Build command** — leave empty (no build needed)
-   - **Build output directory** — type `/` (just a forward slash — the repo root)
-5. Click **Save and Deploy**
-
-Cloudflare Pages gives you a URL like `https://memorylane-abc.pages.dev`.
-
-Every time you push to `main`, Cloudflare redeploys automatically.
-
-> **What the team sees**: the full map with all 37 seed memories, the submission form, bilingual UI, research mode with spatial drawing and Boolean queries, and the data export. Submitted memories only live in the browser tab — they vanish on refresh. This is the right scope for reviewing the UI before wiring up the backend.
+The `functions/api/[[route]].js` file is picked up automatically by CF Pages and proxies all `/api/*` requests to `BACKEND_URL`. The frontend code never changes — it always calls `/api/memories` as a relative path.
 
 ---
 
-## Deploy Track 2 — Backend on Railway
+## Expose local backend to the internet
 
-Railway runs Docker containers with persistent storage for free ($5/month credit, which covers a small Node app at near-zero cost).
+Run the backend on your own machine and expose it via **Cloudflare Tunnel** — free, no credit card, no cloud server.
 
-### Step 1 — Commit the Docker setup
+### Prerequisites
 
-```bash
-git add backend/Dockerfile docker-compose.yml nginx.conf README.md
-git commit -m "Add Docker and deployment config"
-git push
+Download `cloudflared.exe` into the project root:
+```powershell
+Invoke-WebRequest -Uri "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe" -OutFile "cloudflared.exe"
 ```
 
-### Step 2 — Create a Railway project
+### Quick tunnels (temporary URLs, change on restart)
 
-1. Go to [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub repo**
-2. Select your repository
-3. Railway will ask for a **Root Directory** — type `backend`
-4. It will detect the `Dockerfile` automatically
+Open two PowerShell terminals in the project folder:
 
-### Step 3 — Add a persistent volume
+```powershell
+# Terminal 1 — backend API
+.\cloudflared.exe tunnel --url http://localhost:3001 --loglevel warn
 
-Without this step, the SQLite database resets every time Railway redeploys.
+# Terminal 2 — NocoDB admin
+.\cloudflared.exe tunnel --url http://localhost:8081 --loglevel warn
+```
 
-1. In your Railway project, click on the service
-2. Go to **Settings** → **Volumes** → **Add Volume**
-3. Set the **Mount Path** to `/data`
+Each prints a `https://*.trycloudflare.com` URL. Set the backend URL as `BACKEND_URL` in CF Pages and redeploy. Share the NocoDB URL with your team.
 
-### Step 4 — Set environment variables
+### Named tunnels (permanent URLs, requires a domain on Cloudflare)
 
-In Railway → **Variables** tab, add these one by one:
+```powershell
+# One-time setup
+.\cloudflared.exe tunnel login
+.\cloudflared.exe tunnel create memorylane
+# Copy the tunnel ID from the output
 
-| Variable | Value |
-|----------|-------|
-| `NODE_ENV` | `production` |
-| `ALLOWED_ORIGINS` | `https://memorylane-abc.pages.dev` (your Cloudflare URL) |
-| `ADMIN_TOKEN_HASH` | The hash from `node scripts/setup-admin.js` |
-| `RATE_HMAC_SECRET` | The secret from `node scripts/setup-admin.js` |
+.\cloudflared.exe tunnel route dns memorylane api.yourdomain.com
+.\cloudflared.exe tunnel route dns memorylane admin.yourdomain.com
+```
 
-> Run `node scripts/setup-admin.js` locally if you need fresh values. Store the raw admin token in your password manager — it never goes into Railway or GitHub.
+Edit `cloudflared-config.yml` — replace `<TUNNEL_ID>` and `yourdomain.com`, then:
 
-### Step 5 — Get your Railway URL
+```powershell
+# Run tunnel
+.\cloudflared.exe tunnel --config cloudflared-config.yml run
 
-Railway gives you a public URL like `https://memorylane-production.up.railway.app`. You can verify the backend is running by visiting `/health` in a browser.
+# Or install as a Windows service (auto-starts on boot) — run as Administrator
+.\cloudflared.exe service install --config C:\path\to\cloudflared-config.yml
+Start-Service cloudflared
+```
 
-> **Note**: The frontend is not yet wired to call the backend API — submitted memories still only live in-browser. Wiring up the API is the next development step (a ~5 line change in `app/app.jsx`).
+Set `BACKEND_URL=https://api.yourdomain.com` in CF Pages and redeploy.
 
 ---
 
-## Open-source & data privacy
+## Alternative: backend on Koyeb
 
-**Short answer: No, people cannot see submitted memories from GitHub.**
+If you want the backend fully cloud-hosted (no local machine required) without a credit card:
 
-Here is exactly why, layer by layer.
+1. Sign up at [koyeb.com](https://koyeb.com) — no CC required
+2. **New App → GitHub** → select this repo
+3. Settings:
+   - **Builder:** Buildpack
+   - **Working directory:** `backend`
+   - **Run command:** `node server.js`
+   - **Port:** `3001`
+4. Environment variables:
 
-### What GitHub stores (and is fine to be public)
+   | Key | Value |
+   |-----|-------|
+   | `NODE_ENV` | `production` |
+   | `BIND_ADDR` | `0.0.0.0` |
+   | `RATE_HMAC_SECRET` | from `node scripts/setup-admin.js` |
+   | `ADMIN_TOKEN_HASH` | from `node scripts/setup-admin.js` |
+   | `ALLOWED_ORIGINS` | your `*.pages.dev` URL |
 
-| File | Contains | Safe? |
-|------|----------|-------|
-| All `app/*.jsx` files | UI code, 37 seed memories (publicly known) | ✅ Intended |
-| `backend/*.js` | API code, validation logic | ✅ Intended |
-| `backend/.env.example` | Placeholder values only, no real secrets | ✅ Safe |
-| `backend/package.json` | Dependency list | ✅ Safe |
+5. Deploy → set the `*.koyeb.app` URL as `BACKEND_URL` in CF Pages
 
-### What GitHub never sees (blocked by .gitignore)
-
-| Path | Contains |
-|------|----------|
-| `backend/.env` | Your real `ADMIN_TOKEN_HASH` and `RATE_HMAC_SECRET` |
-| `backend/memories.db` | Every submitted memory |
-| `backend/uploads/` | All uploaded photos |
-
-### What the public API exposes (and is intentional)
-
-The deployed backend has one unauthenticated endpoint: `GET /api/memories`. It returns only memories that a moderator has explicitly approved. Unreviewed submissions are invisible to everyone except a moderator holding the admin token.
-
-This means:
-- A user who submits a sensitive memory is not exposed until a human moderator decides it is safe to publish
-- Anyone on the internet can read approved memories — that is by design for an open archive
-- The moderation queue (`GET /api/moderate/queue`) requires the admin Bearer token, which only exists in Railway's environment variables and your password manager
-
-### The one real risk: accidentally committing .env
-
-If `backend/.env` was ever committed before the `.gitignore` was in place, the secrets would be in git history. Check this now:
-
-```bash
-git log --all --full-history -- backend/.env
-```
-
-If that command returns nothing, you are clean. If it returns any commits, rotate your secrets immediately by running `node scripts/setup-admin.js` again and updating Railway's Variables tab.
-
-GitHub's [secret scanning](https://docs.github.com/en/code-security/secret-scanning) will also alert you automatically if a token pattern is detected in a push.
-
-### Photo privacy after approval
-
-EXIF metadata (GPS coordinates, device model, capture timestamp) is stripped server-side before any image is stored. The image *content* is public once approved. Advise contributors not to photograph things that would identify their home address, face, or anyone else's — the photo appears on the map.
+> **Note:** Koyeb free tier has no persistent volume. The SQLite DB resets on redeploy. The app falls back to the 22 built-in seed memories automatically. For persistent storage, add a Koyeb volume or migrate to Turso (free SQLite-over-HTTP).
 
 ---
 
 ## Environment variables reference
 
-All variables live in `backend/.env` (local) or Railway's Variables tab (production).
+All variables go in `backend/.env` (local) or the hosting provider's dashboard (production).
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `PORT` | No | `3001` | Port the API listens on |
-| `BIND_ADDR` | No | `127.0.0.1` | Set to `0.0.0.0` inside Docker |
-| `NODE_ENV` | No | `development` | Set to `production` on Railway |
-| `ALLOWED_ORIGINS` | Yes | `null` | Comma-separated list of allowed CORS origins. Use `null` for file:// in local dev. Set to your Cloudflare URL in production. |
-| `RATE_HMAC_SECRET` | Yes | — | Random 32-byte hex string. Used to derive rate-limit pseudonyms from IPs without storing IPs. Rotate every 30 days. |
-| `ADMIN_TOKEN_HASH` | Yes | — | SHA-256 hash of your admin Bearer token. The raw token is never stored anywhere. |
-| `DB_PATH` | No | `./memories.db` | SQLite database file path. Set to `/data/memories.db` in Docker/Railway. |
-| `UPLOADS_DIR` | No | `./uploads` | Directory for EXIF-stripped photos. Set to `/data/uploads` in Docker/Railway. |
+| `BIND_ADDR` | No | `127.0.0.1` | Set to `0.0.0.0` in Docker or any cloud host |
+| `NODE_ENV` | No | `development` | Set to `production` when deployed |
+| `ALLOWED_ORIGINS` | Yes | `null` | Comma-separated CORS origins. Use `null` for local `file://` dev. Set to your CF Pages URL in production. |
+| `RATE_HMAC_SECRET` | Yes | — | Random 32-byte hex. Derives rate-limit tokens from IPs without storing IPs. Rotate every 30 days. |
+| `ADMIN_TOKEN_HASH` | Yes | — | SHA-256 hash of your admin Bearer token. The raw token is never stored. |
+| `DB_PATH` | No | `./memories.db` | SQLite path. Set to `/data/memories.db` in Docker. |
+| `UPLOADS_DIR` | No | `./uploads` | Photo storage dir. Set to `/data/uploads` in Docker. |
 
-Generate `RATE_HMAC_SECRET` and `ADMIN_TOKEN_HASH` together:
+Generate `RATE_HMAC_SECRET` and `ADMIN_TOKEN_HASH` in one step:
 
 ```bash
 cd backend && node scripts/setup-admin.js
 ```
+
+---
+
+## Data privacy
+
+**Submitted memories are never visible from GitHub.**
+
+| What GitHub stores | Safe? |
+|--------------------|-------|
+| `app/*.jsx` — UI code + 22 seed memories (public domain content) | ✅ |
+| `backend/*.js` — API logic | ✅ |
+| `backend/.env.example` — placeholder values only | ✅ |
+
+| What `.gitignore` blocks | Contains |
+|--------------------------|----------|
+| `backend/.env` | Real secrets (`ADMIN_TOKEN_HASH`, `RATE_HMAC_SECRET`) |
+| `backend/*.db` | Every submitted memory |
+| `backend/uploads/` | All uploaded photos |
+
+**Moderation gate:** `GET /api/memories` returns only memories with `approved = 1`. Submissions sit in the pending queue, invisible to everyone except a moderator with the admin token, until explicitly approved.
+
+**Photo privacy:** EXIF metadata (GPS, device model, timestamp) is stripped server-side via `sharp` before any image is stored. The image content is public once approved.
+
+**Check for accidental .env commits:**
+
+```bash
+git log --all --full-history -- backend/.env
+```
+
+If this returns any output, rotate your secrets immediately with `node scripts/setup-admin.js` and update all environment variable settings.
