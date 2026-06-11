@@ -13,7 +13,12 @@
       "Bash(git -C \"c:/Users/NinaTran/Downloads/aos/MemoriesLane\" remote -v)",
       "Bash(node scripts/setup-admin.js)",
       "Bash(git commit -m ' *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(git -C \"c:/Users/NinaTran/Downloads/aos/MemoriesLane\" config user.name)",
+      "Bash(git -C \"c:/Users/NinaTran/Downloads/aos/MemoriesLane\" config user.email)",
+      "Bash(git -C \"c:/Users/NinaTran/Downloads/aos/MemoriesLane\" config --list)",
+      "Bash(cmdkey /list)",
+      "Bash(findstr -i github)"
     ]
   }
 }
