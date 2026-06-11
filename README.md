@@ -1,4 +1,4 @@
-# Miền Ký Ức — MemoriesLane
+# Miền Ký Ức — memorylane
 
 A collective, anonymous civic memory archive. People pin stories to a map of Vietnamese cities, documenting lived experiences around urban restructuring and displacement (2026–2045 relocation zone proposals).
 
@@ -22,9 +22,9 @@ Built with Leaflet, React 18, and Express/SQLite. No build step — the frontend
 ## Project structure
 
 ```
-MemoriesLane/
-├── index.html          ← entry point (same file as MemoriesLane.html)
-├── MemoriesLane.html   ← original file, kept for reference
+memorylane/
+├── index.html          ← entry point (same file as memorylane.html)
+├── memorylane.html   ← original file, kept for reference
 ├── app/
 │   ├── data.jsx        ← seed memories, i18n strings, utilities
 │   ├── map.jsx         ← Leaflet map, markers, drawing
@@ -172,7 +172,7 @@ The frontend is static files — no build step, no server needed. Cloudflare Pag
 If you haven't already, create a new repository on [github.com](https://github.com/new), then:
 
 ```bash
-git remote add origin https://github.com/YOUR_USERNAME/MemoriesLane.git
+git remote add origin https://github.com/YOUR_USERNAME/memorylane.git
 git push -u origin main
 ```
 
@@ -186,7 +186,7 @@ git push -u origin main
    - **Build output directory** — type `/` (just a forward slash — the repo root)
 5. Click **Save and Deploy**
 
-Cloudflare Pages gives you a URL like `https://memorieslane-abc.pages.dev`.
+Cloudflare Pages gives you a URL like `https://memorylane-abc.pages.dev`.
 
 Every time you push to `main`, Cloudflare redeploys automatically.
 
@@ -228,7 +228,7 @@ In Railway → **Variables** tab, add these one by one:
 | Variable | Value |
 |----------|-------|
 | `NODE_ENV` | `production` |
-| `ALLOWED_ORIGINS` | `https://memorieslane-abc.pages.dev` (your Cloudflare URL) |
+| `ALLOWED_ORIGINS` | `https://memorylane-abc.pages.dev` (your Cloudflare URL) |
 | `ADMIN_TOKEN_HASH` | The hash from `node scripts/setup-admin.js` |
 | `RATE_HMAC_SECRET` | The secret from `node scripts/setup-admin.js` |
 
@@ -236,7 +236,7 @@ In Railway → **Variables** tab, add these one by one:
 
 ### Step 5 — Get your Railway URL
 
-Railway gives you a public URL like `https://memorieslane-production.up.railway.app`. You can verify the backend is running by visiting `/health` in a browser.
+Railway gives you a public URL like `https://memorylane-production.up.railway.app`. You can verify the backend is running by visiting `/health` in a browser.
 
 > **Note**: The frontend is not yet wired to call the backend API — submitted memories still only live in-browser. Wiring up the API is the next development step (a ~5 line change in `app/app.jsx`).
 

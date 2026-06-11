@@ -1,4 +1,4 @@
-# MemoriesLane — Backend
+# memorylane — Backend
 
 A minimal Express/SQLite API for the civic memory archive. Designed around anonymity as a first-class constraint.
 

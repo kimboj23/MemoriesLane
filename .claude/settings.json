@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s -X POST http://localhost:3001/api/memories -H 'Content-Type: application/json' -d '{\"lat\":21.02,\"lng\":105.85,\"vi\":\"test\",\"en\":\"test\",\"year\":2020,\"cat\":\"personal\",\"ward\":\"test\"}')",
+      "Bash(curl -s \"http://localhost:3001/api/memories\")",
+      "Bash(curl -s http://localhost:8080)",
+      "Bash(node /tmp/test_backend_wired.js)",
+      "Bash(python -m json.tool)",
+      "Bash(docker exec *)",
+      "Bash(curl -s http://localhost:8081/api/v1/health)",
+      "Bash(docker volume *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8081)",
+      "Bash(git -C \"c:/Users/NinaTran/Downloads/aos/MemoriesLane\" remote -v)",
+      "Bash(node scripts/setup-admin.js)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)"
+    ]
+  }
+}
