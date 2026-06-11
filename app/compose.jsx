@@ -54,7 +54,7 @@ function ComposeSheet({ point, lang, accent, gold, city, onSubmit, onClose, near
     const file = e.target.files && e.target.files[0];
     if (!file) return;
     setOptimizing(true);
-    try { setPhoto(await compressImage(file, 1280, 0.7)); } catch (_) { /* ignore */ }
+    try { setPhoto(await compressImage(file, 1280, 0.7)); } catch (_) { alert(t.photoError || (lang === "vi" ? "Không thể đọc ảnh. Hãy thử tệp khác." : "Could not read image. Try a different file.")); }
     setOptimizing(false);
   };
 

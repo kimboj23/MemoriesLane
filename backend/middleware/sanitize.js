@@ -14,6 +14,11 @@ function stripTags(str) {
   return String(str).replace(/<[^>]*>/g, "").trim();
 }
 
+const HTML_ENTITIES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+function escapeHtml(str) {
+  return str.replace(/[&<>"']/g, (c) => HTML_ENTITIES[c]);
+}
+
 // Remove null bytes and control characters (except newline/tab) that can
 // cause issues in SQLite and downstream rendering.
 function stripControl(str) {
@@ -74,8 +79,8 @@ function validateSubmission(body) {
   if (!text_vi || text_vi.length < 2) errors.push("vi text must be at least 2 characters");
 
   const ward = clean(body.ward, 100) || null;
-  const date_label = clean(body.date, 120) || null;
-  const date_label_en = clean(body.dateEn, 120) || null;
+  const date_label = clean(body.date, 120) ? escapeHtml(clean(body.date, 120)) : null;
+  const date_label_en = clean(body.dateEn, 120) ? escapeHtml(clean(body.dateEn, 120)) : null;
 
   const media_type = VALID_MEDIA.has(body.media) ? body.media : "text";
 

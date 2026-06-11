@@ -79,7 +79,7 @@ async function processAndStoreImage(dataUrl, memoryId) {
 // ---------------------------------------------------------------------------
 // POST /api/memories
 // ---------------------------------------------------------------------------
-router.post("/", rateLimit(5), async (req, res, next) => {
+router.post("/", rateLimit(5, "submit"), async (req, res, next) => {
   try {
     const validation = validateSubmission(req.body);
     if (!validation.ok) {
@@ -132,16 +132,19 @@ router.post("/", rateLimit(5), async (req, res, next) => {
 // ---------------------------------------------------------------------------
 // GET /api/memories
 // ---------------------------------------------------------------------------
-router.get("/", (req, res, next) => {
+const PAGE_SIZE = 500; // max memories returned per request
+
+router.get("/", rateLimit(120, "read"), (req, res, next) => {
   try {
     const city = req.query.city || null;
     const minYear = parseInt(req.query.minYear, 10) || 1985;
     const maxYear = parseInt(req.query.maxYear, 10) || 2045;
+    const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
 
     if (minYear > maxYear) return res.status(400).json({ error: "minYear must be ≤ maxYear" });
 
-    const rows = queries.publicList(city, minYear, maxYear);
-    res.json({ memories: rows });
+    const rows = queries.publicList(city, minYear, maxYear, PAGE_SIZE, offset);
+    res.json({ memories: rows, offset, limit: PAGE_SIZE, hasMore: rows.length === PAGE_SIZE });
   } catch (err) {
     next(err);
   }

@@ -23,7 +23,10 @@
       "PowerShell(Get-Command cloudflared -ErrorAction SilentlyContinue; Get-ChildItem \"$env:LOCALAPPDATA\\\\Microsoft\\\\WinGet\\\\Packages\" -Recurse -Filter \"cloudflared.exe\" -ErrorAction SilentlyContinue | Select-Object FullName)",
       "PowerShell(Get-ChildItem \"C:\\\\Program Files\", \"$env:ProgramFiles\\(x86\\)\", \"$env:LOCALAPPDATA\" -Recurse -Filter \"cloudflared.exe\" -ErrorAction SilentlyContinue | Select-Object FullName)",
       "PowerShell(Get-ChildItem \"C:\\\\ProgramData\\\\chocolatey\\\\bin\", \"C:\\\\Windows\\\\System32\", \"$env:USERPROFILE\\\\scoop\\\\shims\" -Filter \"cloudflared.exe\" -ErrorAction SilentlyContinue | Select-Object FullName)",
-      "PowerShell(Invoke-WebRequest -Uri \"https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe\" -OutFile \"C:\\\\Users\\\\NinaTran\\\\Downloads\\\\aos\\\\MemoriesLane\\\\cloudflared.exe\" -UseBasicParsing)"
+      "PowerShell(Invoke-WebRequest -Uri \"https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe\" -OutFile \"C:\\\\Users\\\\NinaTran\\\\Downloads\\\\aos\\\\MemoriesLane\\\\cloudflared.exe\" -UseBasicParsing)",
+      "Bash(node -e \"const d=require\\('fs'\\).readFileSync\\('/dev/stdin','utf8'\\);const j=JSON.parse\\(d\\);console.log\\('total:',j.memories.length,'cities:',{...j.memories.reduce\\(\\(a,m\\)=>{a[m.city]=\\(a[m.city]||0\\)+1;return a},{}\\)}\\)\")",
+      "Bash(node -e \"process.stdin.resume\\(\\);let d='';process.stdin.on\\('data',c=>d+=c\\);process.stdin.on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\);console.log\\('count:',j.memories.length\\);}\\)\")",
+      "Bash(node -e \"process.stdin.resume\\(\\);let d='';process.stdin.on\\('data',c=>d+=c\\);process.stdin.on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\);console.log\\('count:',j.memories.length,'hasMore:',j.hasMore,'offset:',j.offset,'limit:',j.limit\\);}\\)\")"
     ]
   }
 }

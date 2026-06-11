@@ -211,7 +211,7 @@ function App() {
         if (data && data.memories && data.memories.length > 0)
           setMemories(data.memories.map(fromApi));
       })
-      .catch(() => {});
+      .catch((e) => console.warn("Failed to load memories from API:", e));
   }, []);
   const [composing, setComposing] = React.useState(false);
   const [placePoint, setPlacePoint] = React.useState(null);
@@ -328,7 +328,7 @@ function App() {
     const others = memories.filter((x) => x.id !== cur.id);
     const near = others.sort((a, b) => dist(cur, a) - dist(cur, b)).slice(0, 6);
     const pick = near[Math.floor(Math.random() * Math.min(4, near.length))] || others[0];
-    if (pick) wanderHist.current.push(cur);
+    if (pick && wanderHist.current.length < 100) wanderHist.current.push(cur);
     return pick || cur;
   });
   const wanderPrev = () => { const p = wanderHist.current.pop(); if (p) setSelected(p); else wanderNext(); };
@@ -347,14 +347,32 @@ function App() {
         </div>
         <div className="topbar-right">
           <span className="voices"><b>{scopeMemories.length}</b> {S.voices}</span>
-          <button className={"pill-btn " + (research ? "active" : "")} onClick={() => { setLayersOpen(false); if (research) closeResearch(); else setResearch(true); }}>
-            {S.research}
+          <button className={"pill-btn icon-btn " + (research ? "active" : "")}
+            onClick={() => { setLayersOpen(false); if (research) closeResearch(); else setResearch(true); }}
+            title={S.research} aria-label={S.research}>
+            <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+              <circle cx="6.5" cy="6.5" r="4"/>
+              <line x1="9.7" y1="9.7" x2="13" y2="13"/>
+            </svg>
           </button>
-          <button className={"pill-btn " + (layersOpen ? "active" : "")} onClick={() => setLayersOpen((v) => !v)}>
-            {lang === "vi" ? "Lớp" : "Layers"}
+          <button className={"pill-btn icon-btn " + (layersOpen ? "active" : "")}
+            onClick={() => setLayersOpen((v) => !v)}
+            title={lang === "vi" ? "Lớp bản đồ" : "Map layers"} aria-label={lang === "vi" ? "Lớp bản đồ" : "Map layers"}>
+            <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="1.5,5.5 7.5,2 13.5,5.5 7.5,9"/>
+              <polyline points="1.5,9 7.5,12.5 13.5,9"/>
+            </svg>
           </button>
           <button className="pill-btn" onClick={() => setLang(lang === "vi" ? "en" : "vi")}>{S.langLabel}</button>
-          <button className="pill-btn ghost" onClick={() => { setSelected(null); setComposing(false); setPlacePoint(null); setLayersOpen(false); setAboutOpen(true); }}>{S.menu}</button>
+          <button className="pill-btn icon-btn ghost"
+            onClick={() => { setSelected(null); setComposing(false); setPlacePoint(null); setLayersOpen(false); setAboutOpen(true); }}
+            title={S.menu} aria-label={S.menu}>
+            <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+              <circle cx="7.5" cy="7.5" r="5.5"/>
+              <line x1="7.5" y1="5" x2="7.5" y2="5.1" strokeWidth="2.2"/>
+              <line x1="7.5" y1="7.5" x2="7.5" y2="10.5"/>
+            </svg>
+          </button>
         </div>
         {layersOpen && (
           <LayerControl lang={lang} basemap={basemap} theme={theme}

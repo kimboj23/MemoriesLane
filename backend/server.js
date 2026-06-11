@@ -75,9 +75,9 @@ app.use(
 
 app.use(cors({ origin: corsOrigin, methods: ["GET", "POST"], allowedHeaders: ["Content-Type", "Authorization"], maxAge: 600 }));
 
-// Body parsing — 1 MB covers base64-encoded compressed images.
-// express.json rejects anything larger with a 413 before our code runs.
-app.use(express.json({ limit: "1mb" }));
+// Body parsing — 3 MB covers base64-encoded compressed images (a 1.5 MB binary
+// image encodes to ~2 MB in base64, plus JSON framing overhead).
+app.use(express.json({ limit: "3mb" }));
 
 // Do not advertise the server technology.
 app.disable("x-powered-by");

@@ -17,7 +17,8 @@ const WINDOW_MS = 60 * 60 * 1000; // 1 hour
 
 // In-process counter store.
 // For multi-process deployments, replace with Redis INCR + EXPIRE.
-const counters = new Map(); // pseudonym → count
+// Separate counter map per namespace so read and write limits don't share budget.
+const countersByNs = new Map(); // namespace → Map(pseudonym → count)
 const windowAt = { v: 0 };
 
 function currentWindow() {
@@ -27,7 +28,7 @@ function currentWindow() {
 function sweep() {
   const win = currentWindow();
   if (win !== windowAt.v) {
-    counters.clear();
+    countersByNs.clear();
     windowAt.v = win;
   }
 }
@@ -37,6 +38,12 @@ function pseudonym(ip) {
   // HMAC ensures: given the hash you cannot recover the IP.
   // The window number is mixed in so the same secret produces different
   // pseudonyms each hour — old entries self-expire.
+  //
+  // NOTE: With Cloudflare Tunnel, cloudflared sets X-Forwarded-For to the
+  // real client IP. Express reads req.ip from that header when trust proxy is
+  // set. To prevent IP spoofing via forged X-Forwarded-For, configure
+  // cloudflared's Access policies or use a named tunnel with Cloudflare WAF
+  // to strip and re-set the header before it reaches the backend.
   return crypto
     .createHmac("sha256", SECRET() + win)
     .update(ip || "unknown")
@@ -45,16 +52,18 @@ function pseudonym(ip) {
 }
 
 /**
- * Returns an Express middleware that limits to `max` requests per WINDOW_MS.
+ * Returns an Express middleware that limits to `max` requests per WINDOW_MS
+ * within the given `namespace` (defaults to "default").
+ * Namespacing ensures read and write endpoint limits are independent.
  * On breach: responds 429, does NOT log the IP.
  */
-function rateLimit(max = 10) {
+function rateLimit(max = 10, namespace = "default") {
   return (req, res, next) => {
     sweep();
-    // X-Forwarded-For is set by a trusted reverse proxy; in production
-    // configure your proxy to overwrite (not append) this header.
     const ip = req.ip || req.socket.remoteAddress || "";
     const key = pseudonym(ip);
+    if (!countersByNs.has(namespace)) countersByNs.set(namespace, new Map());
+    const counters = countersByNs.get(namespace);
     const count = (counters.get(key) || 0) + 1;
     counters.set(key, count);
 

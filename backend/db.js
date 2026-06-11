@@ -59,6 +59,15 @@ function initDb() {
     CREATE INDEX IF NOT EXISTS idx_mem_pending
       ON memories(approved, rejected, submit_date)
       WHERE approved = 0 AND rejected = 0;
+
+    CREATE INDEX IF NOT EXISTS idx_mem_approved_year
+      ON memories(approved, year);
+    CREATE INDEX IF NOT EXISTS idx_mem_lang
+      ON memories(lang);
+    CREATE INDEX IF NOT EXISTS idx_mem_cat
+      ON memories(cat);
+    CREATE INDEX IF NOT EXISTS idx_mem_media
+      ON memories(media_type);
   `);
 
   return db;
@@ -97,6 +106,7 @@ function stmts_() {
         AND year >= :min_year
         AND year <= :max_year
       ORDER BY year DESC
+      LIMIT :limit OFFSET :offset
     `),
 
     publicById: d.prepare(`
@@ -137,7 +147,7 @@ function stmts_() {
 // Public API used by route handlers
 const queries = {
   insert:     (row)             => stmts_().insert.run(row),
-  publicList: (city, minY, maxY) => stmts_().publicList.all({ city: city || null, min_year: minY, max_year: maxY }),
+  publicList: (city, minY, maxY, limit = 500, offset = 0) => stmts_().publicList.all({ city: city || null, min_year: minY, max_year: maxY, limit, offset }),
   publicById: (id)              => stmts_().publicById.get(id),
   photoPath:  (id)              => stmts_().photoPath.get(id),
   pending:    ()                => stmts_().pending.all(),

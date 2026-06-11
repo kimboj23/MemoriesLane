@@ -20,7 +20,7 @@ const router = express.Router();
 
 // Apply auth check and a conservative rate limit to every moderation route.
 router.use(requireAdmin);
-router.use(rateLimit(60)); // 60 moderation actions per hour per token-holder
+router.use(rateLimit(60, "moderate")); // 60 moderation actions per hour, separate namespace
 
 // ---------------------------------------------------------------------------
 // GET /api/moderate/queue
