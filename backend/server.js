@@ -6,7 +6,9 @@ const cors = require("cors");
 const { initDb } = require("./db");
 const memoriesRouter = require("./routes/memories");
 const moderateRouter = require("./routes/moderate");
-const casesRouter = require("./routes/cases");
+const casesRouter    = require("./routes/cases");
+const topicsRouter   = require("./routes/topics");
+const feedRouter     = require("./routes/feed");
 
 const PORT = parseInt(process.env.PORT, 10) || 3001;
 const BIND = process.env.BIND_ADDR || "127.0.0.1"; // localhost-only by default
@@ -92,7 +94,9 @@ app.set("trust proxy", IS_PROD ? 1 : "loopback");
 // ---------------------------------------------------------------------------
 app.use("/api/memories", memoriesRouter);
 app.use("/api/moderate", moderateRouter);
-app.use("/api/cases", casesRouter);
+app.use("/api/cases",    casesRouter);
+app.use("/api/topics",   topicsRouter);
+app.use("/api/feed",     feedRouter);
 
 app.get("/health", (req, res) => res.json({ ok: true }));
 app.get("/", (req, res) => res.json({ service: "MemoriesLane API", status: "ok", endpoints: ["/api/memories", "/health"] }));
@@ -111,13 +115,20 @@ app.use((err, req, res, next) => {
 // ---------------------------------------------------------------------------
 // Start
 // ---------------------------------------------------------------------------
-assertEnv();
-initDb();
-app.listen(PORT, BIND, () => {
-  console.log(`[server] memorylane backend listening on ${BIND}:${PORT} (${NODE_ENV})`);
-  if (!IS_PROD) {
-    console.log("[server] Development mode — copy .env.example to .env and set RATE_HMAC_SECRET and ADMIN_TOKEN_HASH");
-  }
+async function start() {
+  assertEnv();
+  await initDb();
+  app.listen(PORT, BIND, () => {
+    console.log(`[server] memorylane backend listening on ${BIND}:${PORT} (${NODE_ENV})`);
+    if (!IS_PROD) {
+      console.log("[server] Development mode — copy .env.example to .env and set secrets");
+    }
+  });
+}
+
+start().catch((err) => {
+  console.error("[fatal]", err.message);
+  process.exit(1);
 });
 
 module.exports = app; // exported for testing

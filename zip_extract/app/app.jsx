@@ -173,27 +173,6 @@ function Timeline({ lang, range, count, peaks, onChange }) {
   );
 }
 
-// Map backend column names to the shape the frontend expects.
-// Backend uses text_vi/text_en/has_photo/date_label; frontend uses vi/en/photo/date.
-function fromApi(r) {
-  return {
-    id: r.id,
-    lat: r.lat, lng: r.lng,
-    city: r.city, ward: r.ward,
-    cat: r.cat,
-    year: r.year, month: r.month, day: r.day,
-    date: r.date_label || String(r.year),
-    dateEn: r.date_label_en || String(r.year),
-    lang: r.lang,
-    vi: r.text_vi,
-    en: r.text_en || r.text_vi,
-    photo: !!r.has_photo,
-    media: r.media_type,
-    caseId: r.case_id || null,
-    topics: Array.isArray(r.topics) ? r.topics : [],
-  };
-}
-
 function App() {
   const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
   const [lang, setLang] = React.useState("vi");
@@ -204,35 +183,17 @@ function App() {
   const [cityOpen, setCityOpen] = React.useState(false);
   const [range, setRange] = React.useState([MIN_YEAR, MAX_YEAR]);
   const [memories, setMemories] = React.useState(() => MEMORIES.slice());
-
-  // Load approved memories from backend; fall back to static seed data if empty.
-  React.useEffect(() => {
-    fetch("/api/memories")
-      .then((r) => r.ok ? r.json() : null)
-      .then((data) => {
-        if (data && data.memories && data.memories.length > 0)
-          setMemories(data.memories.map(fromApi));
-      })
-      .catch((e) => console.warn("Failed to load memories from API:", e));
-  }, []);
-
   const [composing, setComposing] = React.useState(false);
   const [placePoint, setPlacePoint] = React.useState(null);
   const [selected, setSelected] = React.useState(null);
   const [aboutOpen, setAboutOpen] = React.useState(false);
-  const [openCaseId, setOpenCaseId] = React.useState(null);
-  const [caseProfile, setCaseProfile] = React.useState(null);
-  const [allTopics, setAllTopics] = React.useState([]);
   // --- research mode ---
   const [research, setResearch] = React.useState(false);
   const [exportOpen, setExportOpen] = React.useState(false);
   const [adv, setAdv] = React.useState({
     precision: "year", fM: null, fD: null, tM: null, tD: null,
-    query: "", cats: [], langs: [], content: [], status: "all", topics: [],
+    query: "", cats: [], langs: [], content: [], status: "all",
   });
-  const [listView, setListView] = React.useState(false);
-  const [feedItems, setFeedItems] = React.useState([]);
-  const [feedLoading, setFeedLoading] = React.useState(false);
   const [queryMode, setQueryMode] = React.useState(null);
   const [queryShape, setQueryShape] = React.useState(null);
   const [draftCount, setDraftCount] = React.useState(0);
@@ -244,50 +205,12 @@ function App() {
 
   React.useEffect(() => { document.documentElement.setAttribute("data-theme", theme); }, [theme]);
 
-  React.useEffect(() => {
-    if (!openCaseId) { setCaseProfile(null); return; }
-    fetch(`/api/cases/${encodeURIComponent(openCaseId)}`)
-      .then((r) => r.ok ? r.json() : null)
-      .then((data) => {
-        if (data && data.case) {
-          setCaseProfile({ caseData: data.case, memories: (data.memories || []).map(fromApi) });
-        } else {
-          setOpenCaseId(null);
-        }
-      })
-      .catch((e) => { console.warn("Failed to load case profile:", e); setOpenCaseId(null); });
-  }, [openCaseId]);
-
-  // Load rights-based topics for the filter bar (once on mount)
-  React.useEffect(() => {
-    fetch("/api/topics")
-      .then((r) => r.ok ? r.json() : null)
-      .then((data) => { if (data && data.topics) setAllTopics(data.topics); })
-      .catch(() => {});
-  }, []);
-
-  // Fetch unified feed whenever list view is active + any filter changes.
-  React.useEffect(() => {
-    if (!listView || city === "all") return;
-    setFeedLoading(true);
-    const p = new URLSearchParams();
-    if (city) p.set("city", city);
-    p.set("minYear", String(range[0]));
-    p.set("maxYear", String(range[1]));
-    if (adv.cats && adv.cats.length)   p.set("cats",   adv.cats.join(","));
-    if (adv.topics && adv.topics.length) p.set("topics", adv.topics.join(","));
-    fetch("/api/feed?" + p.toString())
-      .then((r) => r.ok ? r.json() : null)
-      .then((data) => { if (data) setFeedItems(data.items || []); })
-      .catch(() => {})
-      .finally(() => setFeedLoading(false));
-  }, [listView, city, range, adv.cats, adv.topics]);
-
   const [lo, hi] = range;
   const compiled = React.useMemo(() => compileQuery(adv.query), [adv.query]);
 
   // ---- multi-city scope (hub-and-spoke) ----
   const cityObj = city === "all" ? null : (CITY[city] || CITY.hanoi);
+  const zone = cityObj && cityObj.zone ? cityObj.zone : null;
   const cityCounts = React.useMemo(() => {
     const o = {}; CITIES.forEach((c) => (o[c.key] = 0));
     memories.forEach((m) => { const k = memoryCity(m); o[k] = (o[k] || 0) + 1; });
@@ -317,16 +240,15 @@ function App() {
       if (adv.status === "verified" && !isVerified(m)) return false;
       if (adv.status === "unverified" && isVerified(m)) return false;
       if (!compiled.test(searchHaystack(m))) return false;
-      if (adv.topics && adv.topics.length && !(m.topics && m.topics.some((t) => adv.topics.includes(t.slug)))) return false;
       return true;
     });
   }, [scopeMemories, lo, hi, adv, queryShape, compiled]);
   const visible = results;
-  const mapMemories = visible;
+  const showZone = hi >= 2026;
 
   const resetResearch = () => {
     onRangeReset();
-    setAdv({ precision: "year", fM: null, fD: null, tM: null, tD: null, query: "", cats: [], langs: [], content: [], status: "all", topics: [] });
+    setAdv({ precision: "year", fM: null, fD: null, tM: null, tD: null, query: "", cats: [], langs: [], content: [], status: "all" });
     setQueryMode(null); setQueryShape(null);
   };
   const onRangeReset = () => setRange([MIN_YEAR, MAX_YEAR]);
@@ -355,20 +277,13 @@ function App() {
       .slice(0, 3).map((x) => x.m);
   }, [placePoint, scopeMemories]);
 
-  const pickCity = (k) => { setCity(k); setCityOpen(false); setSelected(null); setComposing(false); setPlacePoint(null); setQueryShape(null); setQueryMode(null); if (k === "all") setListView(false); };
+  const pickCity = (k) => { setCity(k); setCityOpen(false); setSelected(null); setComposing(false); setPlacePoint(null); setQueryShape(null); setQueryMode(null); };
   const openCompose = () => { if (city === "all") setCity("hanoi"); setSelected(null); setAboutOpen(false); setLayersOpen(false); setComposing(true); setPlacePoint(null); };
   // Map clicks only set a location while actively composing (entered via the +
   // button). A click on the map never opens the form on its own.
   const mapClick = (p) => { if (city === "all" || !composing) return; setSelected(null); setAboutOpen(false); setLayersOpen(false); setPlacePoint(p); };
   const closeCompose = () => { setComposing(false); setPlacePoint(null); };
-  const submit = (mem) => {
-    setMemories((prev) => [...prev, mem]); // optimistic UI update
-    fetch("/api/memories", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(mem),
-    }).catch(() => {}); // silent — memory stays visible locally regardless
-  };
+  const submit = (mem) => setMemories((prev) => [...prev, mem]);
   const openMemory = (m) => { setComposing(false); setPlacePoint(null); wanderHist.current = []; setSelected(m); };
 
   const wanderNext = () => setSelected((cur) => {
@@ -376,7 +291,7 @@ function App() {
     const others = memories.filter((x) => x.id !== cur.id);
     const near = others.sort((a, b) => dist(cur, a) - dist(cur, b)).slice(0, 6);
     const pick = near[Math.floor(Math.random() * Math.min(4, near.length))] || others[0];
-    if (pick && wanderHist.current.length < 100) wanderHist.current.push(cur);
+    if (pick) wanderHist.current.push(cur);
     return pick || cur;
   });
   const wanderPrev = () => { const p = wanderHist.current.pop(); if (p) setSelected(p); else wanderNext(); };
@@ -395,52 +310,14 @@ function App() {
         </div>
         <div className="topbar-right">
           <span className="voices"><b>{scopeMemories.length}</b> {S.voices}</span>
-          {city !== "all" && (
-            <button
-              className={"pill-btn icon-btn" + (listView ? " active" : "")}
-              onClick={() => setListView((v) => !v)}
-              title={listView ? (lang === "vi" ? "Xem bản đồ" : "Map view") : (lang === "vi" ? "Xem danh sách" : "List view")}
-              aria-label={listView ? "Map view" : "List view"}>
-              {listView ? (
-                <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M1.5 7.5 C3.5 3, 11.5 3, 13.5 7.5 C11.5 12, 3.5 12, 1.5 7.5Z" />
-                  <circle cx="7.5" cy="7.5" r="2" />
-                </svg>
-              ) : (
-                <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-                  <line x1="2" y1="4" x2="13" y2="4" />
-                  <line x1="2" y1="7.5" x2="13" y2="7.5" />
-                  <line x1="2" y1="11" x2="13" y2="11" />
-                </svg>
-              )}
-            </button>
-          )}
-          <button className={"pill-btn icon-btn " + (research ? "active" : "")}
-            onClick={() => { setLayersOpen(false); if (research) closeResearch(); else setResearch(true); }}
-            title={S.research} aria-label={S.research}>
-            <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-              <circle cx="6.5" cy="6.5" r="4"/>
-              <line x1="9.7" y1="9.7" x2="13" y2="13"/>
-            </svg>
+          <button className={"pill-btn " + (research ? "active" : "")} onClick={() => { setLayersOpen(false); if (research) closeResearch(); else setResearch(true); }}>
+            {S.research}
           </button>
-          <button className={"pill-btn icon-btn " + (layersOpen ? "active" : "")}
-            onClick={() => setLayersOpen((v) => !v)}
-            title={lang === "vi" ? "Lớp bản đồ" : "Map layers"} aria-label={lang === "vi" ? "Lớp bản đồ" : "Map layers"}>
-            <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="1.5,5.5 7.5,2 13.5,5.5 7.5,9"/>
-              <polyline points="1.5,9 7.5,12.5 13.5,9"/>
-            </svg>
+          <button className={"pill-btn " + (layersOpen ? "active" : "")} onClick={() => setLayersOpen((v) => !v)}>
+            {lang === "vi" ? "Lớp" : "Layers"}
           </button>
           <button className="pill-btn" onClick={() => setLang(lang === "vi" ? "en" : "vi")}>{S.langLabel}</button>
-          <button className="pill-btn icon-btn ghost"
-            onClick={() => { setSelected(null); setComposing(false); setPlacePoint(null); setLayersOpen(false); setAboutOpen(true); }}
-            title={S.menu} aria-label={S.menu}>
-            <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-              <circle cx="7.5" cy="7.5" r="5.5"/>
-              <line x1="7.5" y1="5" x2="7.5" y2="5.1" strokeWidth="2.2"/>
-              <line x1="7.5" y1="7.5" x2="7.5" y2="10.5"/>
-            </svg>
-          </button>
+          <button className="pill-btn ghost" onClick={() => { setSelected(null); setComposing(false); setPlacePoint(null); setLayersOpen(false); setAboutOpen(true); }}>{S.menu}</button>
         </div>
         {layersOpen && (
           <LayerControl lang={lang} basemap={basemap} theme={theme}
@@ -464,24 +341,15 @@ function App() {
       )}
 
       <MapView
-        memories={city === "all" ? [] : mapMemories} placing={placePoint} onPlace={mapClick} onSelect={openMemory}
+        memories={city === "all" ? [] : visible} placing={placePoint} onPlace={mapClick} onSelect={openMemory}
         selectedId={selected && selected.id} placingMode={composing && !placePoint}
         focus={selected ? { lat: selected.lat, lng: selected.lng, id: selected.id } : null}
         basemap={basemap} accent={accent}
-        accumulation={t.accumulation} lang={lang}
+        accumulation={t.accumulation} showZone={showZone} lang={lang}
         queryMode={queryMode} queryShape={queryShape}
         onShape={(s) => { setQueryShape(s); setQueryMode(null); }}
         onDraftChange={setDraftCount} drawApiRef={drawApiRef}
-        cityObj={cityObj} overview={overview} onPickCity={pickCity} />
-
-      {listView && city !== "all" && (
-        <div className="list-overlay">
-          <FeedView
-            items={feedItems} lang={lang} loading={feedLoading}
-            onOpenMemory={openMemory}
-            onOpenCase={(id) => setOpenCaseId(id)} />
-        </div>
-      )}
+        cityObj={cityObj} zone={zone} overview={overview} onPickCity={pickCity} />
 
       {city === "all" && (
         <div className="nation-hint"><span className="nation-dot"></span>{S.nationHint}</div>
@@ -492,6 +360,16 @@ function App() {
           <span className="place-banner-n">①</span>
           <span>{S.placePrompt}</span>
           <button className="place-banner-x" onClick={closeCompose} aria-label={S.close}>✕</button>
+        </div>
+      )}
+
+      {!research && city !== "all" && cityObj && cityObj.zone && showZone && (
+        <div className="clearance-tag">
+          <span className="clearance-swatch"></span>
+          <div className="clearance-body">
+            <div className="clearance-name">{S.clearanceZone}</div>
+            <div className="clearance-sub">{S.clearanceNote}</div>
+          </div>
         </div>
       )}
 
@@ -516,8 +394,7 @@ function App() {
           queryShape={queryShape} setQueryShape={setQueryShape}
           draftCount={draftCount} drawApiRef={drawApiRef}
           onExport={() => setExportOpen(true)} onClose={closeResearch}
-          onResetAll={resetResearch}
-          allTopics={allTopics} />
+          onResetAll={resetResearch} />
       )}
 
       {exportOpen && (
@@ -531,16 +408,7 @@ function App() {
       )}
       {selected && (
         <MemoryDetail memory={selected} lang={lang}
-          onClose={() => setSelected(null)} onPrev={wanderPrev} onNext={wanderNext}
-          onOpenCase={(id) => setOpenCaseId(id)} />
-      )}
-      {caseProfile && (
-        <CaseProfile
-          caseData={caseProfile.caseData}
-          memories={caseProfile.memories}
-          lang={lang}
-          onClose={() => { setOpenCaseId(null); setCaseProfile(null); }}
-          onSelectMemory={(m) => { setOpenCaseId(null); setCaseProfile(null); setSelected(m); }} />
+          onClose={() => setSelected(null)} onPrev={wanderPrev} onNext={wanderNext} />
       )}
       {aboutOpen && <AboutPanel lang={lang} onClose={() => setAboutOpen(false)} />}
 

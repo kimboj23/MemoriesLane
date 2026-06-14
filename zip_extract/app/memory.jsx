@@ -21,7 +21,7 @@ function PhotoPlaceholder({ label }) {
   );
 }
 
-function MemoryDetail({ memory, lang, onClose, onPrev, onNext, onOpenCase }) {
+function MemoryDetail({ memory, lang, onClose, onPrev, onNext }) {
   const t = STR[lang];
   const m = memory;
   const c0 = catOf(m.cat);
@@ -75,33 +75,12 @@ function MemoryDetail({ memory, lang, onClose, onPrev, onNext, onOpenCase }) {
           )}
         </footer>
 
-        {m.topics && m.topics.length > 0 && (
-          <div className="read-topics">
-            {m.topics.map((t) => (
-              <span key={t.slug} className="topic-tag">
-                {lang === "vi" ? t.name_vi : t.name_en}
-              </span>
-            ))}
-          </div>
-        )}
-
-        {m.caseId && (
-          <div className="case-expand-banner">
-            <span className="case-expand-label">
-              {lang === "vi" ? "Thuộc hồ sơ vụ việc" : "Part of a documented case"}
-            </span>
-            <button className="case-expand-btn" onClick={() => onOpenCase && onOpenCase(m.caseId)}>
-              {lang === "vi" ? "Xem hồ sơ đầy đủ" : "View full case"} →
-            </button>
-          </div>
-        )}
+        <nav className="read-nav">
+          <button onClick={onPrev}>← {lang === "vi" ? "Lân cận" : "Wander"}</button>
+          <span className="read-wander">{lang === "vi" ? "lạc giữa những ký ức" : "drift through memories"}</span>
+          <button onClick={onNext}>{lang === "vi" ? "Lân cận" : "Wander"} →</button>
+        </nav>
       </div>
-
-      <nav className="read-nav">
-        <button onClick={onPrev}>← {lang === "vi" ? "Lân cận" : "Wander"}</button>
-        <span className="read-wander">{lang === "vi" ? "lạc giữa những ký ức" : "drift through memories"}</span>
-        <button onClick={onNext}>{lang === "vi" ? "Lân cận" : "Wander"} →</button>
-      </nav>
     </aside>
   );
 }

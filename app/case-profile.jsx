@@ -53,6 +53,51 @@ function CaseSectionTimeline({ section, lang }) {
   );
 }
 
+const ARC_TOOL_LABELS = {
+  "auto-archiver": "Auto-Archiver",
+  "archive-box": "Archive Box",
+};
+const ARC_MEDIA_GLYPHS = {
+  web: "⌘", social: "◎", video: "▷", document: "≡", image: "◫",
+};
+
+function ArchiveCard({ item, lang }) {
+  const tool = ARC_TOOL_LABELS[item.tool] || item.tool || "Archive";
+  const glyph = ARC_MEDIA_GLYPHS[item.mediaType] || "◦";
+  const title = lang === "vi" ? item.titleVi : (item.titleEn || item.titleVi);
+  const hasLinks = item.originalUrl || item.archivedUrl;
+  return (
+    <div className={`arc-card arc-card--${item.tool || "other"}`}>
+      <div className="arc-card-head">
+        <span className={`arc-tool-badge arc-tool--${item.tool || "other"}`}>{tool}</span>
+        <span className="arc-media-type"><span className="arc-glyph">{glyph}</span>{item.mediaType}</span>
+        {item.date && <span className="arc-date">{item.date}</span>}
+      </div>
+      <p className="arc-title">{title}</p>
+      {item.source && (
+        <div className="arc-source">
+          {item.source}{item.account ? <span className="arc-account"> · {item.account}</span> : null}
+        </div>
+      )}
+      {item.notes && <div className="arc-notes">{item.notes}</div>}
+      {hasLinks && (
+        <div className="arc-links">
+          {item.originalUrl && (
+            <a href={item.originalUrl} target="_blank" rel="noopener noreferrer" className="arc-link">
+              {lang === "vi" ? "Tài liệu gốc ↗" : "Original ↗"}
+            </a>
+          )}
+          {item.archivedUrl && (
+            <a href={item.archivedUrl} target="_blank" rel="noopener noreferrer" className="arc-link arc-link--saved">
+              {lang === "vi" ? "Bản lưu ↗" : "Archived ↗"}
+            </a>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CaseVoiceCard({ memory, lang, onSelect }) {
   const c0 = catOf(memory.cat);
   const text = lang === "vi" ? memory.vi : (memory.en || memory.vi);
@@ -106,6 +151,15 @@ function CaseProfile({ caseData, memories, lang, onClose, onSelectMemory }) {
           <div className="case-kicker">{lang === "vi" ? "Hồ sơ vụ việc" : "Case profile"}</div>
           <h1 className="case-title">{title}</h1>
           <p className="case-summary">{summary}</p>
+          {caseData.topics && caseData.topics.length > 0 && (
+            <div className="case-topics">
+              {caseData.topics.map((t) => (
+                <span key={t.slug} className="topic-tag topic-tag--case">
+                  {lang === "vi" ? t.name_vi : t.name_en}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="case-sections">
@@ -124,6 +178,24 @@ function CaseProfile({ caseData, memories, lang, onClose, onSelectMemory }) {
             <div className="case-voice-cards">
               {memories.map((m) => (
                 <CaseVoiceCard key={m.id} memory={m} lang={lang} onSelect={handleSelectVoice} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {Array.isArray(caseData.archives) && caseData.archives.length > 0 && (
+          <div className="case-voices-section case-archives-section">
+            <h2 className="case-voices-title">
+              {lang === "vi" ? "Tài liệu lưu trữ" : "Archived Materials"}
+            </h2>
+            <p className="case-archives-sub">
+              {lang === "vi"
+                ? "Tài liệu được thu thập và lưu trữ bởi nhóm biên tập thông qua Archive Box và Auto-Archiver."
+                : "Materials collected and preserved by the editorial team using Archive Box and Auto-Archiver."}
+            </p>
+            <div className="arc-grid">
+              {caseData.archives.map((item, i) => (
+                <ArchiveCard key={i} item={item} lang={lang} />
               ))}
             </div>
           </div>

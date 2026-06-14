@@ -1,8 +1,6 @@
 services:
 
   # ── Frontend ───────────────────────────────────────────────────────────────
-  # nginx serves the static HTML/JSX files and proxies /api to the backend.
-  # Open http://localhost:8080 in your browser.
   frontend:
     image: nginx:alpine
     ports:
@@ -14,41 +12,55 @@ services:
     depends_on:
       - backend
 
+  # ── PostgreSQL ─────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: memorylane
+      POSTGRES_PASSWORD: memorylane
+      POSTGRES_DB: memorylane
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"      # exposed so NocoDB UI and local psql can connect
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U memorylane"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   # ── Backend ────────────────────────────────────────────────────────────────
-  # Node.js API (Express + SQLite). Reads secrets from backend/.env.
-  # Database and uploaded photos are stored in the named volume below.
   backend:
     build: ./backend
-    env_file: ./backend/.env          # copy backend/.env.example → backend/.env first
+    env_file: ./backend/.env
     environment:
       - NODE_ENV=development
       - ALLOWED_ORIGINS=http://localhost:8080,null
       - BIND_ADDR=0.0.0.0
-      - DB_PATH=/data/memories.db     # store in the persistent volume (overrides .env)
-      - UPLOADS_DIR=/data/uploads     # same volume for photo uploads
+      - DATABASE_URL=postgresql://memorylane:memorylane@postgres:5432/memorylane
+      - UPLOADS_DIR=/data/uploads
     ports:
       - "3001:3001"
     volumes:
-      - memorylane-data:/data
+      - memorylane-uploads:/data/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
 
-  # ── NocoDB admin panel ─────────────────────────────────────────────────────
-  # Spreadsheet UI for the admin team: browse/query/edit memories, bulk import,
-  # approve rows, add notes/comments. Open http://localhost:8081
-  # First-time setup: create an account, then add a Base:
-  #   New Base → SQLite → File path: /data/memories.db
-  nocodb:
-    image: nocodb/nocodb:latest
+  # ── Adminer (Postgres admin UI) ────────────────────────────────────────────
+  # Open http://localhost:8081
+  # System: PostgreSQL, Server: postgres, User: memorylane,
+  # Password: memorylane, Database: memorylane
+  adminer:
+    image: adminer:latest
     ports:
       - "8081:8080"
-    volumes:
-      - memorylane-data:/data         # same volume → can open /data/memories.db
-      - nocodb-meta:/usr/app/data     # NocoDB's own metadata (separate)
     environment:
-      - NC_DISABLE_TELE=true
-      - NC_INVITE_ONLY_SIGNUP=true    # only the first account can sign up; blocks accidental extra accounts
+      - ADMINER_DEFAULT_SERVER=postgres
     depends_on:
-      - backend
+      postgres:
+        condition: service_healthy
 
 volumes:
-  memorylane-data:
-  nocodb-meta:
+  postgres-data:
+  memorylane-uploads:

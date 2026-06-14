@@ -82,7 +82,7 @@ Backing up the database is a manual step — copy the Docker volume contents per
 |---------|-----|-----------|
 | **Frontend (app)** | https://memorylane101.pages.dev/ | Cloudflare Pages — always on |
 | **Backend API** | via Cloudflare Tunnel → `localhost:3001` | local machine |
-| **NocoDB admin** | https://supplement-conduct-tied-config.trycloudflare.com/ | local machine via tunnel |
+| **Adminer admin** | https://financial-dimensional-pvc-matched.trycloudflare.com | local machine via tunnel |
 
 ### What happens when the local machine restarts
 

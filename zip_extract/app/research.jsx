@@ -99,7 +99,6 @@ function AdvancedSearch({
   total, resultCount, compiled,
   queryMode, setQueryMode, queryShape, setQueryShape, draftCount, drawApiRef,
   onExport, onClose, onResetAll,
-  allTopics,
 }) {
   const S = STR[lang];
   const patch = (p) => setAdv((a) => ({ ...a, ...p }));
@@ -253,24 +252,12 @@ function AdvancedSearch({
               options={[{ v: "all", label: S.stAll }, { v: "verified", label: S.stVer }, { v: "unverified", label: S.stUnver }]}
               onChange={(v) => patch({ status: v })} />
           </div>
-
-          {allTopics && allTopics.length > 0 && (
-            <div className="rs-facet">
-              <span className="rs-facet-cap">{lang === "vi" ? "Chủ đề quyền" : "Rights Topic"}</span>
-              <RSCheckChips
-                items={allTopics.map((t) => ({ v: t.slug, label: lang === "vi" ? t.name_vi : t.name_en }))}
-                selected={adv.topics || []}
-                onToggle={(v) => toggleIn("topics", v)} />
-            </div>
-          )}
         </section>
       </div>
 
       <footer className="rs-foot">
         <button className="rs-reset" onClick={onResetAll}>{S.resetAll}</button>
-        <button className="rs-view-btn" onClick={onClose}>
-          {lang === "vi" ? "Xem kết quả" : "View results"} →
-        </button>
+        <button className="rs-export-lg" onClick={onExport} disabled={resultCount === 0}>{S.exportView} ↓</button>
       </footer>
     </aside>
   );

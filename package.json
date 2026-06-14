@@ -1,0 +1,14 @@
+{
+  "name": "memorylane-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "babel app --out-dir app --extensions .jsx --out-file-extension .js",
+    "dev": "babel app --out-dir app --extensions .jsx --out-file-extension .js --watch"
+  },
+  "devDependencies": {
+    "@babel/cli": "^7.24.0",
+    "@babel/core": "^7.24.0",
+    "@babel/preset-react": "^7.24.0"
+  }
+}

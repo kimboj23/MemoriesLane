@@ -17,6 +17,7 @@ function MapView({
   const tileRef = React.useRef(null);
   const markersRef = React.useRef({});
   const placeRef = React.useRef(null);
+  const zoneRef = React.useRef(null);
   const shapeRef = React.useRef(null);
   const aggRef = React.useRef([]);
   const firstFit = React.useRef(true);
@@ -52,6 +53,18 @@ function MapView({
     }).addTo(map);
     tileRef.current.bringToBack();
   }, [basemap]);
+
+  // --- clearance zone (per active city; only Hà Nội has one) ---
+  React.useEffect(() => {
+    const map = mapRef.current; if (!map) return;
+    if (zoneRef.current) { zoneRef.current.remove(); zoneRef.current = null; }
+    if (showZone && zone && zone.length) {
+      zoneRef.current = L.polygon(zone, {
+        color: accent, weight: 1.6, dashArray: "7 6", fillColor: accent, fillOpacity: 0.1,
+        interactive: false, className: "zone-poly",
+      }).addTo(map);
+    }
+  }, [accent, showZone, zone]);
 
   // --- auto-fit: national overview → Vietnam; city → its bounding box ---
   React.useEffect(() => {
@@ -162,7 +175,7 @@ function MapView({
       return () => {
         map.off("mousedown", down); map.off("mousemove", move); map.off("mouseup", up);
         map.dragging.enable(); el.classList.remove("drawing");
-        if (circle) circle.remove(); // always remove — committed shape is redrawn by the persisted-shape effect
+        if (circle && !done) circle.remove();
       };
     }
 
@@ -194,7 +207,7 @@ function MapView({
     return () => {
       map.off("click", click); map.off("dblclick", dbl);
       map.doubleClickZoom.enable(); el.classList.remove("drawing");
-      if (line) line.remove(); dots.forEach((d) => d.remove()); // always remove — committed shape is redrawn by the persisted-shape effect
+      if (line && !done) line.remove(); dots.forEach((d) => d.remove());
       onDraftChange && onDraftChange(0);
     };
   }, [queryMode, accent]);
