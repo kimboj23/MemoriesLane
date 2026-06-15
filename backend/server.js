@@ -10,6 +10,7 @@ const moderateRouter = require("./routes/moderate");
 const casesRouter    = require("./routes/cases");
 const topicsRouter   = require("./routes/topics");
 const feedRouter     = require("./routes/feed");
+const archiveRouter  = require("./routes/archive");
 
 const PORT = parseInt(process.env.PORT, 10) || 3001;
 const BIND = process.env.BIND_ADDR || "127.0.0.1"; // localhost-only by default
@@ -77,7 +78,7 @@ app.use(
   })
 );
 
-app.use(cors({ origin: corsOrigin, methods: ["GET", "POST"], allowedHeaders: ["Content-Type", "Authorization"], maxAge: 600 }));
+app.use(cors({ origin: corsOrigin, methods: ["GET", "POST", "PATCH"], allowedHeaders: ["Content-Type", "Authorization"], maxAge: 600 }));
 
 // Body parsing — 3 MB covers base64-encoded compressed images (a 1.5 MB binary
 // image encodes to ~2 MB in base64, plus JSON framing overhead).
@@ -98,6 +99,7 @@ app.use("/api/moderate", moderateRouter);
 app.use("/api/cases",    casesRouter);
 app.use("/api/topics",   topicsRouter);
 app.use("/api/feed",     feedRouter);
+app.use("/api/archive",  archiveRouter);
 
 app.get("/health", (req, res) => res.json({ ok: true }));
 app.get("/", (req, res) => res.json({ service: "MemoriesLane API", status: "ok", endpoints: ["/api/memories", "/health"] }));

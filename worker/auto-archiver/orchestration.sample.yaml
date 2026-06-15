@@ -1,0 +1,47 @@
+# Sample Bellingcat auto-archiver config for the MemoryLane archive-worker.
+#
+# The worker invokes auto-archiver per URL with:
+#   --config /config/orchestration.yaml --cli_feeder.urls <url>
+#
+# One-time setup (copy this into the config volume the worker mounts):
+#   docker run --rm -v memorylane-autoarchiver-config:/config -v "%cd%/worker/auto-archiver":/src \
+#     alpine sh -c "cp /src/orchestration.sample.yaml /config/orchestration.yaml"
+#
+# Tune `extractors` to the platforms you archive and add any required API keys
+# (some platforms need authentication). Module names track the installed
+# auto-archiver version — see https://auto-archiver.readthedocs.io.
+
+# Module names below are valid for auto-archiver 1.2.7 (run
+# `docker run --rm bellingcat/auto-archiver:latest --help` to list them).
+steps:
+  feeders:
+    - cli_feeder               # URLs passed as positional args on the CLI
+  extractors:
+    - generic_extractor        # yt-dlp-backed: YouTube, Twitter/X, TikTok, etc.
+    - antibot_extractor_enricher  # browser-based; helps bot-blocked sites (e.g. Facebook)
+  enrichers:
+    - thumbnail_enricher
+    - hash_enricher
+  databases:
+    - csv_db                   # writes results to /data/db.csv
+  storages:
+    - local_storage
+  formatters:
+    - html_formatter
+
+# URLs are supplied at runtime by the worker via --cli_feeder.urls
+cli_feeder:
+  urls: []
+
+# Artifacts land in the shared data volume (mounted at /data in the worker run).
+local_storage:
+  save_to: /data/archived
+  save_absolute: true
+
+csv_db:
+  csv_file: /data/db.csv
+
+# Push to the Internet Archive as well (optional; needs the same IA keys).
+# archiveorg_enricher:
+#   ia_access_key: ${IA_ACCESS_KEY}
+#   ia_secret_key: ${IA_SECRET_KEY}

@@ -839,6 +839,63 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
   .arc-card{padding:12px 14px}
   .case-archives-section{padding-left:20px;padding-right:20px}
 }
+
+/* ---------------- archive admin panel ---------------- */
+.adm-input{width:100%;border:1px solid var(--line-2);border-radius:10px;background:var(--ground-2);color:var(--ink);font-size:14px;padding:11px 12px;transition:.15s}
+.adm-input::placeholder{color:var(--ink-faint)}
+.adm-input:focus{outline:none;border-color:var(--gold)}
+.adm-input.adm-mt{margin-top:8px}
+.adm-wide{width:100%}
+.adm-req{color:var(--ember);font-style:normal}
+.adm-hint{font-size:11.5px;color:var(--ink-dim);margin-top:7px;letter-spacing:.02em}
+.adm-hint.is-fail{color:var(--ember)}
+.adm-auth .send-btn{margin-top:16px}
+.adm-tabs{display:flex;align-items:center;gap:8px;margin:4px 0 18px}
+.adm-tab{flex:1;border:1px solid var(--line);border-radius:9px;padding:9px;font-size:12px;letter-spacing:.04em;color:var(--ink-dim);transition:.15s}
+.adm-tab.on{border-color:var(--ember);color:var(--ember);background:color-mix(in srgb,var(--ember) 7%,transparent)}
+.adm-lock{flex:none;width:34px;height:34px;border:1px solid var(--line);border-radius:9px;color:var(--ink-dim);transition:.15s}
+.adm-lock:hover{border-color:var(--ember);color:var(--ember)}
+.adm-two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.adm-chips{display:flex;gap:8px;flex-wrap:wrap}
+.adm-chip{border:1px solid var(--line-2);border-radius:999px;padding:8px 14px;font-size:12.5px;color:var(--ink-dim);transition:.15s}
+.adm-chip.on{border-color:var(--ember);color:var(--ember);background:color-mix(in srgb,var(--ember) 8%,transparent)}
+.adm-notes{font-family:inherit;font-size:14px;min-height:64px;margin-top:0}
+.adm-msg{margin-top:14px;padding:10px 12px;border-radius:9px;font-size:12.5px;letter-spacing:.02em}
+.adm-msg.is-ok{background:color-mix(in srgb,#3a8d5b 14%,transparent);color:var(--ink)}
+.adm-msg.is-fail{background:color-mix(in srgb,var(--ember) 13%,transparent);color:var(--ink)}
+.adm-queue-head{display:flex;align-items:center;justify-content:space-between;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim);margin:2px 0 14px}
+.adm-queue-actions{display:flex;align-items:center;gap:10px}
+.adm-extlink{font-size:11px;color:var(--gold);letter-spacing:.04em;text-transform:none;border:1px solid var(--line);border-radius:8px;padding:6px 10px;transition:.15s}
+.adm-extlink:hover{border-color:var(--gold)}
+.adm-refresh{width:30px;height:30px;border:1px solid var(--line);border-radius:8px;color:var(--ink-dim)}
+.adm-refresh:hover{border-color:var(--gold);color:var(--gold)}
+.adm-row{border:1px solid var(--line);border-radius:11px;padding:12px 13px;margin-bottom:10px}
+.adm-row-top{display:flex;align-items:center;gap:9px}
+.adm-row-media{font-size:11px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.06em}
+.adm-row-title{font-size:13.5px;color:var(--ink);margin:8px 0 7px;line-height:1.45}
+.adm-row-links{display:flex;gap:14px;flex-wrap:wrap}
+.adm-link{font-size:11.5px;color:var(--ink-dim);letter-spacing:.03em}
+.adm-link:hover{text-decoration:underline}
+.adm-link.is-saved{color:var(--ember)}
+.adm-link.is-local{color:var(--gold)}
+.adm-row-err{margin-top:8px;font-size:11px;color:var(--ember);word-break:break-word}
+.adm-row-actions{margin-left:auto;display:flex;gap:7px}
+.adm-retry{border:1px solid var(--line-2);border-radius:7px;padding:4px 10px;font-size:11px;color:var(--ink-dim)}
+.adm-retry:hover{border-color:var(--ember);color:var(--ember)}
+.adm-row-tags{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 8px}
+.adm-tag{font-size:10.5px;color:var(--gold);border:1px solid var(--line-2);border-radius:999px;padding:2px 9px}
+.adm-edit{margin-top:12px;padding-top:12px;border-top:1px dashed var(--line)}
+.adm-edit .send-btn{margin-top:14px;padding:11px}
+.adm-caselist-head{margin-top:26px}
+.adm-caserow{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px}
+.adm-caserow-title{font-size:13px;color:var(--ink)}
+.adm-caserow-meta{font-size:11px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.05em;margin-top:3px}
+.adm-badge{font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;padding:3px 9px;border-radius:999px;border:1px solid var(--line-2);color:var(--ink-dim)}
+.adm-badge.is-ok{border-color:#3a8d5b;color:#3a8d5b}
+.adm-badge.is-partial{border-color:var(--gold);color:var(--gold)}
+.adm-badge.is-fail{border-color:var(--ember);color:var(--ember)}
+.adm-badge.is-running{border-color:var(--gold);color:var(--gold)}
+.adm-form .adm-input + .field-label{margin-top:18px}
 </style>
 </head>
 <body>
@@ -856,6 +913,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 <script src="app/research.js"></script>
 <script src="app/export.js"></script>
 <script src="app/feed.js"></script>
+<script src="app/archive-admin.js"></script>
 <script src="app/app.js"></script>
 </body>
 </html>

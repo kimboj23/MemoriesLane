@@ -27,10 +27,11 @@ backend/
   db.js                    Postgres schema + queries (auto-migrates, seeds topics)
   storage.js               Supabase Storage helper (ensureBucket/upload/download)
   middleware/              auth (admin Bearer), rate-limit (IP-free HMAC), sanitize
-  routes/                  memories, moderate, cases, topics, feed
+  routes/                  memories, moderate, cases, topics, feed, archive
   scripts/                 setup-admin, seed-*, create-bucket, backup-photos
+worker/                    local archive-worker: poll Supabase + drive ArchiveBox/auto-archiver/Wayback
 functions/api/[[route]].js Cloudflare Pages proxy → BACKEND_URL
-docker-compose.yml         frontend (nginx) + backend + postgres (fallback) + adminer
+docker-compose.yml         frontend (nginx) + backend + postgres (fallback) + adminer + archivebox + archive-worker
 nginx.conf                 proxies /api/* → backend
 backup/                    backup.ps1, register-task.ps1
 ```
@@ -150,6 +151,45 @@ Restore a dump into Supabase (via the session pooler, no local psql):
 docker run --rm -v "${PWD}:/work" -w /work postgres:17 `
   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f backup/db/<dump>.sql
 ```
+
+## Archiving
+
+Case source materials (gov pages, news, social posts) are preserved two ways: a **public, durable Internet Archive link** + a **local snapshot** (ArchiveBox for web/documents, auto-archiver for social). The heavy tools can't run on a serverless host, so they live in a **local archive-worker** that coordinates through the shared `archives` table in Supabase.
+
+```
+Moderator ─▶ POST /api/archive {caseId,url,mediaType}  → inserts archives row (status=pending)
+archive-worker (local) ─ polls Supabase ─▶ Wayback (public link) + ArchiveBox/auto-archiver (local snapshot)
+                                           └▶ writes wayback_url/local_url, status=archived
+Case API ─▶ returns status=archived rows  → "Archived Materials" in the case profile
+```
+
+**Flow:** `web`/`document` → ArchiveBox + Wayback; `social` → auto-archiver + Wayback. A job is `archived` (all succeeded), `partial` (some), or `failed`. Only `archived`/`partial` rows are public; the local snapshot link stays behind ArchiveBox login.
+
+**One-time setup**
+
+1. In `backend/.env` set `IA_ACCESS_KEY`/`IA_SECRET_KEY` ([archive.org S3 keys](https://archive.org/account/s3.php)) and `ARCHIVEBOX_ADMIN_USER`/`ARCHIVEBOX_ADMIN_PASSWORD`.
+2. For social: copy the auto-archiver config into its volume and tune it:
+   ```powershell
+   docker run --rm -v memorylane-autoarchiver-config:/config -v "${PWD}/worker/auto-archiver:/src" `
+     alpine sh -c "cp /src/orchestration.sample.yaml /config/orchestration.yaml"
+   ```
+3. Start the stack: `docker compose up -d archivebox archive-worker`
+4. ArchiveBox is locked down (`PUBLIC_INDEX/SNAPSHOTS/ADD_VIEW=False`); a superuser is auto-created from the env above (or `docker compose exec archivebox archivebox manage createsuperuser`). Log in at http://localhost:8000.
+
+**Queue a URL** (admin token):
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"caseId":"case-phuc-tan","originalUrl":"https://example.gov/notice","mediaType":"document","titleEn":"Eviction notice"}' \
+  http://localhost:3001/api/archive
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:3001/api/archive/queue?caseId=case-phuc-tan"
+```
+
+`POST /api/archive/<id>/retry` requeues a failed/partial job. Set `ARCHIVE_DRY_RUN=1` to exercise the queue without external tools.
+
+**Storage notes (from ArchiveBox):** `index.sqlite3` stays on the local/SSD `memorylane-archivebox-data` volume. For very large archives, point the `archive/` folder at bigger storage via `ARCHIVEBOX_ARCHIVE_VOLUME` (mounted identically in `worker/archivers/archivebox.js`); on NFS/SMB/FUSE/S3-backed shares you may need `PUID`/`PGID`/root-squash adjustments, and avoid EXT3/FAT.
+
+> The `archive-worker` mounts the Docker socket to run the tools as sibling containers — it must run on the local Docker host, never on the cloud API host.
 
 ## Deploy
 

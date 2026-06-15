@@ -62,6 +62,67 @@ services:
     environment:
       - ADMINER_DEFAULT_SERVER=aws-1-ap-northeast-1.pooler.supabase.com
 
+  # ── ArchiveBox (local snapshots of web pages & documents) ───────────────────
+  # Locked down: no public index/snapshots/add view. Log in at http://localhost:8000
+  # with the superuser auto-created from ARCHIVEBOX_ADMIN_USER/PASSWORD (set in .env),
+  # or run: docker compose exec archivebox archivebox manage createsuperuser
+  archivebox:
+    image: archivebox/archivebox:latest
+    command: server --quick-init 0.0.0.0:8000
+    ports:
+      - "8000:8000"
+    environment:
+      - PUBLIC_INDEX=False
+      - PUBLIC_SNAPSHOTS=False
+      - PUBLIC_ADD_VIEW=False
+      - ADMIN_USERNAME=${ARCHIVEBOX_ADMIN_USER:-admin}
+      - ADMIN_PASSWORD=${ARCHIVEBOX_ADMIN_PASSWORD:-change_me_in_env}
+    volumes:
+      # index.sqlite3 lives here — keep on local/SSD storage.
+      - archivebox-data:/data
+
+  # ── Archive worker (drives ArchiveBox + auto-archiver + Internet Archive) ────
+  # Polls the shared Supabase `archives` table for pending jobs. Runs the heavy
+  # tools as sibling containers via the mounted Docker socket — must run on the
+  # local Docker host (not a serverless API host).
+  # NOTE: mounting docker.sock grants this container control of the host Docker
+  # daemon. It only runs locally and pulls jobs from your own DB.
+  archive-worker:
+    build: ./worker
+    env_file: ./backend/.env          # DATABASE_URL + IA_ACCESS_KEY/IA_SECRET_KEY
+    environment:
+      - ARCHIVEBOX_VOLUME=memorylane-archivebox-data
+      - ARCHIVEBOX_PUBLIC_URL=${ARCHIVEBOX_PUBLIC_URL:-http://localhost:8000}
+      - AUTOARCHIVER_VOLUME=memorylane-autoarchiver-data
+      - AUTOARCHIVER_CONFIG_DIR=memorylane-autoarchiver-config
+      # Public base URL for auto-archiver local snapshots (served by archive-files).
+      # After full deployment + S3, point this at the S3/CDN base instead.
+      - AUTOARCHIVER_PUBLIC_URL=${AUTOARCHIVER_PUBLIC_URL:-http://localhost:8090}
+      - POLL_INTERVAL_MS=15000
+      - DRY_RUN=${ARCHIVE_DRY_RUN:-0}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - archivebox
+
+  # ── Static server for auto-archiver local snapshots ─────────────────────────
+  # auto-archiver stores artifacts as files in its volume; this serves them so
+  # the admin UI's "Local ↗" links open. Swap for S3/CDN in production.
+  archive-files:
+    image: nginx:alpine
+    ports:
+      - "8090:80"
+    volumes:
+      - autoarchiver-data:/usr/share/nginx/html:ro
+
 volumes:
   postgres-data:
   memorylane-uploads:
+  # Named explicitly (no compose project prefix) so the worker's sibling
+  # `docker run -v memorylane-archivebox-data:/data ...` resolves correctly.
+  archivebox-data:
+    name: memorylane-archivebox-data
+  autoarchiver-data:
+    name: memorylane-autoarchiver-data
+  autoarchiver-config:
+    name: memorylane-autoarchiver-config

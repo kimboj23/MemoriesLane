@@ -98,6 +98,43 @@ async function initDb() {
     )
   `);
 
+  // Archived source materials attached to a case. The local archive-worker
+  // fills wayback_url (public Internet Archive link) and local_url (ArchiveBox /
+  // auto-archiver snapshot) asynchronously; status drives the worker queue.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS archives (
+      id            TEXT PRIMARY KEY,
+      case_id       TEXT NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+      tool          TEXT NOT NULL DEFAULT 'archive-box'
+                         CHECK (tool IN ('archive-box','auto-archiver','wayback')),
+      media_type    TEXT NOT NULL DEFAULT 'web'
+                         CHECK (media_type IN ('web','document','social')),
+      title_vi      TEXT,
+      title_en      TEXT,
+      source        TEXT,
+      account       TEXT,
+      doc_date      TEXT,
+      notes         TEXT,
+      original_url  TEXT,
+      wayback_url   TEXT,
+      local_url     TEXT,
+      status        TEXT NOT NULL DEFAULT 'pending'
+                         CHECK (status IN ('pending','running','archived','partial','failed')),
+      error         TEXT,
+      attempts      INTEGER NOT NULL DEFAULT 0,
+      created_at    TEXT NOT NULL,
+      archived_at   BIGINT
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS archive_topics (
+      archive_id  TEXT NOT NULL REFERENCES archives(id) ON DELETE CASCADE,
+      topic_id    TEXT NOT NULL REFERENCES topics(id)   ON DELETE CASCADE,
+      PRIMARY KEY (archive_id, topic_id)
+    )
+  `);
+
   // Indexes
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_mem_city_approved  ON memories(city, approved)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_mem_year           ON memories(year)`);
@@ -108,6 +145,9 @@ async function initDb() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_cases_city         ON cases(city, approved)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_mem_topics         ON memory_topics(topic_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_case_topics        ON case_topics(topic_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_archives_case      ON archives(case_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_archives_status    ON archives(status)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_archive_topics     ON archive_topics(topic_id)`);
   // Migration: add archives column if it doesn't exist (safe to re-run)
   await pool.query(`ALTER TABLE cases ADD COLUMN IF NOT EXISTS archives TEXT DEFAULT '[]'`);
   // Partial index: pending moderation queue
@@ -269,6 +309,145 @@ const queries = {
     );
     return rows;
   },
+
+  // ── Case authoring (admin) ───────────────────────────────────────────────
+  caseCreate: (row) => getPool().query(
+    `INSERT INTO cases
+       (id, title_vi, title_en, summary_vi, summary_en, city, lat, lng,
+        status, sections, archives, created_at, approved)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'[]','[]',$10,1)`,
+    [row.id, row.title_vi, row.title_en, row.summary_vi, row.summary_en,
+     row.city, row.lat, row.lng, row.status, row.created_at]
+  ),
+
+  caseList: async () => {
+    const { rows } = await getPool().query(
+      `SELECT id, title_en, title_vi, city, status, approved, created_at
+       FROM cases ORDER BY created_at DESC LIMIT 500`
+    );
+    return rows;
+  },
+
+  // ── Archives ─────────────────────────────────────────────────────────────
+  // Public: only successfully-archived rows, mapped to the frontend card shape
+  // (case-profile.jsx ArchiveCard). archivedUrl prefers the public Wayback link.
+  archivesForCase: async (caseId) => {
+    const { rows } = await getPool().query(
+      `SELECT a.id, a.tool, a.media_type, a.title_vi, a.title_en, a.source, a.account,
+              a.doc_date, a.notes, a.original_url, a.wayback_url, a.local_url, a.status,
+              COALESCE(
+                (SELECT json_agg(json_build_object('id',t.id,'slug',t.slug,'name_vi',t.name_vi,'name_en',t.name_en) ORDER BY t.name_en)
+                 FROM archive_topics at JOIN topics t ON t.id = at.topic_id
+                 WHERE at.archive_id = a.id),
+                '[]'::json
+              ) AS topics
+       FROM archives a
+       WHERE a.case_id = $1 AND a.status IN ('archived','partial')
+       ORDER BY a.doc_date DESC NULLS LAST, a.created_at DESC`,
+      [caseId]
+    );
+    return rows.map((r) => ({
+      id: r.id,
+      tool: r.tool,
+      mediaType: r.media_type,
+      titleVi: r.title_vi,
+      titleEn: r.title_en,
+      source: r.source,
+      account: r.account,
+      date: r.doc_date,
+      notes: r.notes,
+      originalUrl: r.original_url,
+      archivedUrl: r.wayback_url || r.local_url || null,
+      topics: Array.isArray(r.topics) ? r.topics : [],
+    }));
+  },
+
+  archiveInsert: (row) => getPool().query(
+    `INSERT INTO archives
+       (id, case_id, tool, media_type, title_vi, title_en, source, account,
+        doc_date, notes, original_url, status, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'pending',$12)`,
+    [row.id, row.case_id, row.tool, row.media_type, row.title_vi, row.title_en,
+     row.source, row.account, row.doc_date, row.notes, row.original_url, row.created_at]
+  ),
+
+  archiveById: async (id) => {
+    const { rows } = await getPool().query(`SELECT * FROM archives WHERE id = $1`, [id]);
+    return rows[0] || null;
+  },
+
+  // Admin queue — full visibility, including pending/failed, with topic tags.
+  archiveQueue: async (caseId) => {
+    const { rows } = await getPool().query(
+      `SELECT a.id, a.case_id, a.tool, a.media_type, a.title_en, a.title_vi, a.original_url,
+              a.wayback_url, a.local_url, a.status, a.error, a.attempts, a.created_at,
+              COALESCE(
+                (SELECT json_agg(json_build_object('slug',t.slug,'name_en',t.name_en) ORDER BY t.name_en)
+                 FROM archive_topics at JOIN topics t ON t.id = at.topic_id
+                 WHERE at.archive_id = a.id),
+                '[]'::json
+              ) AS topics
+       FROM archives a
+       WHERE ($1::text IS NULL OR a.case_id = $1)
+       ORDER BY a.created_at DESC
+       LIMIT 200`,
+      [caseId || null]
+    );
+    return rows;
+  },
+
+  archiveRetry: (id) => getPool().query(
+    `UPDATE archives SET status = 'pending', error = NULL
+     WHERE id = $1 AND status IN ('failed','partial')`,
+    [id]
+  ),
+
+  // Reassign an archive to a different case.
+  archiveSetCase: (id, caseId) => getPool().query(
+    `UPDATE archives SET case_id = $2 WHERE id = $1`, [id, caseId]
+  ),
+
+  // Replace an archive's topic tags (by topic slug).
+  setArchiveTopics: async (archiveId, topicSlugs) => {
+    const p = getPool();
+    await p.query(`DELETE FROM archive_topics WHERE archive_id = $1`, [archiveId]);
+    if (!topicSlugs || !topicSlugs.length) return;
+    const { rows: topics } = await p.query(`SELECT id FROM topics WHERE slug = ANY($1)`, [topicSlugs]);
+    for (const t of topics) {
+      await p.query(
+        `INSERT INTO archive_topics (archive_id, topic_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+        [archiveId, t.id]
+      );
+    }
+  },
+
+  // Worker: atomically claim the oldest pending row (concurrency-safe via the
+  // single-row UPDATE … RETURNING). Returns the claimed row or null.
+  archiveClaimNext: async () => {
+    const { rows } = await getPool().query(
+      `UPDATE archives SET status = 'running', attempts = attempts + 1
+       WHERE id = (
+         SELECT id FROM archives WHERE status = 'pending'
+         ORDER BY created_at ASC LIMIT 1
+         FOR UPDATE SKIP LOCKED
+       )
+       RETURNING *`
+    );
+    return rows[0] || null;
+  },
+
+  archiveComplete: (id, { wayback_url, local_url, status }) => getPool().query(
+    `UPDATE archives
+     SET wayback_url = $2, local_url = $3, status = $4, error = NULL,
+         archived_at = EXTRACT(EPOCH FROM NOW())::BIGINT
+     WHERE id = $1`,
+    [id, wayback_url || null, local_url || null, status]
+  ),
+
+  archiveFail: (id, error) => getPool().query(
+    `UPDATE archives SET status = 'failed', error = $2 WHERE id = $1`,
+    [id, String(error).slice(0, 500)]
+  ),
 
   // ── Unified Feed (cases + memories, topic-filtered) ──────────────────────
   unifiedFeed: async (city, topicSlugs, catKeys, minY, maxY) => {

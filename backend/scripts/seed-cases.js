@@ -14,51 +14,47 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 const CASE_ID = "case-phuc-tan";
 
-const archives = JSON.stringify([
+// Seeded archive rows for the normalized `archives` table. Stable ids make
+// re-seeding idempotent (ON CONFLICT DO UPDATE). Items with a known archived
+// link are marked 'archived'; the un-digitized notice stays 'pending'.
+const archives = [
   {
-    tool: "auto-archiver",
-    mediaType: "social",
+    id: "arc-phuctan-1",
+    tool: "auto-archiver", mediaType: "social", status: "archived",
     titleVi: "Video trực tiếp ghi lại cưỡng chế ngày 14/3/2026",
     titleEn: "Live video documenting the 14 March 2026 forced eviction",
-    source: "Facebook",
-    account: "Nhóm hỗ trợ pháp lý Phúc Tân",
-    date: "2026-03-14",
+    source: "Facebook", account: "Nhóm hỗ trợ pháp lý Phúc Tân", date: "2026-03-14",
     originalUrl: null,
-    archivedUrl: "https://archive.org/details/phuctan-eviction-20260314",
+    waybackUrl: "https://archive.org/details/phuctan-eviction-20260314",
   },
   {
-    tool: "archive-box",
-    mediaType: "web",
+    id: "arc-phuctan-2",
+    tool: "archive-box", mediaType: "web", status: "archived",
     titleVi: "Quyết định phê duyệt quy hoạch phân khu đô thị sông Hồng tỷ lệ 1/5000",
     titleEn: "Approval decision for the Red River Urban Sub-zone Master Plan (1:5000)",
-    source: "UBND TP. Hà Nội",
-    date: "2022-03-25",
+    source: "UBND TP. Hà Nội", date: "2022-03-25",
     originalUrl: "https://hanoi.gov.vn/web/guest/chi-tiet-tin-tuc/-/tai-lieu/quy-hoach-song-hong",
-    archivedUrl: "https://web.archive.org/web/20230401120000/https://hanoi.gov.vn/web/guest/chi-tiet-tin-tuc/-/tai-lieu/quy-hoach-song-hong",
+    waybackUrl: "https://web.archive.org/web/20230401120000/https://hanoi.gov.vn/web/guest/chi-tiet-tin-tuc/-/tai-lieu/quy-hoach-song-hong",
   },
   {
-    tool: "auto-archiver",
-    mediaType: "social",
+    id: "arc-phuctan-3",
+    tool: "auto-archiver", mediaType: "social", status: "archived",
     titleVi: "Chuỗi bài đăng về tình trạng người dân Phúc Tân sau cưỡng chế",
     titleEn: "Thread on Phúc Tân residents' conditions after forced relocation",
-    source: "Twitter/X",
-    account: "@phaplyvietnam",
-    date: "2026-04-02",
+    source: "Twitter/X", account: "@phaplyvietnam", date: "2026-04-02",
     originalUrl: null,
-    archivedUrl: "https://archive.ph/phaplyvietnam-phuctan-20260402",
+    waybackUrl: "https://archive.ph/phaplyvietnam-phuctan-20260402",
   },
   {
-    tool: "archive-box",
-    mediaType: "document",
+    id: "arc-phuctan-4",
+    tool: "archive-box", mediaType: "document", status: "pending",
     titleVi: "Thông báo cưỡng chế số 45/TB-UBND phường Phúc Tân (scan)",
     titleEn: "Compulsory relocation notice No. 45/TB-UBND, Phúc Tân ward (scan)",
-    source: "UBND Phường Phúc Tân",
-    date: "2026-02-08",
-    originalUrl: null,
-    archivedUrl: null,
+    source: "UBND Phường Phúc Tân", date: "2026-02-08",
+    originalUrl: null, waybackUrl: null,
     notes: "Nhận từ cư dân. Đang chờ số hóa hoàn chỉnh.",
   },
-]);
+];
 
 const sections = JSON.stringify([
   {
@@ -158,9 +154,28 @@ async function run() {
     console.log(r.rowCount > 0 ? `  ✔  Linked memory: ${id}` : `  –  Memory ${id}: already linked or not found`);
   }
 
-  // Update archives for this case (always refresh)
-  await pool.query(`UPDATE cases SET archives = $1 WHERE id = $2`, [archives, CASE_ID]);
-  console.log(`✔  Updated archives for case: ${CASE_ID}`);
+  // Seed the normalized archives table (idempotent upsert by id).
+  for (const a of archives) {
+    await pool.query(
+      `INSERT INTO archives
+         (id, case_id, tool, media_type, title_vi, title_en, source, account,
+          doc_date, notes, original_url, wayback_url, status, created_at,
+          archived_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,
+               CASE WHEN $13 = 'archived' THEN EXTRACT(EPOCH FROM NOW())::BIGINT ELSE NULL END)
+       ON CONFLICT (id) DO UPDATE SET
+         tool = EXCLUDED.tool, media_type = EXCLUDED.media_type,
+         title_vi = EXCLUDED.title_vi, title_en = EXCLUDED.title_en,
+         source = EXCLUDED.source, account = EXCLUDED.account,
+         doc_date = EXCLUDED.doc_date, notes = EXCLUDED.notes,
+         original_url = EXCLUDED.original_url, wayback_url = EXCLUDED.wayback_url,
+         status = EXCLUDED.status`,
+      [a.id, CASE_ID, a.tool, a.mediaType, a.titleVi, a.titleEn, a.source || null,
+       a.account || null, a.date || null, a.notes || null, a.originalUrl || null,
+       a.waybackUrl || null, a.status, "2024-01-15"]
+    );
+  }
+  console.log(`✔  Seeded ${archives.length} archive rows for case: ${CASE_ID}`);
 
   // Assign topics to case
   const CASE_TOPIC_SLUGS = ["land-rights", "nha-o"];
