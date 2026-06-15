@@ -12,6 +12,7 @@ const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
 const { queries } = require("../db");
+const storage = require("../storage");
 const { validateSubmission } = require("../middleware/sanitize");
 const { rateLimit } = require("../middleware/rate-limit");
 
@@ -55,7 +56,13 @@ async function processAndStoreImage(dataUrl, memoryId) {
     .toBuffer();
 
   const filename = `${memoryId}.webp`;
-  fs.writeFileSync(path.join(UPLOADS_DIR, filename), webpBuffer);
+  // Primary store: Supabase Storage (private bucket). Fall back to local disk
+  // only when Storage is not configured (e.g. local dev without keys).
+  if (storage.storageEnabled()) {
+    await storage.uploadPhoto(filename, webpBuffer, "image/webp");
+  } else {
+    fs.writeFileSync(path.join(UPLOADS_DIR, filename), webpBuffer);
+  }
   return filename;
 }
 
@@ -147,14 +154,26 @@ router.get("/:id([A-Za-z0-9_-]{1,24})/photo", async (req, res, next) => {
     const row = await queries.photoPath(req.params.id);
     if (!row || !row.photo_path) return res.status(404).json({ error: "Not found" });
 
+    res.setHeader("Content-Type", "image/webp");
+    res.setHeader("Cache-Control", "public, max-age=86400, immutable");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+
+    // Primary store: Supabase Storage (private bucket). The approved=1 gate is
+    // already enforced by queries.photoPath above, so streaming here is safe.
+    if (storage.storageEnabled()) {
+      try {
+        const buf = await storage.downloadPhoto(row.photo_path);
+        return res.send(buf);
+      } catch {
+        return res.status(404).json({ error: "Not found" });
+      }
+    }
+
+    // Fallback: local disk (dev without Storage configured).
     const abs = path.resolve(UPLOADS_DIR, row.photo_path);
     if (!abs.startsWith(UPLOADS_DIR + path.sep)) {
       return res.status(400).json({ error: "Invalid path" });
     }
-
-    res.setHeader("Content-Type", "image/webp");
-    res.setHeader("Cache-Control", "public, max-age=86400, immutable");
-    res.setHeader("X-Content-Type-Options", "nosniff");
     res.sendFile(abs);
   } catch (err) {
     next(err);

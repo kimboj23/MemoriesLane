@@ -10,7 +10,17 @@ const VALID_MEDIA  = new Set(["text", "photo", "video"]);
 const VALID_LANGS  = new Set(["vi", "en"]);
 
 async function initDb() {
-  pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  const dbUrl = process.env.DATABASE_URL || "";
+  // Managed Postgres (Supabase, etc.) requires TLS; local docker Postgres does not.
+  const needsSsl =
+    /supabase\.(co|com)/.test(dbUrl) ||
+    /[?&]sslmode=require/.test(dbUrl) ||
+    process.env.PGSSLMODE === "require";
+
+  pool = new Pool({
+    connectionString: dbUrl,
+    ssl: needsSsl ? { rejectUnauthorized: false } : false,
+  });
   await pool.query("SELECT 1"); // verify connection
 
   await pool.query(`

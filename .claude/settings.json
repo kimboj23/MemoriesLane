@@ -56,7 +56,12 @@
       "Bash(node -e \"const code = require\\('fs'\\).readFileSync\\('c:\\\\\\\\\\\\\\\\Users\\\\\\\\\\\\\\\\NinaTran\\\\\\\\\\\\\\\\Downloads\\\\\\\\\\\\\\\\aos\\\\\\\\\\\\\\\\MemoriesLane\\\\\\\\\\\\\\\\app\\\\\\\\\\\\\\\\app.js','utf8'\\); try { new Function\\(code\\); console.log\\('OK'\\); } catch\\(e\\) { console.error\\('SYNTAX ERROR:', e.message\\); }\")",
       "Bash(node --input-type=module --eval \"\")",
       "Bash(node -e \"require\\('fs'\\).readFileSync\\('C:/Users/NinaTran/Downloads/aos/MemoriesLane/app/app.js','utf8'\\); console.log\\('READ OK'\\);\")",
-      "Bash(node -e \"try { require\\('vm'\\).Script && new \\(require\\('vm'\\).Script\\)\\(require\\('fs'\\).readFileSync\\('C:/Users/NinaTran/Downloads/aos/MemoriesLane/app/app.js','utf8'\\)\\); console.log\\('SYNTAX OK'\\); } catch\\(e\\) { console.error\\('ERR:', e.message\\); }\")"
+      "Bash(node -e \"try { require\\('vm'\\).Script && new \\(require\\('vm'\\).Script\\)\\(require\\('fs'\\).readFileSync\\('C:/Users/NinaTran/Downloads/aos/MemoriesLane/app/app.js','utf8'\\)\\); console.log\\('SYNTAX OK'\\); } catch\\(e\\) { console.error\\('ERR:', e.message\\); }\")",
+      "PowerShell($cmds = 'psql','pg_dump','docker','scoop','choco','winget','supabase'; foreach \\($c in $cmds\\) { $g = Get-Command $c -ErrorAction SilentlyContinue; if \\($g\\) { \"{0,-10} -> {1}\" -f $c, $g.Source } else { \"{0,-10} -> NOT FOUND\" -f $c } })",
+      "PowerShell(docker info --format '{{.ServerVersion}}' 2>$null)",
+      "PowerShell(if \\($?\\) { \"Docker daemon: RUNNING\" } else { \"Docker daemon: NOT running\" })",
+      "PowerShell(docker run --rm -v \"C:\\\\Users\\\\NinaTran\\\\Downloads\\\\aos\\\\MemoriesLane:/work\" -w /work postgres:16 psql \"postgresql://postgres:memorylane@db.xaztyzxdqgoowfrbnpkj.supabase.co:5432/postgres\" -v ON_ERROR_STOP=1 -f supabase-dump-clean.sql)",
+      "PowerShell(Test-NetConnection -ComputerName db.xaztyzxdqgoowfrbnpkj.supabase.co -Port 5432 -InformationLevel Detailed)"
     ]
   }
 }

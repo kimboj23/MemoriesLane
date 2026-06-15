@@ -4,6 +4,7 @@ const express = require("express");
 const helmet = require("helmet");
 const cors = require("cors");
 const { initDb } = require("./db");
+const storage = require("./storage");
 const memoriesRouter = require("./routes/memories");
 const moderateRouter = require("./routes/moderate");
 const casesRouter    = require("./routes/cases");
@@ -118,6 +119,18 @@ app.use((err, req, res, next) => {
 async function start() {
   assertEnv();
   await initDb();
+
+  // Self-healing: ensure the photo bucket exists. Non-fatal — reads only need
+  // Postgres, so a Storage hiccup must not stop the API from starting.
+  if (storage.storageEnabled()) {
+    try {
+      const created = await storage.ensureBucket();
+      console.log(`[storage] bucket "${storage.BUCKET}" ${created ? "created" : "ready"}`);
+    } catch (err) {
+      console.warn(`[storage] bucket check failed (continuing): ${err.message}`);
+    }
+  }
+
   app.listen(PORT, BIND, () => {
     console.log(`[server] memorylane backend listening on ${BIND}:${PORT} (${NODE_ENV})`);
     if (!IS_PROD) {

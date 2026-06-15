@@ -37,29 +37,30 @@ services:
       - NODE_ENV=development
       - ALLOWED_ORIGINS=http://localhost:8080,null
       - BIND_ADDR=0.0.0.0
-      - DATABASE_URL=postgresql://memorylane:memorylane@postgres:5432/memorylane
+      # DATABASE_URL is intentionally NOT set here so it falls through to
+      # backend/.env, which points at the primary Supabase Postgres.
+      # To run fully local again, uncomment the line below (uses the postgres service):
+      # - DATABASE_URL=postgresql://memorylane:memorylane@postgres:5432/memorylane
       - UPLOADS_DIR=/data/uploads
     ports:
       - "3001:3001"
     volumes:
       - memorylane-uploads:/data/uploads
-    depends_on:
-      postgres:
-        condition: service_healthy
 
-  # ── Adminer (Postgres admin UI) ────────────────────────────────────────────
-  # Open http://localhost:8081
-  # System: PostgreSQL, Server: postgres, User: memorylane,
-  # Password: memorylane, Database: memorylane
+  # ── Adminer (Postgres admin UI) — points at the primary Supabase DB ─────────
+  # Open http://localhost:8081 and log in with:
+  #   System:   PostgreSQL
+  #   Server:   aws-1-ap-northeast-1.pooler.supabase.com   (pre-filled below)
+  #   Username: postgres.xaztyzxdqgoowfrbnpkj
+  #   Password: <your Supabase DB password>
+  #   Database: postgres
+  # To manage the local postgres service instead, set Server back to "postgres".
   adminer:
     image: adminer:latest
     ports:
       - "8081:8080"
     environment:
-      - ADMINER_DEFAULT_SERVER=postgres
-    depends_on:
-      postgres:
-        condition: service_healthy
+      - ADMINER_DEFAULT_SERVER=aws-1-ap-northeast-1.pooler.supabase.com
 
 volumes:
   postgres-data:

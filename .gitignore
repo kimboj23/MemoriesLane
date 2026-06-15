@@ -5,6 +5,11 @@ backend/*.db-shm
 backend/*.db-wal
 backend/uploads/
 
+# local backups — real data dumps + photos, never commit (scripts are kept)
+backup/db/
+backup/photos-*/
+supabase-dump*.sql
+
 # node
 node_modules/
 backend/node_modules/
