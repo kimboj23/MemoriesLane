@@ -63,9 +63,12 @@ services:
       - ADMINER_DEFAULT_SERVER=aws-1-ap-northeast-1.pooler.supabase.com
 
   # ── ArchiveBox (local snapshots of web pages & documents) ───────────────────
-  # Locked down: no public index/snapshots/add view. Log in at http://localhost:8000
-  # with the superuser auto-created from ARCHIVEBOX_ADMIN_USER/PASSWORD (set in .env),
-  # or run: docker compose exec archivebox archivebox manage createsuperuser
+  # Locked down: no public index/snapshots/add view. Create the login once
+  # (Compose ${VAR} interpolation can't read backend/.env, so we don't auto-create
+  # a superuser here — that would only ever use weak defaults):
+  #   docker exec --user=archivebox memorieslane-archivebox-1 \
+  #     archivebox manage createsuperuser
+  # Then log in at http://localhost:8000/admin/. Users persist in archivebox-data.
   archivebox:
     image: archivebox/archivebox:latest
     command: server --quick-init 0.0.0.0:8000
@@ -75,8 +78,10 @@ services:
       - PUBLIC_INDEX=False
       - PUBLIC_SNAPSHOTS=False
       - PUBLIC_ADD_VIEW=False
-      - ADMIN_USERNAME=${ARCHIVEBOX_ADMIN_USER:-admin}
-      - ADMIN_PASSWORD=${ARCHIVEBOX_ADMIN_PASSWORD:-change_me_in_env}
+      # Allow access + login through a Cloudflare tunnel (foreign hostname).
+      # Wildcard survives quick-tunnel URL churn; add your named domain if any.
+      - ALLOWED_HOSTS=*
+      - CSRF_TRUSTED_ORIGINS=https://*.trycloudflare.com,http://localhost:8000
     volumes:
       # index.sqlite3 lives here — keep on local/SSD storage.
       - archivebox-data:/data

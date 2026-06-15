@@ -15,6 +15,13 @@ const crypto = require("crypto");
 const SECRET = () => process.env.RATE_HMAC_SECRET || "dev_secret_replace_in_production";
 const WINDOW_MS = 60 * 60 * 1000; // 1 hour
 
+// Tunables (handy for a testing phase). Set on the host's env:
+//   RATE_LIMIT_MULT=50      → multiply every limit by 50
+//   RATE_LIMIT_DISABLED=true → bypass rate limiting entirely
+// Default multiplier 1 = production limits unchanged.
+const RATE_MULT = Math.max(1, parseInt(process.env.RATE_LIMIT_MULT, 10) || 1);
+const RATE_DISABLED = process.env.RATE_LIMIT_DISABLED === "true";
+
 // In-process counter store.
 // For multi-process deployments, replace with Redis INCR + EXPIRE.
 // Separate counter map per namespace so read and write limits don't share budget.
@@ -58,7 +65,9 @@ function pseudonym(ip) {
  * On breach: responds 429, does NOT log the IP.
  */
 function rateLimit(max = 10, namespace = "default") {
+  const limit = max * RATE_MULT;
   return (req, res, next) => {
+    if (RATE_DISABLED) return next();
     sweep();
     const ip = req.ip || req.socket.remoteAddress || "";
     const key = pseudonym(ip);
@@ -67,7 +76,7 @@ function rateLimit(max = 10, namespace = "default") {
     const count = (counters.get(key) || 0) + 1;
     counters.set(key, count);
 
-    if (count > max) {
+    if (count > limit) {
       res.set("Retry-After", Math.ceil((WINDOW_MS - (Date.now() % WINDOW_MS)) / 1000));
       return res.status(429).json({ error: "Too many requests — please wait before submitting again." });
     }

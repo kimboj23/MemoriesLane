@@ -101,6 +101,13 @@ app.use("/api/topics",   topicsRouter);
 app.use("/api/feed",     feedRouter);
 app.use("/api/archive",  archiveRouter);
 
+// Small public config for the frontend (e.g. the public ArchiveBox UI URL,
+// set per-environment so the admin "ArchiveBox" link points at the right place
+// without rebuilding the frontend).
+app.get("/api/config", (req, res) =>
+  res.json({ archiveboxUrl: process.env.ARCHIVEBOX_PUBLIC_URL || null })
+);
+
 app.get("/health", (req, res) => res.json({ ok: true }));
 app.get("/", (req, res) => res.json({ service: "MemoriesLane API", status: "ok", endpoints: ["/api/memories", "/health"] }));
 

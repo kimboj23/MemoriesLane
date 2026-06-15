@@ -9,9 +9,10 @@
    ============================================================================ */
 
 const ARC_TOKEN_KEY = "ml_admin_token";
-// ArchiveBox's own admin UI (local). Opens in a new tab; log in with the
-// ArchiveBox superuser (ARCHIVEBOX_ADMIN_USER/PASSWORD).
-const ARCHIVEBOX_UI = "http://localhost:8000/admin/core/snapshot/";
+// Fallback ArchiveBox base for local dev; production uses the value from
+// /api/config (ARCHIVEBOX_PUBLIC_URL on the host) so the link points at the
+// public tunnel without rebuilding the frontend.
+const ARCHIVEBOX_FALLBACK = "http://localhost:8000";
 const ARC_MEDIA = [
   { key: "document", vi: "Tài liệu", en: "Document" },
   { key: "web", vi: "Trang web", en: "Web page" },
@@ -67,6 +68,7 @@ function ArchiveAdmin({ lang, onClose }) {
 
   // topics + case authoring + per-row editing
   const [allTopics, setAllTopics] = React.useState([]);
+  const [archiveboxBase, setArchiveboxBase] = React.useState(null);
   const [cf, setCf] = React.useState({ titleVi: "", titleEn: "", summaryVi: "", summaryEn: "", city: "hanoi", status: "active", topics: [] });
   const [caseBusy, setCaseBusy] = React.useState(false);
   const [caseMsg, setCaseMsg] = React.useState(null);
@@ -160,6 +162,8 @@ function ArchiveAdmin({ lang, onClose }) {
     if (!authed) return;
     fetch("/api/topics").then((r) => (r.ok ? r.json() : null))
       .then((d) => { if (d && d.topics) setAllTopics(d.topics); }).catch(() => {});
+    fetch("/api/config").then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d && d.archiveboxUrl) setArchiveboxBase(d.archiveboxUrl); }).catch(() => {});
   }, [authed]);
 
   const toggle = (arr, v) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
@@ -284,7 +288,7 @@ function ArchiveAdmin({ lang, onClose }) {
                 <div className="adm-queue-head">
                   <span>{queue.length} {L("mục", "jobs")}</span>
                   <span className="adm-queue-actions">
-                    <a className="adm-extlink" href={ARCHIVEBOX_UI} target="_blank" rel="noopener noreferrer">ArchiveBox ↗</a>
+                    <a className="adm-extlink" href={(archiveboxBase || ARCHIVEBOX_FALLBACK).replace(/\/$/, "") + "/admin/core/snapshot/"} target="_blank" rel="noopener noreferrer">ArchiveBox ↗</a>
                     <button className="adm-refresh" onClick={loadQueue}>{qLoading ? "…" : "↻"}</button>
                   </span>
                 </div>
