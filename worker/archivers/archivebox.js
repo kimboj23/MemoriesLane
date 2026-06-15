@@ -42,15 +42,37 @@ function parseJsonList(out) {
   try { return JSON.parse(out.slice(i, j + 1)); } catch { return []; }
 }
 
+// A snapshot only has viewable content if a *content* extractor succeeded.
+// favicon/headers/title/archive_org are auxiliary — they can succeed while the
+// actual page/document capture failed (e.g. TLS error), which would otherwise
+// leave a broken snapshot that renders ArchiveBox's "resource …/None" error.
+const CONTENT_EXTRACTORS = ["wget", "singlefile", "dom", "pdf", "screenshot", "media", "mercury", "readability", "htmltotext", "warc"];
+function captureSucceeded(snap) {
+  const h = (snap && snap.history) || {};
+  const ok = (r) => r && r.status === "succeeded";
+  // history ordering varies, so accept the snapshot if any run of any content
+  // extractor succeeded (a successful re-capture leaves viewable content).
+  return CONTENT_EXTRACTORS.some((e) => {
+    const runs = h[e];
+    return Array.isArray(runs) ? runs.some(ok) : ok(runs);
+  });
+}
+
 async function archive(url) {
   // 1. Capture. ArchiveBox is idempotent — re-adding an existing URL re-snapshots.
   await run("add", url);
 
-  // 2. Resolve the snapshot timestamp for this exact URL (latest if re-archived).
+  // 2. Resolve the snapshot for this exact URL (latest if re-archived).
   const out = await run("list", "--json", "--filter-type=exact", url);
   const list = parseJsonList(out).filter((s) => s && s.timestamp);
   if (!list.length) throw new Error("ArchiveBox: no snapshot found after add");
   const snap = list.sort((a, b) => parseFloat(b.timestamp) - parseFloat(a.timestamp))[0];
+
+  // 3. Only report a local snapshot if real content was captured; otherwise let
+  //    the worker mark the job partial/failed (no broken "Local ↗" link).
+  if (!captureSucceeded(snap)) {
+    throw new Error("ArchiveBox: no content captured (all content extractors failed)");
+  }
   return { local_url: `${PUBLIC_URL}/archive/${snap.timestamp}/index.html` };
 }
 

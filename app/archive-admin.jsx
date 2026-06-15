@@ -122,7 +122,7 @@ function ArchiveAdmin({ lang, onClose }) {
   React.useEffect(() => {
     if (!authed || tab !== "queue") return;
     loadQueue();
-    const t = setInterval(loadQueue, 8000);
+    const t = setInterval(loadQueue, 20000);
     return () => clearInterval(t);
   }, [authed, tab, loadQueue]);
 

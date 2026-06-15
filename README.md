@@ -189,7 +189,11 @@ curl -H "Authorization: Bearer $TOKEN" "http://localhost:3001/api/archive/queue?
 
 **Storage notes (from ArchiveBox):** `index.sqlite3` stays on the local/SSD `memorylane-archivebox-data` volume. For very large archives, point the `archive/` folder at bigger storage via `ARCHIVEBOX_ARCHIVE_VOLUME` (mounted identically in `worker/archivers/archivebox.js`); on NFS/SMB/FUSE/S3-backed shares you may need `PUID`/`PGID`/root-squash adjustments, and avoid EXT3/FAT.
 
+**TLS verification disabled (deliberate):** ArchiveBox runs with `CHECK_SSL_VALIDITY=False` (in `docker-compose.yml` + persisted in `ArchiveBox.conf`). Many Vietnamese gov/edu sources — the primary material here — serve broken/incomplete certificate chains, which otherwise fail the local capture with `CERTIFICATE_VERIFY_FAILED` (the Internet Archive copy still succeeds, but the local snapshot is empty). **Trade-off:** fetched content isn't authenticated against a verified cert, so a MITM'd connection can't be detected. We accept this for a public-document archiver; the WARC + content hashes still record exactly what was fetched. To re-enable verification, set `CHECK_SSL_VALIDITY=True` and `archivebox config --set CHECK_SSL_VALIDITY=True`. A capture that produces no content (e.g. a genuinely dead link) is reported `partial`/`failed` with no broken local link — only the public Wayback link is offered.
+
 > The `archive-worker` mounts the Docker socket to run the tools as sibling containers — it must run on the local Docker host, never on the cloud API host.
+
+**Rate limiting (testing phase):** the API limiter is tunable via env — `RATE_LIMIT_MULT=50` multiplies every limit, `RATE_LIMIT_DISABLED=true` bypasses it entirely. Set on the backend host (e.g. Railway) during testing; default is production limits. Note the admin Queue tab auto-refreshes (every 20s) and consumes the `archive` namespace budget.
 
 ## Deploy
 

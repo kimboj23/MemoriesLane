@@ -78,6 +78,9 @@ services:
       - PUBLIC_INDEX=False
       - PUBLIC_SNAPSHOTS=False
       - PUBLIC_ADD_VIEW=False
+      # Capture sources with broken/incomplete TLS chains (common for VN gov/edu
+      # sites). Trade-off: no cert verification on fetched content. See README.
+      - CHECK_SSL_VALIDITY=False
       # Allow access + login through a Cloudflare tunnel (foreign hostname).
       # Wildcard survives quick-tunnel URL churn; add your named domain if any.
       - ALLOWED_HOSTS=*
