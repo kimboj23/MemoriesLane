@@ -1,5 +1,7 @@
 # secrets — never commit
 backend/.env
+# local Claude Code config — contains machine paths + command allowlists, not for a public repo
+.claude/
 backend/*.db
 backend/*.db-shm
 backend/*.db-wal
