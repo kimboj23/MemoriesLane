@@ -32,10 +32,9 @@ function docker(args, timeoutMs = 1000 * 60 * 15) {
   });
 }
 
-// Parse the tool's output for success + links. auto-archiver stores artifacts
-// as files in the data volume (not web URLs), so success is detected from the
-// status line, and local_url is the stored HTML snapshot path — mapped to a
-// browsable URL only if AUTOARCHIVER_PUBLIC_URL serves the volume.
+// Parse the tool's output for success + links. Artifacts are stored in Supabase
+// Storage (S3), so the tool prints their public cdn_url; we pick the formatted
+// HTML snapshot URL (under AUTOARCHIVER_PUBLIC_URL) as the local_url.
 function parseResult(output) {
   const success = /:\s*success'|SUCCESS\s+\||Processed\s+1\s+URL/i.test(output);
 
@@ -44,24 +43,21 @@ function parseResult(output) {
   if (ia) wayback_url = ia[0].replace(/['")\],]+$/, "");
 
   let local_url = null;
-  const html = output.match(/\/data\/archived\/[A-Za-z0-9._-]+\.html/);
-  if (html) local_url = PUBLIC_URL ? PUBLIC_URL + html[0].replace(/^\/data/, "") : html[0];
+  if (PUBLIC_URL) {
+    const urls = (output.match(/https?:\/\/[^\s'")\]]+/g) || [])
+      .map((u) => u.replace(/[)\]'"]+$/, ""))
+      .filter((u) => u.startsWith(PUBLIC_URL));
+    local_url = urls.find((u) => /\.html(\?|$)/i.test(u)) || urls[0] || null;
+  }
 
   return { success, wayback_url, local_url };
 }
 
 async function archive(url) {
-  // auto-archiver runs as a non-root user but the named volume is root-owned,
-  // so it can't create /data/archived. Make the data dir writable first
-  // (idempotent; also covers a freshly (re)created volume).
-  await docker([
-    "run", "--rm", "-v", `${VOLUME}:/data`, "alpine",
-    "sh", "-c", "mkdir -p /data/archived && chmod -R 777 /data",
-  ], 60000).catch(() => {});
-
+  // No local storage: artifacts upload straight to Supabase S3 (per the config).
+  // Only the read-only config volume is mounted.
   const out = await docker([
     "run", "--rm",
-    "-v", `${VOLUME}:/data`,
     "-v", `${CONFIG_DIR}:/config:ro`,
     IMAGE,
     "--config", "/config/orchestration.yaml",

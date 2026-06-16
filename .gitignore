@@ -1,5 +1,6 @@
 # secrets — never commit
 backend/.env
+archivebox/rclone.env
 # local Claude Code config — contains machine paths + command allowlists, not for a public repo
 .claude/
 backend/*.db
@@ -25,5 +26,7 @@ Thumbs.db
 MemoriesLane.zip
 deployGuide.md
 cloudflared.exe
-# tunnel config has local paths — commit cloudflared-config.yml only after replacing placeholders
+# named-tunnel config — contains the real tunnel ID + local Windows path; keep
+# out of the public repo (README documents how to recreate it).
+cloudflared-config.yml
 # .cloudflared/

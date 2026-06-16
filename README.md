@@ -154,7 +154,7 @@ docker run --rm -v "${PWD}:/work" -w /work postgres:17 `
 
 ## Archiving
 
-Case source materials (gov pages, news, social posts) are preserved two ways: a **public, durable Internet Archive link** + a **local snapshot** (ArchiveBox for web/documents, auto-archiver for social). The heavy tools can't run on a serverless host, so they live in a **local archive-worker** that coordinates through the shared `archives` table in Supabase.
+Case source materials (gov pages, news, social posts) are preserved two ways: a **public, durable Internet Archive link** + a **self-hosted snapshot stored in Supabase Storage (S3)** — ArchiveBox for web/documents, auto-archiver for social. The capture **tools** run locally (they need a browser/yt-dlp), but write **nothing to local disk** — everything goes to the cloud bucket. They're driven by a **local archive-worker** that coordinates through the shared `archives` table in Supabase.
 
 ```
 Moderator ─▶ POST /api/archive {caseId,url,mediaType}  → inserts archives row (status=pending)
@@ -187,7 +187,11 @@ curl -H "Authorization: Bearer $TOKEN" "http://localhost:3001/api/archive/queue?
 
 `POST /api/archive/<id>/retry` requeues a failed/partial job. Set `ARCHIVE_DRY_RUN=1` to exercise the queue without external tools.
 
-**Storage notes (from ArchiveBox):** `index.sqlite3` stays on the local/SSD `memorylane-archivebox-data` volume. For very large archives, point the `archive/` folder at bigger storage via `ARCHIVEBOX_ARCHIVE_VOLUME` (mounted identically in `worker/archivers/archivebox.js`); on NFS/SMB/FUSE/S3-backed shares you may need `PUID`/`PGID`/root-squash adjustments, and avoid EXT3/FAT.
+**Cloud storage — no local snapshots.** Snapshot content lives in **Supabase Storage** (the public `memory-archive` bucket, S3-compatible), not on disk:
+- **auto-archiver** uploads directly via its native `s3_storage` (in `worker/auto-archiver/orchestration.yaml`); `local_url` is a Supabase public-object URL.
+- **ArchiveBox** uses a custom image ([archivebox/Dockerfile](archivebox/Dockerfile)) whose entrypoint `rclone mount`s the bucket as `/data/archive` (FUSE — the container needs `cap_add: SYS_ADMIN` + `devices: /dev/fuse`). The worker captures via **`docker exec`** into that running container (not throwaway `docker run`), so writes land on the mount → S3. Only `index.sqlite3` + the rclone VFS cache stay on the local `memorylane-archivebox-data` volume.
+
+S3 credentials live in `archivebox/rclone.env` (gitignored, `RCLONE_CONFIG_SB_*`) and the auto-archiver `orchestration.yaml`. After editing those: `docker compose build archivebox && docker compose up -d archivebox archive-worker`.
 
 **TLS verification disabled (deliberate):** ArchiveBox runs with `CHECK_SSL_VALIDITY=False` (in `docker-compose.yml` + persisted in `ArchiveBox.conf`). Many Vietnamese gov/edu sources — the primary material here — serve broken/incomplete certificate chains, which otherwise fail the local capture with `CERTIFICATE_VERIFY_FAILED` (the Internet Archive copy still succeeds, but the local snapshot is empty). **Trade-off:** fetched content isn't authenticated against a verified cert, so a MITM'd connection can't be detected. We accept this for a public-document archiver; the WARC + content hashes still record exactly what was fetched. To re-enable verification, set `CHECK_SSL_VALIDITY=True` and `archivebox config --set CHECK_SSL_VALIDITY=True`. A capture that produces no content (e.g. a genuinely dead link) is reported `partial`/`failed` with no broken local link — only the public Wayback link is offered.
 

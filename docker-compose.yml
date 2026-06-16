@@ -70,10 +70,20 @@ services:
   #     archivebox manage createsuperuser
   # Then log in at http://localhost:8000/admin/. Users persist in archivebox-data.
   archivebox:
-    image: archivebox/archivebox:latest
+    # Custom image = ArchiveBox + rclone; mounts Supabase S3 as /data/archive so
+    # snapshots are stored in the cloud, not on local disk. index.sqlite3 stays local.
+    build: ./archivebox
     command: server --quick-init 0.0.0.0:8000
     ports:
       - "8000:8000"
+    # FUSE needs these so rclone can mount inside the container.
+    cap_add:
+      - SYS_ADMIN
+    devices:
+      - /dev/fuse
+    security_opt:
+      - apparmor:unconfined
+    env_file: ./archivebox/rclone.env   # RCLONE_CONFIG_SB_* + S3_BUCKET
     environment:
       - PUBLIC_INDEX=False
       - PUBLIC_SNAPSHOTS=False
@@ -84,9 +94,9 @@ services:
       # Allow access + login through a Cloudflare tunnel (foreign hostname).
       # Wildcard survives quick-tunnel URL churn; add your named domain if any.
       - ALLOWED_HOSTS=*
-      - CSRF_TRUSTED_ORIGINS=https://*.trycloudflare.com,http://localhost:8000
+      - CSRF_TRUSTED_ORIGINS=https://*.heomay.xyz,https://*.trycloudflare.com,http://localhost:8000
     volumes:
-      # index.sqlite3 lives here — keep on local/SSD storage.
+      # index.sqlite3 lives here (local); /data/archive is the S3 FUSE mount.
       - archivebox-data:/data
 
   # ── Archive worker (drives ArchiveBox + auto-archiver + Internet Archive) ────
@@ -100,12 +110,13 @@ services:
     env_file: ./backend/.env          # DATABASE_URL + IA_ACCESS_KEY/IA_SECRET_KEY
     environment:
       - ARCHIVEBOX_VOLUME=memorylane-archivebox-data
-      - ARCHIVEBOX_PUBLIC_URL=${ARCHIVEBOX_PUBLIC_URL:-http://localhost:8000}
-      - AUTOARCHIVER_VOLUME=memorylane-autoarchiver-data
+      # Permanent named-tunnel URL (archivebox.heomay.xyz -> localhost:8000) so stored
+      # local_url links work for remote testers. Override for pure-local dev.
+      - ARCHIVEBOX_PUBLIC_URL=${ARCHIVEBOX_PUBLIC_URL:-https://archivebox.heomay.xyz}
       - AUTOARCHIVER_CONFIG_DIR=memorylane-autoarchiver-config
-      # Public base URL for auto-archiver local snapshots (served by archive-files).
-      # After full deployment + S3, point this at the S3/CDN base instead.
-      - AUTOARCHIVER_PUBLIC_URL=${AUTOARCHIVER_PUBLIC_URL:-http://localhost:8090}
+      # auto-archiver stores to Supabase S3; this is the public-object base used to
+      # recognise stored snapshot URLs in its output.
+      - AUTOARCHIVER_PUBLIC_URL=${AUTOARCHIVER_PUBLIC_URL:-https://xaztyzxdqgoowfrbnpkj.supabase.co/storage/v1/object/public/memory-archive}
       - POLL_INTERVAL_MS=15000
       - DRY_RUN=${ARCHIVE_DRY_RUN:-0}
     volumes:
@@ -113,24 +124,12 @@ services:
     depends_on:
       - archivebox
 
-  # ── Static server for auto-archiver local snapshots ─────────────────────────
-  # auto-archiver stores artifacts as files in its volume; this serves them so
-  # the admin UI's "Local ↗" links open. Swap for S3/CDN in production.
-  archive-files:
-    image: nginx:alpine
-    ports:
-      - "8090:80"
-    volumes:
-      - autoarchiver-data:/usr/share/nginx/html:ro
-
 volumes:
   postgres-data:
   memorylane-uploads:
-  # Named explicitly (no compose project prefix) so the worker's sibling
-  # `docker run -v memorylane-archivebox-data:/data ...` resolves correctly.
+  # index.sqlite3 + rclone VFS cache live here; archive/ content goes to S3.
   archivebox-data:
     name: memorylane-archivebox-data
-  autoarchiver-data:
-    name: memorylane-autoarchiver-data
+  # auto-archiver config (orchestration.yaml). Artifacts go to S3, not a volume.
   autoarchiver-config:
     name: memorylane-autoarchiver-config

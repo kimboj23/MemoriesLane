@@ -1,18 +1,15 @@
 # Sample Bellingcat auto-archiver config for the MemoryLane archive-worker.
 #
 # The worker invokes auto-archiver per URL with:
-#   --config /config/orchestration.yaml --cli_feeder.urls <url>
+#   --config /config/orchestration.yaml <url>
 #
-# One-time setup (copy this into the config volume the worker mounts):
+# One-time setup (copy this into the config volume, then fill in real keys):
 #   docker run --rm -v memorylane-autoarchiver-config:/config -v "%cd%/worker/auto-archiver":/src \
 #     alpine sh -c "cp /src/orchestration.sample.yaml /config/orchestration.yaml"
 #
-# Tune `extractors` to the platforms you archive and add any required API keys
-# (some platforms need authentication). Module names track the installed
-# auto-archiver version — see https://auto-archiver.readthedocs.io.
-
-# Module names below are valid for auto-archiver 1.2.7 (run
+# Module names are valid for auto-archiver 1.2.7 (run
 # `docker run --rm bellingcat/auto-archiver:latest --help` to list them).
+
 steps:
   feeders:
     - cli_feeder               # URLs passed as positional args on the CLI
@@ -23,25 +20,31 @@ steps:
     - thumbnail_enricher
     - hash_enricher
   databases:
-    - csv_db                   # writes results to /data/db.csv
+    - csv_db
   storages:
-    - local_storage
+    - s3_storage               # store artifacts in Supabase Storage (S3), not local disk
   formatters:
     - html_formatter
 
-# URLs are supplied at runtime by the worker via --cli_feeder.urls
 cli_feeder:
   urls: []
 
-# Artifacts land in the shared data volume (mounted at /data in the worker run).
-local_storage:
-  save_to: /data/archived
-  save_absolute: true
-
+# csv_db writes to the ephemeral container fs (we parse stdout, not this file).
 csv_db:
-  csv_file: /data/db.csv
+  csv_file: /tmp/db.csv
 
-# Push to the Internet Archive as well (optional; needs the same IA keys).
+# Artifacts go to Supabase Storage over its S3-compatible API. The bucket is
+# public, so cdn_url is the Supabase public-object URL ({key} = stored path).
+s3_storage:
+  bucket: memory-archive
+  region: ap-northeast-1
+  endpoint_url: https://<project-ref>.storage.supabase.co/storage/v1/s3
+  cdn_url: https://<project-ref>.supabase.co/storage/v1/object/public/memory-archive/{key}
+  key: <supabase-s3-access-key-id>
+  secret: <supabase-s3-secret>
+  private: false
+
+# Push to the Internet Archive as well (optional; needs IA keys).
 # archiveorg_enricher:
 #   ia_access_key: ${IA_ACCESS_KEY}
 #   ia_secret_key: ${IA_SECRET_KEY}

@@ -1,23 +1,19 @@
 "use strict";
 /**
- * ArchiveBox adapter — local self-hosted snapshot for web pages & documents.
+ * ArchiveBox adapter — self-hosted snapshot for web pages & documents.
  *
- * The worker runs one-off ArchiveBox commands as sibling containers via the
- * mounted Docker socket, sharing the ArchiveBox data volume. It adds the URL,
- * then reads the snapshot timestamp back from `archivebox list --json` to build
- * the local snapshot link served by the (locked-down) ArchiveBox web UI.
+ * Captures run INSIDE the long-running ArchiveBox container (via `docker exec`),
+ * because that container has the Supabase S3 bucket FUSE-mounted at /data/archive.
+ * One-off `docker run` containers wouldn't see that mount, so snapshots would
+ * land on local disk instead of S3. The URL is added, then the snapshot timestamp
+ * is read back from `archivebox list --json` to build the served link.
  *
  * Targets ArchiveBox >= 0.7.
  */
 const { execFile } = require("child_process");
 
-const IMAGE       = process.env.ARCHIVEBOX_IMAGE   || "archivebox/archivebox:latest";
-const VOLUME      = process.env.ARCHIVEBOX_VOLUME  || "memorylane-archivebox-data";
-// Optional: when the large archive/ folder lives on a separate volume/host path,
-// it must be mounted identically here so worker captures land where the server
-// reads them. Leave unset for the simple single-volume default.
-const ARCHIVE_VOL = process.env.ARCHIVEBOX_ARCHIVE_VOLUME || "";
-const PUBLIC_URL  = (process.env.ARCHIVEBOX_PUBLIC_URL || "http://localhost:8000").replace(/\/$/, "");
+const CONTAINER  = process.env.ARCHIVEBOX_CONTAINER  || "memorieslane-archivebox-1";
+const PUBLIC_URL = (process.env.ARCHIVEBOX_PUBLIC_URL || "http://localhost:8000").replace(/\/$/, "");
 
 function docker(args, timeoutMs = 1000 * 60 * 10) {
   return new Promise((resolve, reject) => {
@@ -28,10 +24,9 @@ function docker(args, timeoutMs = 1000 * 60 * 10) {
   });
 }
 
+// Run an archivebox command inside the running container (which holds the S3 mount).
 function run(...cmd) {
-  const mounts = ["-v", `${VOLUME}:/data`];
-  if (ARCHIVE_VOL) mounts.push("-v", `${ARCHIVE_VOL}:/data/archive`);
-  return docker(["run", "--rm", ...mounts, IMAGE, ...cmd]);
+  return docker(["exec", "--user=archivebox", CONTAINER, "archivebox", ...cmd]);
 }
 
 // ArchiveBox prints a log banner before the JSON payload — slice out the array.
