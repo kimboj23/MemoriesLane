@@ -78,7 +78,7 @@ app.use(
   })
 );
 
-app.use(cors({ origin: corsOrigin, methods: ["GET", "POST", "PATCH"], allowedHeaders: ["Content-Type", "Authorization"], maxAge: 600 }));
+app.use(cors({ origin: corsOrigin, methods: ["GET", "POST", "PATCH", "DELETE"], allowedHeaders: ["Content-Type", "Authorization"], maxAge: 600 }));
 
 // Body parsing — 3 MB covers base64-encoded compressed images (a 1.5 MB binary
 // image encodes to ~2 MB in base64, plus JSON framing overhead).

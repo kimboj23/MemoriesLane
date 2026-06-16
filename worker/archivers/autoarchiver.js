@@ -47,7 +47,16 @@ function parseResult(output) {
     const urls = (output.match(/https?:\/\/[^\s'")\]]+/g) || [])
       .map((u) => u.replace(/[)\]'"]+$/, ""))
       .filter((u) => u.startsWith(PUBLIC_URL));
-    local_url = urls.find((u) => /\.html(\?|$)/i.test(u)) || urls[0] || null;
+    // Supabase serves images/PDF correctly but force-sanitizes HTML to text/plain
+    // (renders as raw source). So link a viewable artifact instead — screenshot
+    // PNG > other image > PDF > (last resort) HTML. The full HTML + media are
+    // still in the bucket; the public Wayback link is the full legible replay.
+    local_url =
+      urls.find((u) => /\.png(\?|$)/i.test(u)) ||
+      urls.find((u) => /\.(jpe?g|webp)(\?|$)/i.test(u)) ||
+      urls.find((u) => /\.pdf(\?|$)/i.test(u)) ||
+      urls.find((u) => /\.html(\?|$)/i.test(u)) ||
+      urls[0] || null;
   }
 
   return { success, wayback_url, local_url };

@@ -45,7 +45,7 @@ async function processJob(job) {
     out.tried = out.ok = 1;
     out.wayback_url = `https://web.archive.org/web/DRYRUN/${job.original_url}`;
     out.local_url = `http://localhost:8000/archive/DRYRUN/${job.id}/index.html`;
-  } else if (job.media_type === "social") {
+  } else if (job.tool === "auto-archiver") {
     await tryStep("auto-archiver", () => autoarchiver.archive(job.original_url), out);
     await tryStep("wayback", () => wayback.save(job.original_url), out);
   } else {

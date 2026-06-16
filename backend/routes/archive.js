@@ -24,8 +24,9 @@ router.use(requireAdmin);
 router.use(rateLimit(60, "archive"));
 
 const VALID_MEDIA = new Set(["web", "document", "social"]);
-// Local tool is implied by media type: social → auto-archiver, else ArchiveBox.
-// Wayback (public Internet Archive link) is attempted for every job by the worker.
+const VALID_TOOL = new Set(["archive-box", "auto-archiver"]);
+// Fallback tool when the client doesn't send one (older clients). Wayback (public
+// Internet Archive link) is attempted for every job by the worker regardless.
 const TOOL_FOR_MEDIA = { web: "archive-box", document: "archive-box", social: "auto-archiver" };
 
 function genId() { return crypto.randomBytes(9).toString("base64url"); }
@@ -63,11 +64,14 @@ router.post("/", async (req, res, next) => {
     const theCase = await queries.caseById(case_id);
     if (!theCase) return res.status(404).json({ error: "Case not found" });
 
+    // Tool is chosen independently of media type; fall back by media type.
+    const tool = VALID_TOOL.has(b.tool) ? b.tool : TOOL_FOR_MEDIA[media_type];
+
     const id = genId();
     await queries.archiveInsert({
       id,
       case_id,
-      tool: TOOL_FOR_MEDIA[media_type],
+      tool,
       media_type,
       title_vi: clean(b.titleVi, 300),
       title_en: clean(b.titleEn, 300),
@@ -144,6 +148,19 @@ router.post("/:id([A-Za-z0-9_-]{1,24})/retry", async (req, res, next) => {
       return res.status(409).json({ error: "Not found, or not in a retryable (failed/partial) state" });
     }
     res.json({ ok: true, id: req.params.id, status: "pending" });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/archive/:id — remove an archive record from the queue/index
+// ---------------------------------------------------------------------------
+router.delete("/:id([A-Za-z0-9_-]{1,24})", async (req, res, next) => {
+  try {
+    const result = await queries.archiveDelete(req.params.id);
+    if (result.rowCount === 0) return res.status(404).json({ error: "Not found" });
+    res.json({ ok: true, id: req.params.id, deleted: true });
   } catch (err) {
     next(err);
   }

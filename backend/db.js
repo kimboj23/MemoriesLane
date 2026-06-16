@@ -98,13 +98,17 @@ async function initDb() {
     )
   `);
 
-  // Archived source materials attached to a case. The local archive-worker
-  // fills wayback_url (public Internet Archive link) and local_url (ArchiveBox /
-  // auto-archiver snapshot) asynchronously; status drives the worker queue.
+  // Archived source materials. First-class records: they MAY belong to a case
+  // (case_id) but can also stand alone, browsable on their own. The local
+  // archive-worker fills wayback_url (public Internet Archive link), local_url
+  // (ArchiveBox / auto-archiver snapshot) and the integrity fields (sha256,
+  // tool_version, wacz_url) asynchronously; status drives the worker queue.
+  // approved/rejected gate public display, mirroring the memory moderation flow.
   await pool.query(`
     CREATE TABLE IF NOT EXISTS archives (
       id            TEXT PRIMARY KEY,
-      case_id       TEXT NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+      case_id       TEXT REFERENCES cases(id) ON DELETE SET NULL,
+      collection    TEXT,
       tool          TEXT NOT NULL DEFAULT 'archive-box'
                          CHECK (tool IN ('archive-box','auto-archiver','wayback')),
       media_type    TEXT NOT NULL DEFAULT 'web'
@@ -115,13 +119,22 @@ async function initDb() {
       account       TEXT,
       doc_date      TEXT,
       notes         TEXT,
+      lat           DOUBLE PRECISION,
+      lng           DOUBLE PRECISION,
+      city          TEXT,
       original_url  TEXT,
       wayback_url   TEXT,
       local_url     TEXT,
+      wacz_url      TEXT,
+      sha256        TEXT,
+      tool_version  TEXT,
       status        TEXT NOT NULL DEFAULT 'pending'
                          CHECK (status IN ('pending','running','archived','partial','failed')),
       error         TEXT,
       attempts      INTEGER NOT NULL DEFAULT 0,
+      approved      INTEGER NOT NULL DEFAULT 0,
+      rejected      INTEGER NOT NULL DEFAULT 0,
+      reject_reason TEXT,
       created_at    TEXT NOT NULL,
       archived_at   BIGINT
     )
@@ -147,9 +160,30 @@ async function initDb() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_case_topics        ON case_topics(topic_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_archives_case      ON archives(case_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_archives_status    ON archives(status)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_archives_public    ON archives(approved, status)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_archives_collection ON archives(collection)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_archive_topics     ON archive_topics(topic_id)`);
   // Migration: add archives column if it doesn't exist (safe to re-run)
   await pool.query(`ALTER TABLE cases ADD COLUMN IF NOT EXISTS archives TEXT DEFAULT '[]'`);
+
+  // Migrations for first-class, reviewable, evidentiary archives (all idempotent).
+  // DROP NOT NULL is a no-op if the column is already nullable.
+  await pool.query(`ALTER TABLE archives ALTER COLUMN case_id DROP NOT NULL`);
+  await pool.query(`ALTER TABLE archives ADD COLUMN IF NOT EXISTS collection    TEXT`);
+  await pool.query(`ALTER TABLE archives ADD COLUMN IF NOT EXISTS lat           DOUBLE PRECISION`);
+  await pool.query(`ALTER TABLE archives ADD COLUMN IF NOT EXISTS lng           DOUBLE PRECISION`);
+  await pool.query(`ALTER TABLE archives ADD COLUMN IF NOT EXISTS city          TEXT`);
+  await pool.query(`ALTER TABLE archives ADD COLUMN IF NOT EXISTS wacz_url      TEXT`);
+  await pool.query(`ALTER TABLE archives ADD COLUMN IF NOT EXISTS sha256        TEXT`);
+  await pool.query(`ALTER TABLE archives ADD COLUMN IF NOT EXISTS tool_version  TEXT`);
+  await pool.query(`ALTER TABLE archives ADD COLUMN IF NOT EXISTS approved      INTEGER NOT NULL DEFAULT 0`);
+  await pool.query(`ALTER TABLE archives ADD COLUMN IF NOT EXISTS rejected      INTEGER NOT NULL DEFAULT 0`);
+  await pool.query(`ALTER TABLE archives ADD COLUMN IF NOT EXISTS reject_reason TEXT`);
+
+  // Testimony attribution + external media reference (audio / video link).
+  await pool.query(`ALTER TABLE memories ADD COLUMN IF NOT EXISTS attribution TEXT NOT NULL DEFAULT 'anonymous'`);
+  await pool.query(`ALTER TABLE memories ADD COLUMN IF NOT EXISTS author_name TEXT`);
+  await pool.query(`ALTER TABLE memories ADD COLUMN IF NOT EXISTS media_url   TEXT`);
   // Partial index: pending moderation queue
   await pool.query(`
     CREATE INDEX IF NOT EXISTS idx_mem_pending
@@ -190,6 +224,37 @@ function getPool() {
   return pool;
 }
 
+// Map a DB archive row to the camelCase shape the frontend ArchiveCard /
+// material pages expect. archivedUrl prefers the durable public Wayback link.
+function mapMaterial(r) {
+  return {
+    id: r.id,
+    tool: r.tool,
+    mediaType: r.media_type,
+    collection: r.collection || null,
+    titleVi: r.title_vi,
+    titleEn: r.title_en,
+    source: r.source,
+    account: r.account,
+    date: r.doc_date,
+    notes: r.notes,
+    lat: r.lat != null ? Number(r.lat) : null,
+    lng: r.lng != null ? Number(r.lng) : null,
+    city: r.city || null,
+    originalUrl: r.original_url,
+    archivedUrl: r.wayback_url || r.local_url || null,
+    waybackUrl: r.wayback_url || null,
+    localUrl: r.local_url || null,
+    waczUrl: r.wacz_url || null,
+    sha256: r.sha256 || null,
+    status: r.status,
+    caseId: r.case_id || null,
+    caseTitleVi: r.case_title_vi || null,
+    caseTitleEn: r.case_title_en || null,
+    topics: Array.isArray(r.topics) ? r.topics : [],
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Query helpers — all async, return plain values (not Statement objects)
 // ---------------------------------------------------------------------------
@@ -197,12 +262,14 @@ const queries = {
   insert: (row) => getPool().query(
     `INSERT INTO memories
        (id, lat, lng, city, ward, cat, year, month, day, date_label, date_label_en,
-        lang, text_vi, text_en, has_photo, photo_path, media_type, submit_date)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+        lang, text_vi, text_en, has_photo, photo_path, media_type, submit_date,
+        attribution, author_name, media_url)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
     [row.id, row.lat, row.lng, row.city, row.ward, row.cat,
      row.year, row.month, row.day, row.date_label, row.date_label_en,
      row.lang, row.text_vi, row.text_en,
-     row.has_photo, row.photo_path, row.media_type, row.submit_date]
+     row.has_photo, row.photo_path, row.media_type, row.submit_date,
+     row.attribution || "anonymous", row.author_name || null, row.media_url || null]
   ),
 
   publicList: async (city, minY, maxY, limit = 500, offset = 0) => {
@@ -210,6 +277,7 @@ const queries = {
       `SELECT m.id, m.lat, m.lng, m.city, m.ward, m.cat, m.year, m.month, m.day,
               m.date_label, m.date_label_en, m.lang, m.text_vi, m.text_en,
               m.has_photo, m.media_type, m.case_id,
+              m.attribution, m.author_name, m.media_url,
               COALESCE(
                 json_agg(
                   json_build_object('id', t.id, 'slug', t.slug, 'name_vi', t.name_vi, 'name_en', t.name_en)
@@ -236,6 +304,7 @@ const queries = {
       `SELECT m.id, m.lat, m.lng, m.city, m.ward, m.cat, m.year, m.month, m.day,
               m.date_label, m.date_label_en, m.lang, m.text_vi, m.text_en,
               m.has_photo, m.media_type, m.case_id,
+              m.attribution, m.author_name, m.media_url,
               COALESCE(
                 json_agg(
                   json_build_object('id', t.id, 'slug', t.slug, 'name_vi', t.name_vi, 'name_en', t.name_en)
@@ -335,6 +404,7 @@ const queries = {
     const { rows } = await getPool().query(
       `SELECT a.id, a.tool, a.media_type, a.title_vi, a.title_en, a.source, a.account,
               a.doc_date, a.notes, a.original_url, a.wayback_url, a.local_url, a.status,
+              a.sha256, a.wacz_url, a.collection,
               COALESCE(
                 (SELECT json_agg(json_build_object('id',t.id,'slug',t.slug,'name_vi',t.name_vi,'name_en',t.name_en) ORDER BY t.name_en)
                  FROM archive_topics at JOIN topics t ON t.id = at.topic_id
@@ -342,33 +412,21 @@ const queries = {
                 '[]'::json
               ) AS topics
        FROM archives a
-       WHERE a.case_id = $1 AND a.status IN ('archived','partial')
+       WHERE a.case_id = $1 AND a.approved = 1 AND a.status IN ('archived','partial')
        ORDER BY a.doc_date DESC NULLS LAST, a.created_at DESC`,
       [caseId]
     );
-    return rows.map((r) => ({
-      id: r.id,
-      tool: r.tool,
-      mediaType: r.media_type,
-      titleVi: r.title_vi,
-      titleEn: r.title_en,
-      source: r.source,
-      account: r.account,
-      date: r.doc_date,
-      notes: r.notes,
-      originalUrl: r.original_url,
-      archivedUrl: r.wayback_url || r.local_url || null,
-      topics: Array.isArray(r.topics) ? r.topics : [],
-    }));
+    return rows.map(mapMaterial);
   },
 
   archiveInsert: (row) => getPool().query(
     `INSERT INTO archives
-       (id, case_id, tool, media_type, title_vi, title_en, source, account,
-        doc_date, notes, original_url, status, created_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'pending',$12)`,
-    [row.id, row.case_id, row.tool, row.media_type, row.title_vi, row.title_en,
-     row.source, row.account, row.doc_date, row.notes, row.original_url, row.created_at]
+       (id, case_id, collection, tool, media_type, title_vi, title_en, source, account,
+        doc_date, notes, lat, lng, city, original_url, status, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'pending',$16)`,
+    [row.id, row.case_id || null, row.collection || null, row.tool, row.media_type,
+     row.title_vi, row.title_en, row.source, row.account, row.doc_date, row.notes,
+     row.lat ?? null, row.lng ?? null, row.city || null, row.original_url, row.created_at]
   ),
 
   archiveById: async (id) => {
@@ -376,11 +434,72 @@ const queries = {
     return rows[0] || null;
   },
 
-  // Admin queue — full visibility, including pending/failed, with topic tags.
+  // ── Public materials (first-class, approved + successfully archived) ────────
+  materialsList: async ({ q, collection, mediaType, tool, limit = 60, offset = 0 } = {}) => {
+    const { rows } = await getPool().query(
+      `SELECT a.id, a.tool, a.media_type, a.collection, a.title_vi, a.title_en, a.source,
+              a.account, a.doc_date, a.notes, a.lat, a.lng, a.city, a.original_url,
+              a.wayback_url, a.local_url, a.wacz_url, a.sha256, a.status, a.case_id,
+              c.title_vi AS case_title_vi, c.title_en AS case_title_en,
+              COALESCE(
+                (SELECT json_agg(json_build_object('id',t.id,'slug',t.slug,'name_vi',t.name_vi,'name_en',t.name_en) ORDER BY t.name_en)
+                 FROM archive_topics at JOIN topics t ON t.id = at.topic_id
+                 WHERE at.archive_id = a.id),
+                '[]'::json
+              ) AS topics
+       FROM archives a
+       LEFT JOIN cases c ON c.id = a.case_id
+       WHERE a.approved = 1 AND a.status IN ('archived','partial')
+         AND ($1::text IS NULL OR a.collection = $1)
+         AND ($2::text IS NULL OR a.media_type = $2)
+         AND ($3::text IS NULL OR a.tool = $3)
+         AND ($4::text IS NULL OR (
+               a.title_en ILIKE '%'||$4||'%' OR a.title_vi ILIKE '%'||$4||'%' OR
+               a.source   ILIKE '%'||$4||'%' OR a.notes    ILIKE '%'||$4||'%' OR
+               a.original_url ILIKE '%'||$4||'%'))
+       ORDER BY a.doc_date DESC NULLS LAST, a.created_at DESC
+       LIMIT $5 OFFSET $6`,
+      [collection || null, mediaType || null, tool || null, q || null, limit, offset]
+    );
+    return rows.map(mapMaterial);
+  },
+
+  materialById: async (id) => {
+    const { rows } = await getPool().query(
+      `SELECT a.id, a.tool, a.media_type, a.collection, a.title_vi, a.title_en, a.source,
+              a.account, a.doc_date, a.notes, a.lat, a.lng, a.city, a.original_url,
+              a.wayback_url, a.local_url, a.wacz_url, a.sha256, a.status, a.case_id,
+              c.title_vi AS case_title_vi, c.title_en AS case_title_en,
+              COALESCE(
+                (SELECT json_agg(json_build_object('id',t.id,'slug',t.slug,'name_vi',t.name_vi,'name_en',t.name_en) ORDER BY t.name_en)
+                 FROM archive_topics at JOIN topics t ON t.id = at.topic_id
+                 WHERE at.archive_id = a.id),
+                '[]'::json
+              ) AS topics
+       FROM archives a
+       LEFT JOIN cases c ON c.id = a.case_id
+       WHERE a.id = $1 AND a.approved = 1 AND a.status IN ('archived','partial')`,
+      [id]
+    );
+    return rows[0] ? mapMaterial(rows[0]) : null;
+  },
+
+  materialCollections: async () => {
+    const { rows } = await getPool().query(
+      `SELECT collection, COUNT(*)::int AS count
+       FROM archives
+       WHERE approved = 1 AND status IN ('archived','partial') AND collection IS NOT NULL
+       GROUP BY collection ORDER BY count DESC`
+    );
+    return rows;
+  },
+
+  // Admin queue — full visibility, including pending/failed and review state.
   archiveQueue: async (caseId) => {
     const { rows } = await getPool().query(
-      `SELECT a.id, a.case_id, a.tool, a.media_type, a.title_en, a.title_vi, a.original_url,
-              a.wayback_url, a.local_url, a.status, a.error, a.attempts, a.created_at,
+      `SELECT a.id, a.case_id, a.collection, a.tool, a.media_type, a.title_en, a.title_vi,
+              a.original_url, a.wayback_url, a.local_url, a.wacz_url, a.sha256, a.status,
+              a.approved, a.rejected, a.error, a.attempts, a.created_at,
               COALESCE(
                 (SELECT json_agg(json_build_object('slug',t.slug,'name_en',t.name_en) ORDER BY t.name_en)
                  FROM archive_topics at JOIN topics t ON t.id = at.topic_id
@@ -396,11 +515,27 @@ const queries = {
     return rows;
   },
 
+  // Editorial review gate: captured materials awaiting a human decision.
+  archiveApprove: (id) => getPool().query(
+    `UPDATE archives SET approved = 1, rejected = 0, reject_reason = NULL
+     WHERE id = $1 AND status IN ('archived','partial')`,
+    [id]
+  ),
+
+  archiveReject: (id, reason) => getPool().query(
+    `UPDATE archives SET rejected = 1, approved = 0, reject_reason = $2 WHERE id = $1`,
+    [id, reason]
+  ),
+
   archiveRetry: (id) => getPool().query(
     `UPDATE archives SET status = 'pending', error = NULL
      WHERE id = $1 AND status IN ('failed','partial')`,
     [id]
   ),
+
+  // Delete an archive record (topic tags cascade). Does not remove the snapshot
+  // files in S3/ArchiveBox — only the queue/index record.
+  archiveDelete: (id) => getPool().query(`DELETE FROM archives WHERE id = $1`, [id]),
 
   // Reassign an archive to a different case.
   archiveSetCase: (id, caseId) => getPool().query(
@@ -436,12 +571,15 @@ const queries = {
     return rows[0] || null;
   },
 
-  archiveComplete: (id, { wayback_url, local_url, status }) => getPool().query(
+  archiveComplete: (id, { wayback_url, local_url, status, sha256, tool_version, wacz_url }) => getPool().query(
     `UPDATE archives
      SET wayback_url = $2, local_url = $3, status = $4, error = NULL,
+         sha256 = COALESCE($5, sha256),
+         tool_version = COALESCE($6, tool_version),
+         wacz_url = COALESCE($7, wacz_url),
          archived_at = EXTRACT(EPOCH FROM NOW())::BIGINT
      WHERE id = $1`,
-    [id, wayback_url || null, local_url || null, status]
+    [id, wayback_url || null, local_url || null, status, sha256 || null, tool_version || null, wacz_url || null]
   ),
 
   archiveFail: (id, error) => getPool().query(
@@ -484,6 +622,7 @@ const queries = {
       `SELECT m.id, m.lat, m.lng, m.city, m.ward, m.cat, m.year, m.month, m.day,
               m.date_label, m.date_label_en, m.lang, m.text_vi, m.text_en,
               m.has_photo, m.media_type, m.case_id,
+              m.attribution, m.author_name, m.media_url,
               COALESCE(
                 json_agg(
                   json_build_object('id',t.id,'slug',t.slug,'name_vi',t.name_vi,'name_en',t.name_en)

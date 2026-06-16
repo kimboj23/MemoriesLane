@@ -53,6 +53,7 @@ function ArchiveAdmin({ lang, onClose }) {
   const [caseId, setCaseId] = React.useState("");
   const [url, setUrl] = React.useState("");
   const [media, setMedia] = React.useState("document");
+  const [tool, setTool] = React.useState("archive-box");
   const [titleEn, setTitleEn] = React.useState("");
   const [titleVi, setTitleVi] = React.useState("");
   const [source, setSource] = React.useState("");
@@ -70,6 +71,7 @@ function ArchiveAdmin({ lang, onClose }) {
   const [qStatus, setQStatus] = React.useState("");  // "" = all
   const [qMedia, setQMedia] = React.useState("");     // "" = all
   const [qAdvOpen, setQAdvOpen] = React.useState(false);
+  const [qSort, setQSort] = React.useState("desc");  // by date added: desc = newest first
 
   // topics + case authoring + per-row editing
   const [allTopics, setAllTopics] = React.useState([]);
@@ -145,7 +147,7 @@ function ArchiveAdmin({ lang, onClose }) {
     authFetch("/api/archive", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ caseId: caseId.trim(), originalUrl: url.trim(), mediaType: media, titleEn, titleVi, source, account, date, notes }),
+      body: JSON.stringify({ caseId: caseId.trim(), originalUrl: url.trim(), mediaType: media, tool, titleEn, titleVi, source, account, date, notes }),
     })
       .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
       .then(({ ok, d }) => {
@@ -161,6 +163,10 @@ function ArchiveAdmin({ lang, onClose }) {
   };
 
   const retry = (id) => authFetch(`/api/archive/${id}/retry`, { method: "POST" }).then(loadQueue).catch(() => {});
+  const delArchive = (id) => {
+    if (!window.confirm(L("Xóa mục này khỏi hàng chờ? (Tệp đã lưu trên S3 không bị xóa)", "Delete this record from the queue? (Snapshot files in S3 are not removed)"))) return;
+    authFetch(`/api/archive/${id}`, { method: "DELETE" }).then(loadQueue).catch(() => {});
+  };
 
   // Load the topic taxonomy once authed (public endpoint).
   React.useEffect(() => {
@@ -212,6 +218,9 @@ function ArchiveAdmin({ lang, onClose }) {
       if (!hay.includes(q)) return false;
     }
     return true;
+  }).sort((a, b) => {
+    const cmp = String(a.created_at || "").localeCompare(String(b.created_at || ""));
+    return qSort === "asc" ? cmp : -cmp;  // by date added
   });
   const qFiltered = qSearch.trim() || qStatus || qMedia;
 
@@ -269,10 +278,14 @@ function ArchiveAdmin({ lang, onClose }) {
                     </button>
                   ))}
                 </div>
-                <div className="adm-hint">
-                  {media === "social"
-                    ? L("→ auto-archiver + Internet Archive", "→ auto-archiver + Internet Archive")
-                    : L("→ ArchiveBox + Internet Archive", "→ ArchiveBox + Internet Archive")}
+                <div className="field-label">{L("Công cụ lưu trữ", "Archive tool")}</div>
+                <div className="adm-chips">
+                  <button className={"adm-chip " + (tool === "archive-box" ? "on" : "")} onClick={() => setTool("archive-box")}>
+                    ArchiveBox + Internet Archive
+                  </button>
+                  <button className={"adm-chip " + (tool === "auto-archiver" ? "on" : "")} onClick={() => setTool("auto-archiver")}>
+                    auto-archiver + Internet Archive
+                  </button>
                 </div>
 
                 <div className="field-label">{L("Tiêu đề", "Title")}</div>
@@ -317,6 +330,10 @@ function ArchiveAdmin({ lang, onClose }) {
                   <input className="adm-input" type="search" value={qSearch}
                     placeholder={L("Tìm tiêu đề, URL, nhãn…", "Search title, URL, tags…")}
                     onChange={(e) => setQSearch(e.target.value)} />
+                  <button className="adm-advtoggle" onClick={() => setQSort((s) => (s === "desc" ? "asc" : "desc"))}
+                    title={L("Sắp xếp theo ngày thêm", "Sort by date added")}>
+                    {L("Ngày", "Date")} {qSort === "desc" ? "↓" : "↑"}
+                  </button>
                   <button className={"adm-advtoggle " + (qAdvOpen ? "on" : "")} onClick={() => setQAdvOpen((v) => !v)}>
                     {L("Lọc", "Filters")} {qAdvOpen ? "▴" : "▾"}
                   </button>
@@ -358,6 +375,7 @@ function ArchiveAdmin({ lang, onClose }) {
                           <button className="adm-retry" onClick={() => (editing ? setEditId(null) : startEdit(a))}>
                             {editing ? L("Đóng", "Close") : L("Sửa", "Edit")}
                           </button>
+                          <button className="adm-retry adm-del" onClick={() => delArchive(a.id)}>{L("Xóa", "Delete")}</button>
                         </span>
                       </div>
                       <div className="adm-row-title">{a.title_en || a.title_vi || a.original_url}</div>
