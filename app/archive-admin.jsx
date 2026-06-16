@@ -65,6 +65,11 @@ function ArchiveAdmin({ lang, onClose }) {
   // queue
   const [queue, setQueue] = React.useState([]);
   const [qLoading, setQLoading] = React.useState(false);
+  // queue search/filter
+  const [qSearch, setQSearch] = React.useState("");
+  const [qStatus, setQStatus] = React.useState("");  // "" = all
+  const [qMedia, setQMedia] = React.useState("");     // "" = all
+  const [qAdvOpen, setQAdvOpen] = React.useState(false);
 
   // topics + case authoring + per-row editing
   const [allTopics, setAllTopics] = React.useState([]);
@@ -195,6 +200,21 @@ function ArchiveAdmin({ lang, onClose }) {
       .then(() => { setEditId(null); loadQueue(); }).catch(() => {});
   };
 
+  // Client-side keyword + filters over the loaded queue (<=200 rows).
+  const filteredQueue = queue.filter((a) => {
+    if (qStatus && a.status !== qStatus) return false;
+    if (qMedia && a.media_type !== qMedia) return false;
+    const q = qSearch.trim().toLowerCase();
+    if (q) {
+      const tags = Array.isArray(a.topics) ? a.topics.map((t) => t.name_en || t.slug).join(" ") : "";
+      const hay = [a.title_en, a.title_vi, a.original_url, a.wayback_url, a.local_url, a.source, a.id, tags]
+        .filter(Boolean).join(" ").toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+  const qFiltered = qSearch.trim() || qStatus || qMedia;
+
   // -- render ---------------------------------------------------------------
   return (
     <aside className="sheet-dock adm-dock" role="dialog" aria-modal="false">
@@ -286,14 +306,45 @@ function ArchiveAdmin({ lang, onClose }) {
             {tab === "queue" && (
               <div className="adm-queue">
                 <div className="adm-queue-head">
-                  <span>{queue.length} {L("mục", "jobs")}</span>
+                  <span>{filteredQueue.length}{qFiltered ? ` / ${queue.length}` : ""} {L("mục", "jobs")}</span>
                   <span className="adm-queue-actions">
                     <a className="adm-extlink" href={(archiveboxBase || ARCHIVEBOX_FALLBACK).replace(/\/$/, "") + "/admin/core/snapshot/"} target="_blank" rel="noopener noreferrer">ArchiveBox ↗</a>
                     <button className="adm-refresh" onClick={loadQueue}>{qLoading ? "…" : "↻"}</button>
                   </span>
                 </div>
-                {queue.length === 0 && !qLoading && <div className="adm-hint">{L("Chưa có mục nào.", "Nothing queued yet.")}</div>}
-                {queue.map((a) => {
+
+                <div className="adm-search">
+                  <input className="adm-input" type="search" value={qSearch}
+                    placeholder={L("Tìm tiêu đề, URL, nhãn…", "Search title, URL, tags…")}
+                    onChange={(e) => setQSearch(e.target.value)} />
+                  <button className={"adm-advtoggle " + (qAdvOpen ? "on" : "")} onClick={() => setQAdvOpen((v) => !v)}>
+                    {L("Lọc", "Filters")} {qAdvOpen ? "▴" : "▾"}
+                  </button>
+                </div>
+                {qAdvOpen && (
+                  <div className="adm-adv">
+                    <div className="field-label">{L("Trạng thái", "Status")}</div>
+                    <div className="adm-chips">
+                      {["", "pending", "running", "archived", "partial", "failed"].map((s) => (
+                        <button key={s || "all"} className={"adm-chip " + (qStatus === s ? "on" : "")} onClick={() => setQStatus(s)}>
+                          {s ? (ARC_STATUS[s] ? ARC_STATUS[s][lang] : s) : L("Tất cả", "All")}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="field-label">{L("Loại", "Type")}</div>
+                    <div className="adm-chips">
+                      {["", "web", "document", "social"].map((m) => (
+                        <button key={m || "all"} className={"adm-chip " + (qMedia === m ? "on" : "")} onClick={() => setQMedia(m)}>
+                          {m || L("Tất cả", "All")}
+                        </button>
+                      ))}
+                    </div>
+                    {qFiltered && <button className="adm-clear" onClick={() => { setQSearch(""); setQStatus(""); setQMedia(""); }}>{L("Xóa bộ lọc", "Clear filters")}</button>}
+                  </div>
+                )}
+
+                {filteredQueue.length === 0 && !qLoading && <div className="adm-hint">{qFiltered ? L("Không khớp bộ lọc.", "No matches.") : L("Chưa có mục nào.", "Nothing queued yet.")}</div>}
+                {filteredQueue.map((a) => {
                   const st = ARC_STATUS[a.status] || { en: a.status, vi: a.status, cls: "" };
                   const editing = editId === a.id;
                   return (
