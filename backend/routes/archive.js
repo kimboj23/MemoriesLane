@@ -48,8 +48,9 @@ router.post("/", async (req, res, next) => {
     const b = req.body || {};
     const errors = [];
 
+    // caseId is optional — materials are first-class and may stand alone
+    // (e.g. submitted into a thematic collection before any case exists).
     const case_id = clean(b.caseId, 64);
-    if (!case_id) errors.push("caseId is required");
 
     const original_url = typeof b.originalUrl === "string" ? b.originalUrl.trim() : "";
     if (!original_url || !validUrl(original_url)) errors.push("originalUrl must be a valid http(s) URL");
@@ -57,12 +58,19 @@ router.post("/", async (req, res, next) => {
     const media_type = VALID_MEDIA.has(b.mediaType) ? b.mediaType : null;
     if (!media_type) errors.push(`mediaType must be one of: ${[...VALID_MEDIA].join(", ")}`);
 
+    const collection = clean(b.collection, 80);
+    const lat = Number.isFinite(b.lat) ? b.lat : null;
+    const lng = Number.isFinite(b.lng) ? b.lng : null;
+    const city = clean(b.city, 100);
+
     if (errors.length) return res.status(400).json({ error: "Validation failed", details: errors });
 
-    // Confirm the case exists before queueing (FK would reject anyway, but a
-    // clean 404 is friendlier than a 500).
-    const theCase = await queries.caseById(case_id);
-    if (!theCase) return res.status(404).json({ error: "Case not found" });
+    // Confirm the case exists before queueing, when one was given (FK would
+    // reject anyway, but a clean 404 is friendlier than a 500).
+    if (case_id) {
+      const theCase = await queries.caseById(case_id);
+      if (!theCase) return res.status(404).json({ error: "Case not found" });
+    }
 
     // Tool is chosen independently of media type; fall back by media type.
     const tool = VALID_TOOL.has(b.tool) ? b.tool : TOOL_FOR_MEDIA[media_type];
@@ -71,6 +79,7 @@ router.post("/", async (req, res, next) => {
     await queries.archiveInsert({
       id,
       case_id,
+      collection,
       tool,
       media_type,
       title_vi: clean(b.titleVi, 300),
@@ -79,6 +88,9 @@ router.post("/", async (req, res, next) => {
       account: clean(b.account, 200),
       doc_date: clean(b.date, 40),
       notes: clean(b.notes, 1000),
+      lat,
+      lng,
+      city,
       original_url,
       created_at: todayUTC(),
     });
@@ -133,6 +145,36 @@ router.patch("/:id([A-Za-z0-9_-]{1,24})", async (req, res, next) => {
       await queries.setArchiveTopics(req.params.id, b.topics.map((s) => String(s)));
     }
     res.json({ ok: true, id: req.params.id });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/archive/:id/approve — editorial gate: publish a captured material
+// ---------------------------------------------------------------------------
+router.post("/:id([A-Za-z0-9_-]{1,24})/approve", async (req, res, next) => {
+  try {
+    const result = await queries.archiveApprove(req.params.id);
+    if (result.rowCount === 0) {
+      return res.status(409).json({ error: "Not found, or not in a publishable (archived/partial) state" });
+    }
+    res.json({ ok: true, id: req.params.id, approved: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/archive/:id/reject — editorial gate: keep a material out of public view
+// ---------------------------------------------------------------------------
+router.post("/:id([A-Za-z0-9_-]{1,24})/reject", async (req, res, next) => {
+  try {
+    const reason = clean((req.body || {}).reason, 500);
+    const existing = await queries.archiveById(req.params.id);
+    if (!existing) return res.status(404).json({ error: "Not found" });
+    await queries.archiveReject(req.params.id, reason);
+    res.json({ ok: true, id: req.params.id, rejected: true });
   } catch (err) {
     next(err);
   }

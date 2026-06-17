@@ -11,6 +11,7 @@ const casesRouter    = require("./routes/cases");
 const topicsRouter   = require("./routes/topics");
 const feedRouter     = require("./routes/feed");
 const archiveRouter  = require("./routes/archive");
+const materialsRouter = require("./routes/materials");
 
 const PORT = parseInt(process.env.PORT, 10) || 3001;
 const BIND = process.env.BIND_ADDR || "127.0.0.1"; // localhost-only by default
@@ -100,6 +101,7 @@ app.use("/api/cases",    casesRouter);
 app.use("/api/topics",   topicsRouter);
 app.use("/api/feed",     feedRouter);
 app.use("/api/archive",  archiveRouter);
+app.use("/api/materials", materialsRouter);
 
 // Small public config for the frontend (e.g. the public ArchiveBox UI URL,
 // set per-environment so the admin "ArchiveBox" link points at the right place
