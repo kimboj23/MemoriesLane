@@ -59,12 +59,26 @@ function MemoryDetail({ memory, lang, onClose, onPrev, onNext, onOpenCase }) {
 
         <blockquote className="read-quote">{lang === "vi" ? m.vi : m.en}</blockquote>
 
+        {m.mediaUrl && (
+          <a className="read-media-link" href={m.mediaUrl} target="_blank" rel="noopener noreferrer">
+            {lang === "vi" ? "Nghe / xem tư liệu gốc ↗" : "Listen / watch the original recording ↗"}
+          </a>
+        )}
+
         <footer className="read-foot">
           <div className="read-meta">
             <span className="meta-k">{lang === "vi" ? "Thời gian" : "When"}</span>
             <span className="meta-v">
               {isApprox(m) && <span className="approx-mark" title={lang === "vi" ? "Thời gian ước chừng" : "Approximate date"}>~ </span>}
               {lang === "vi" ? m.date : (m.dateEn || m.date)}
+            </span>
+          </div>
+          <div className="read-meta">
+            <span className="meta-k">{lang === "vi" ? "Kể bởi" : "Told by"}</span>
+            <span className="meta-v">
+              {m.attribution === "real-name" || m.attribution === "pseudonym"
+                ? (m.authorName || (lang === "vi" ? "Ẩn danh" : "Anonymous"))
+                : (lang === "vi" ? "Ẩn danh" : "Anonymous")}
             </span>
           </div>
           {m.mine && (

@@ -39,6 +39,9 @@ function ComposeSheet({ point, lang, accent, gold, city, onSubmit, onClose, near
   const [minute, setMinute] = React.useState("");
   const [photo, setPhoto] = React.useState(null);
   const [optimizing, setOptimizing] = React.useState(false);
+  const [attribution, setAttribution] = React.useState("anonymous");
+  const [authorName, setAuthorName] = React.useState("");
+  const [mediaUrl, setMediaUrl] = React.useState("");
   const fileRef = React.useRef(null);
 
   const specificMonth = /^\d+$/.test(month);
@@ -48,7 +51,8 @@ function ComposeSheet({ point, lang, accent, gold, city, onSubmit, onClose, near
     ? (city && city.key === "hanoi" ? nearestWard(point.lat, point.lng) : (city ? city[lang] : nearestWard(point.lat, point.lng)))
     : null;
   const hasText = text.trim().length > 1;
-  const canSend = !!point && hasText && !!year;
+  const attributionValid = attribution === "anonymous" || authorName.trim().length > 0;
+  const canSend = !!point && hasText && !!year && attributionValid;
 
   const pickPhoto = async (e) => {
     const file = e.target.files && e.target.files[0];
@@ -73,6 +77,9 @@ function ComposeSheet({ point, lang, accent, gold, city, onSubmit, onClose, near
       lang,
       photo: !!photo, photoData: photo ? photo.dataUrl : null,
       media: photo ? "photo" : "text",
+      attribution,
+      authorName: attribution === "anonymous" ? null : authorName.trim(),
+      mediaUrl: mediaUrl.trim() || null,
       submittedAt: Date.now(),
       mine: true,
     };
@@ -196,6 +203,30 @@ function ComposeSheet({ point, lang, accent, gold, city, onSubmit, onClose, near
             </div>
           )}
           <input ref={fileRef} type="file" accept="image/*" onChange={pickPhoto} hidden />
+
+          <div className="field-label">{lang === "vi" ? "Ghi danh tác giả" : "Attribution"}</div>
+          <div className="cat-chips">
+            {[
+              { key: "anonymous", vi: "Ẩn danh", en: "Anonymous" },
+              { key: "pseudonym", vi: "Bút danh", en: "Pseudonym" },
+              { key: "real-name", vi: "Tên thật", en: "Real name" },
+            ].map((a) => (
+              <button key={a.key} className={"cat-chip " + (attribution === a.key ? "on" : "")}
+                onClick={() => setAttribution(a.key)}>
+                {a[lang]}
+              </button>
+            ))}
+          </div>
+          {attribution !== "anonymous" && (
+            <input className="memory-input" style={{ marginTop: 8 }} value={authorName}
+              placeholder={lang === "vi" ? "Tên hoặc bút danh của bạn" : "Your name or pseudonym"}
+              onChange={(e) => setAuthorName(e.target.value)} />
+          )}
+
+          <div className="field-label">{lang === "vi" ? "Liên kết ghi âm/video (không bắt buộc)" : "Audio/video link (optional)"}</div>
+          <input className="memory-input" type="url" value={mediaUrl}
+            placeholder={lang === "vi" ? "https://… (bản ghi âm gốc, nếu có)" : "https://… (an existing recording, if any)"}
+            onChange={(e) => setMediaUrl(e.target.value)} />
 
           <button className={"send-btn " + (canSend ? "" : "disabled")} onClick={send} disabled={!canSend}>
             {t.submit}

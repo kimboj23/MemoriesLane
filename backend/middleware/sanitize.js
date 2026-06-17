@@ -6,7 +6,7 @@
  * Text fields are stripped of HTML tags — the React frontend auto-escapes
  * output, but defence in depth means we never store raw markup.
  */
-const { VALID_CATS, VALID_CITIES, VALID_MEDIA, VALID_LANGS } = require("../db");
+const { VALID_CATS, VALID_CITIES, VALID_MEDIA, VALID_LANGS, VALID_ATTRIBUTION } = require("../db");
 
 // Strip every HTML/XML tag. We do not use a full HTML parser because we want
 // to reject markup entirely, not sanitise it to a safe subset.
@@ -41,6 +41,12 @@ function int(v, lo, hi) {
 function float(v, lo, hi) {
   const n = parseFloat(v);
   return Number.isFinite(n) && n >= lo && n <= hi ? n : null;
+}
+
+function httpUrlOk(v) {
+  if (typeof v !== "string" || !v.trim()) return false;
+  try { const u = new URL(v.trim()); return u.protocol === "http:" || u.protocol === "https:"; }
+  catch { return false; }
 }
 
 /**
@@ -99,11 +105,28 @@ function validateSubmission(body) {
       photoData = body.photoData;
   }
 
+  // Attribution choice — how the storyteller wants to be credited.
+  // "anonymous" never stores a name, even if one was sent by mistake.
+  const attribution = VALID_ATTRIBUTION.has(body.attribution) ? body.attribution : "anonymous";
+  let author_name = null;
+  if (attribution !== "anonymous") {
+    author_name = clean(body.authorName, 100);
+    if (!author_name) errors.push("authorName is required when attribution is not anonymous");
+  }
+
+  // Optional link to an externally hosted audio/video testimony (e.g. an
+  // oral history recording the storyteller already has online).
+  let media_url = null;
+  if (body.mediaUrl != null && String(body.mediaUrl).trim()) {
+    if (!httpUrlOk(body.mediaUrl)) errors.push("mediaUrl must be a valid http(s) URL");
+    else media_url = clean(body.mediaUrl, 500);
+  }
+
   if (errors.length) return { ok: false, errors };
 
   return {
     ok: true,
-    data: { lat, lng, city, ward, cat, year, month, day, date_label, date_label_en, lang, text_vi, text_en, media_type, photoData },
+    data: { lat, lng, city, ward, cat, year, month, day, date_label, date_label_en, lang, text_vi, text_en, media_type, photoData, attribution, author_name, media_url },
   };
 }
 

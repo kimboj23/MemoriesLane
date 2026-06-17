@@ -8,6 +8,7 @@ const VALID_CATS   = new Set(["personal", "news", "community", "event"]);
 const VALID_CITIES = new Set(["hanoi", "hcmc", "hue", "danang", "cantho"]);
 const VALID_MEDIA  = new Set(["text", "photo", "video"]);
 const VALID_LANGS  = new Set(["vi", "en"]);
+const VALID_ATTRIBUTION = new Set(["anonymous", "pseudonym", "real-name"]);
 
 async function initDb() {
   const dbUrl = process.env.DATABASE_URL || "";
@@ -719,4 +720,4 @@ const queries = {
   },
 };
 
-module.exports = { initDb, getPool, queries, VALID_CATS, VALID_CITIES, VALID_MEDIA, VALID_LANGS };
+module.exports = { initDb, getPool, queries, VALID_CATS, VALID_CITIES, VALID_MEDIA, VALID_LANGS, VALID_ATTRIBUTION };

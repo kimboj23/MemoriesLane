@@ -130,6 +130,9 @@ function FeedView({ items, lang, loading, onOpenMemory, onOpenCase }) {
               photo: !!item.has_photo, media: item.media_type,
               caseId: item.case_id || null,
               topics: item.topics || [],
+              attribution: item.attribution || "anonymous",
+              authorName: item.author_name || null,
+              mediaUrl: item.media_url || null,
             };
             return (
               <MemoryFeedCard key={item.id} item={item} lang={lang} onOpen={() => onOpenMemory(m)} />

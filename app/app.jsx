@@ -191,6 +191,9 @@ function fromApi(r) {
     media: r.media_type,
     caseId: r.case_id || null,
     topics: Array.isArray(r.topics) ? r.topics : [],
+    attribution: r.attribution || "anonymous",
+    authorName: r.author_name || null,
+    mediaUrl: r.media_url || null,
   };
 }
 
