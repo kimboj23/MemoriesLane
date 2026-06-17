@@ -160,8 +160,6 @@ async function initDb() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_case_topics        ON case_topics(topic_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_archives_case      ON archives(case_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_archives_status    ON archives(status)`);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_archives_public    ON archives(approved, status)`);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_archives_collection ON archives(collection)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_archive_topics     ON archive_topics(topic_id)`);
   // Migration: add archives column if it doesn't exist (safe to re-run)
   await pool.query(`ALTER TABLE cases ADD COLUMN IF NOT EXISTS archives TEXT DEFAULT '[]'`);
@@ -179,6 +177,10 @@ async function initDb() {
   await pool.query(`ALTER TABLE archives ADD COLUMN IF NOT EXISTS approved      INTEGER NOT NULL DEFAULT 0`);
   await pool.query(`ALTER TABLE archives ADD COLUMN IF NOT EXISTS rejected      INTEGER NOT NULL DEFAULT 0`);
   await pool.query(`ALTER TABLE archives ADD COLUMN IF NOT EXISTS reject_reason TEXT`);
+  // These index columns (approved, collection) are only guaranteed to exist
+  // after the ALTER TABLE migrations above have run.
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_archives_public    ON archives(approved, status)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_archives_collection ON archives(collection)`);
 
   // Testimony attribution + external media reference (audio / video link).
   await pool.query(`ALTER TABLE memories ADD COLUMN IF NOT EXISTS attribution TEXT NOT NULL DEFAULT 'anonymous'`);
