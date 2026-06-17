@@ -236,7 +236,7 @@ function App() {
     query: "", cats: [], langs: [], content: [], status: "all", topics: [],
   });
   const [listView, setListView] = React.useState(false);
-  const [feedItems, setFeedItems] = React.useState([]);
+  const [feedCases, setFeedCases] = React.useState([]);
   const [feedLoading, setFeedLoading] = React.useState(false);
   const [queryMode, setQueryMode] = React.useState(null);
   const [queryShape, setQueryShape] = React.useState(null);
@@ -271,22 +271,23 @@ function App() {
       .catch(() => {});
   }, []);
 
-  // Fetch unified feed whenever list view is active + any filter changes.
+  // Fetch documented cases (containers) whenever list view is active + city/topics
+  // change. Memory cards in the list come from the client-side `results` set
+  // below instead, so every Advanced Search facet (content/lang/status/text/
+  // spatial, not just cats+topics) applies in list mode exactly as it does on
+  // the map — one filtered set feeds both views.
   React.useEffect(() => {
     if (!listView || city === "all") return;
     setFeedLoading(true);
     const p = new URLSearchParams();
     if (city) p.set("city", city);
-    p.set("minYear", String(range[0]));
-    p.set("maxYear", String(range[1]));
-    if (adv.cats && adv.cats.length)   p.set("cats",   adv.cats.join(","));
     if (adv.topics && adv.topics.length) p.set("topics", adv.topics.join(","));
     fetch("/api/feed?" + p.toString())
       .then((r) => r.ok ? r.json() : null)
-      .then((data) => { if (data) setFeedItems(data.items || []); })
+      .then((data) => { if (data) setFeedCases((data.items || []).filter((i) => i.type === "case")); })
       .catch(() => {})
       .finally(() => setFeedLoading(false));
-  }, [listView, city, range, adv.cats, adv.topics]);
+  }, [listView, city, adv.topics]);
 
   const [lo, hi] = range;
   const compiled = React.useMemo(() => compileQuery(adv.query), [adv.query]);
@@ -328,6 +329,12 @@ function App() {
   }, [scopeMemories, lo, hi, adv, queryShape, compiled]);
   const visible = results;
   const mapMemories = visible;
+  // List view shares the same filtered `results` for memory cards, so it
+  // reflects every Advanced Search facet exactly like the map does.
+  const feedItems = React.useMemo(
+    () => [...feedCases, ...results.map((m) => ({ type: "memory", ...m }))],
+    [feedCases, results]
+  );
 
   const resetResearch = () => {
     onRangeReset();

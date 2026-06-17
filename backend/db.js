@@ -592,10 +592,12 @@ const queries = {
   ),
 
   // ── Unified Feed (cases + memories, topic-filtered) ──────────────────────
-  unifiedFeed: async (city, topicSlugs, catKeys, minY, maxY) => {
+  // Documented case containers for the list view. Memory cards in that view
+  // come from the same client-side filtered set the map uses, so this only
+  // needs to supply cases (which aren't part of that per-memory filter set).
+  feedCases: async (city, topicSlugs) => {
     const p = getPool();
     const tParam = topicSlugs && topicSlugs.length ? topicSlugs : null;
-    const cParam = catKeys    && catKeys.length    ? catKeys    : null;
 
     const { rows: cases } = await p.query(
       `SELECT c.id, c.title_vi, c.title_en, c.summary_vi, c.summary_en,
@@ -622,41 +624,9 @@ const queries = {
       [city || null, tParam]
     );
 
-    const { rows: memories } = await p.query(
-      `SELECT m.id, m.lat, m.lng, m.city, m.ward, m.cat, m.year, m.month, m.day,
-              m.date_label, m.date_label_en, m.lang, m.text_vi, m.text_en,
-              m.has_photo, m.media_type, m.case_id,
-              m.attribution, m.author_name, m.media_url,
-              COALESCE(
-                json_agg(
-                  json_build_object('id',t.id,'slug',t.slug,'name_vi',t.name_vi,'name_en',t.name_en)
-                  ORDER BY t.name_en
-                ) FILTER (WHERE t.id IS NOT NULL), '[]'::json
-              ) AS topics
-       FROM memories m
-       LEFT JOIN memory_topics mt ON mt.memory_id = m.id
-       LEFT JOIN topics t         ON t.id = mt.topic_id
-       WHERE m.approved = 1
-         AND ($1::text IS NULL OR m.city = $1)
-         AND m.year >= $3 AND m.year <= $4
-         AND ($2::text[] IS NULL OR EXISTS(
-           SELECT 1 FROM memory_topics mt2 JOIN topics t2 ON t2.id = mt2.topic_id
-           WHERE mt2.memory_id = m.id AND t2.slug = ANY($2::text[])
-         ))
-         AND ($5::text[] IS NULL OR m.cat = ANY($5::text[]))
-       GROUP BY m.id
-       ORDER BY m.year DESC
-       LIMIT 100`,
-      [city || null, tParam, minY, maxY, cParam]
-    );
-
     return {
-      items: [
-        ...cases.map((c) => ({ type: "case", ...c, memory_count: Number(c.memory_count) })),
-        ...memories.map((m) => ({ type: "memory", ...m })),
-      ],
+      items: cases.map((c) => ({ type: "case", ...c, memory_count: Number(c.memory_count) })),
       casesCount: cases.length,
-      memoriesCount: memories.length,
     };
   },
 

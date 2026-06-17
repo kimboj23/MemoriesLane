@@ -50,8 +50,8 @@ function CaseFeedCard({ item, lang, onOpen }) {
 
 function MemoryFeedCard({ item, lang, onOpen }) {
   const c0     = catOf(item.cat);
-  const text   = lang === "vi" ? item.text_vi : (item.text_en  || item.text_vi);
-  const date   = lang === "vi" ? item.date_label : (item.date_label_en || item.date_label || String(item.year));
+  const text   = lang === "vi" ? item.vi : (item.en || item.vi);
+  const date   = lang === "vi" ? item.date : (item.dateEn || item.date || String(item.year));
   const topics = Array.isArray(item.topics) ? item.topics : [];
 
   return (
@@ -119,25 +119,9 @@ function FeedView({ items, lang, loading, onOpenMemory, onOpenCase }) {
             <span className="feed-section-label">{lang === "vi" ? "Tiếng nói" : "Memories"}</span>
             <span className="feed-section-count">{memories.length}</span>
           </div>
-          {memories.map((item) => {
-            const m = {
-              id: item.id, lat: item.lat, lng: item.lng,
-              city: item.city, ward: item.ward, cat: item.cat,
-              year: item.year, month: item.month, day: item.day,
-              date: item.date_label || String(item.year),
-              dateEn: item.date_label_en || String(item.year),
-              vi: item.text_vi, en: item.text_en || item.text_vi,
-              photo: !!item.has_photo, media: item.media_type,
-              caseId: item.case_id || null,
-              topics: item.topics || [],
-              attribution: item.attribution || "anonymous",
-              authorName: item.author_name || null,
-              mediaUrl: item.media_url || null,
-            };
-            return (
-              <MemoryFeedCard key={item.id} item={item} lang={lang} onOpen={() => onOpenMemory(m)} />
-            );
-          })}
+          {memories.map((item) => (
+            <MemoryFeedCard key={item.id} item={item} lang={lang} onOpen={() => onOpenMemory(item)} />
+          ))}
         </div>
       )}
     </div>

@@ -98,7 +98,7 @@ Public:
 | GET | `/api/memories?city=&minYear=&maxYear=&offset=` | List approved memories |
 | GET | `/api/memories/:id` | Single approved memory |
 | GET | `/api/memories/:id/photo` | Approved memory's photo (WebP) |
-| GET | `/api/feed?city=&topics=&cats=&minYear=&maxYear=` | Unified cases + memories feed |
+| GET | `/api/feed?city=&topics=` | Documented cases for the list view |
 | GET | `/api/topics` | All topics |
 | GET | `/api/cases/:id` | Case profile + linked memories |
 | GET | `/health` | Health check |
