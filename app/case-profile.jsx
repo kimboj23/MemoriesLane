@@ -72,6 +72,11 @@ function ArchiveCard({ item, lang }) {
         <span className={`arc-tool-badge arc-tool--${item.tool || "other"}`}>{tool}</span>
         <span className="arc-media-type"><span className="arc-glyph">{glyph}</span>{item.mediaType}</span>
         {item.date && <span className="arc-date">{item.date}</span>}
+        {item.sha256 && (
+          <span className="arc-verified" title={`SHA-256: ${item.sha256}`}>
+            ✓ {lang === "vi" ? "Đã xác thực" : "Verified"}
+          </span>
+        )}
       </div>
       <p className="arc-title">{title}</p>
       {item.source && (
@@ -90,6 +95,11 @@ function ArchiveCard({ item, lang }) {
           {item.archivedUrl && (
             <a href={item.archivedUrl} target="_blank" rel="noopener noreferrer" className="arc-link arc-link--saved">
               {lang === "vi" ? "Bản lưu ↗" : "Archived ↗"}
+            </a>
+          )}
+          {item.waczUrl && (
+            <a href={item.waczUrl} target="_blank" rel="noopener noreferrer" className="arc-link">
+              WACZ ↗
             </a>
           )}
         </div>
@@ -206,3 +216,4 @@ function CaseProfile({ caseData, memories, lang, onClose, onSelectMemory }) {
 }
 
 window.CaseProfile = CaseProfile;
+window.ArchiveCard = ArchiveCard;

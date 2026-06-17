@@ -221,6 +221,7 @@ function App() {
   const [selected, setSelected] = React.useState(null);
   const [aboutOpen, setAboutOpen] = React.useState(false);
   const [adminOpen, setAdminOpen] = React.useState(false);
+  const [materialsOpen, setMaterialsOpen] = React.useState(false);
   const [openCaseId, setOpenCaseId] = React.useState(null);
   const [caseProfile, setCaseProfile] = React.useState(null);
   const [allTopics, setAllTopics] = React.useState([]);
@@ -432,13 +433,20 @@ function App() {
               <polyline points="1.5,9 7.5,12.5 13.5,9"/>
             </svg>
           </button>
-          <button className={"pill-btn icon-btn " + (adminOpen ? "active" : "")}
-            onClick={() => { setLayersOpen(false); setAdminOpen((v) => !v); }}
-            title={lang === "vi" ? "Lưu trữ tư liệu" : "Archive sources"} aria-label={lang === "vi" ? "Lưu trữ tư liệu" : "Archive sources"}>
+          <button className={"pill-btn icon-btn " + (materialsOpen ? "active" : "")}
+            onClick={() => { setLayersOpen(false); setMaterialsOpen((v) => !v); }}
+            title={lang === "vi" ? "Tư liệu lưu trữ" : "Materials"} aria-label={lang === "vi" ? "Tư liệu lưu trữ" : "Materials"}>
             <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
               <rect x="1.8" y="2.2" width="11.4" height="3.2" rx="1" />
               <path d="M2.8 5.4 h9.4 v6 a1 1 0 0 1-1 1 h-7.4 a1 1 0 0 1-1-1 z" />
               <line x1="6" y1="8" x2="9" y2="8" />
+            </svg>
+          </button>
+          <button className={"pill-btn icon-btn ghost " + (adminOpen ? "active" : "")}
+            onClick={() => { setLayersOpen(false); setAdminOpen((v) => !v); }}
+            title={lang === "vi" ? "Quản trị lưu trữ" : "Archive admin"} aria-label={lang === "vi" ? "Quản trị lưu trữ" : "Archive admin"}>
+            <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M7.5 1.5l2 4 4.4.6-3.2 3.1.75 4.3-3.95-2.1-3.95 2.1.75-4.3-3.2-3.1 4.4-.6z" />
             </svg>
           </button>
           <button className="pill-btn" onClick={() => setLang(lang === "vi" ? "en" : "vi")}>{S.langLabel}</button>
@@ -554,6 +562,10 @@ function App() {
       )}
       {aboutOpen && <AboutPanel lang={lang} onClose={() => setAboutOpen(false)} />}
       {adminOpen && <ArchiveAdmin lang={lang} onClose={() => setAdminOpen(false)} />}
+      {materialsOpen && (
+        <MaterialsPanel lang={lang} onClose={() => setMaterialsOpen(false)}
+          onOpenCase={(id) => { setMaterialsOpen(false); setOpenCaseId(id); }} />
+      )}
 
       <TweaksPanel>
         <TweakSection label={lang === "vi" ? "Tiếng nói" : "Voice"} />

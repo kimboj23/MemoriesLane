@@ -501,7 +501,7 @@ const queries = {
     const { rows } = await getPool().query(
       `SELECT a.id, a.case_id, a.collection, a.tool, a.media_type, a.title_en, a.title_vi,
               a.original_url, a.wayback_url, a.local_url, a.wacz_url, a.sha256, a.status,
-              a.approved, a.rejected, a.error, a.attempts, a.created_at,
+              a.approved, a.rejected, a.reject_reason, a.error, a.attempts, a.created_at,
               COALESCE(
                 (SELECT json_agg(json_build_object('slug',t.slug,'name_en',t.name_en) ORDER BY t.name_en)
                  FROM archive_topics at JOIN topics t ON t.id = at.topic_id

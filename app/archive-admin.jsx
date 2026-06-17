@@ -51,6 +51,7 @@ function ArchiveAdmin({ lang, onClose }) {
   // submit form
   const [cases, setCases] = React.useState([]);
   const [caseId, setCaseId] = React.useState("");
+  const [collection, setCollection] = React.useState("");
   const [url, setUrl] = React.useState("");
   const [media, setMedia] = React.useState("document");
   const [tool, setTool] = React.useState("archive-box");
@@ -93,11 +94,10 @@ function ArchiveAdmin({ lang, onClose }) {
         if (d && d.cases) {
           const list = d.cases.map((c) => ({ id: c.id, title: c.title_en || c.title_vi || c.id, city: c.city, status: c.status }));
           setCases(list);
-          if (list.length && !caseId) setCaseId(list[0].id);
         }
       })
       .catch(() => {});
-  }, [token, caseId]);
+  }, [token]);
 
   const loadQueue = React.useCallback(() => {
     setQLoading(true);
@@ -139,7 +139,7 @@ function ArchiveAdmin({ lang, onClose }) {
   };
 
   const validUrl = (() => { try { const u = new URL(url); return u.protocol === "http:" || u.protocol === "https:"; } catch { return false; } })();
-  const canSubmit = authed && caseId.trim() && validUrl && !busy;
+  const canSubmit = authed && validUrl && !busy;
 
   const submit = () => {
     if (!canSubmit) return;
@@ -147,7 +147,10 @@ function ArchiveAdmin({ lang, onClose }) {
     authFetch("/api/archive", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ caseId: caseId.trim(), originalUrl: url.trim(), mediaType: media, tool, titleEn, titleVi, source, account, date, notes }),
+      body: JSON.stringify({
+        caseId: caseId.trim() || undefined, collection: collection.trim() || undefined,
+        originalUrl: url.trim(), mediaType: media, tool, titleEn, titleVi, source, account, date, notes,
+      }),
     })
       .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
       .then(({ ok, d }) => {
@@ -166,6 +169,14 @@ function ArchiveAdmin({ lang, onClose }) {
   const delArchive = (id) => {
     if (!window.confirm(L("Xóa mục này khỏi hàng chờ? (Tệp đã lưu trên S3 không bị xóa)", "Delete this record from the queue? (Snapshot files in S3 are not removed)"))) return;
     authFetch(`/api/archive/${id}`, { method: "DELETE" }).then(loadQueue).catch(() => {});
+  };
+  const approveArchive = (id) => authFetch(`/api/archive/${id}/approve`, { method: "POST" }).then(loadQueue).catch(() => {});
+  const rejectArchive = (id) => {
+    const reason = window.prompt(L("Lý do từ chối (không bắt buộc):", "Reason for rejecting (optional):"), "");
+    if (reason === null) return;
+    authFetch(`/api/archive/${id}/reject`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason }),
+    }).then(loadQueue).catch(() => {});
   };
 
   // Load the topic taxonomy once authed (public endpoint).
@@ -256,14 +267,18 @@ function ArchiveAdmin({ lang, onClose }) {
 
             {tab === "submit" && (
               <div className="adm-form">
-                <div className="field-label">{L("Hồ sơ vụ việc", "Case")}</div>
+                <div className="field-label">{L("Hồ sơ vụ việc", "Case")} <em className="adm-hint-inline">({L("không bắt buộc", "optional")})</em></div>
                 {cases.length > 0 ? (
                   <select className="date-sel adm-wide" value={caseId} onChange={(e) => setCaseId(e.target.value)}>
+                    <option value="">{L("— độc lập, không gán hồ sơ —", "— standalone, no case —")}</option>
                     {cases.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
                   </select>
                 ) : (
-                  <input className="adm-input" value={caseId} placeholder="case-id" onChange={(e) => setCaseId(e.target.value)} />
+                  <input className="adm-input" value={caseId} placeholder={L("case-id (để trống nếu độc lập)", "case-id (leave blank for standalone)")} onChange={(e) => setCaseId(e.target.value)} />
                 )}
+
+                <div className="field-label">{L("Bộ sưu tập", "Collection")} <em className="adm-hint-inline">({L("không bắt buộc", "optional")})</em></div>
+                <input className="adm-input" value={collection} placeholder={L("VD: cưỡng chế đất đai", "e.g. land-evictions")} onChange={(e) => setCollection(e.target.value)} />
 
                 <div className="field-label">{L("Liên kết gốc", "Source URL")} <em className="adm-req">∗</em></div>
                 <input className="adm-input" type="url" value={url} placeholder="https://…"
@@ -369,9 +384,20 @@ function ArchiveAdmin({ lang, onClose }) {
                       <div className="adm-row-top">
                         <span className={"adm-badge " + st.cls}>{st[lang]}</span>
                         <span className="adm-row-media">{a.media_type}</span>
+                        {(a.status === "archived" || a.status === "partial") && (
+                          a.approved
+                            ? <span className="adm-badge is-ok">{L("Đã công bố", "Published")}</span>
+                            : a.rejected
+                              ? <span className="adm-badge is-fail">{L("Đã từ chối", "Rejected")}</span>
+                              : <span className="adm-badge is-pending">{L("Chờ duyệt", "Needs review")}</span>
+                        )}
                         <span className="adm-row-actions">
                           {(a.status === "failed" || a.status === "partial") &&
                             <button className="adm-retry" onClick={() => retry(a.id)}>{L("Thử lại", "Retry")}</button>}
+                          {(a.status === "archived" || a.status === "partial") && !a.approved &&
+                            <button className="adm-retry" onClick={() => approveArchive(a.id)}>{L("Duyệt", "Approve")}</button>}
+                          {(a.status === "archived" || a.status === "partial") && !a.rejected &&
+                            <button className="adm-retry adm-del" onClick={() => rejectArchive(a.id)}>{L("Từ chối", "Reject")}</button>}
                           <button className="adm-retry" onClick={() => (editing ? setEditId(null) : startEdit(a))}>
                             {editing ? L("Đóng", "Close") : L("Sửa", "Edit")}
                           </button>
@@ -379,6 +405,9 @@ function ArchiveAdmin({ lang, onClose }) {
                         </span>
                       </div>
                       <div className="adm-row-title">{a.title_en || a.title_vi || a.original_url}</div>
+                      {a.rejected && a.reject_reason && (
+                        <div className="adm-row-err">{L("Lý do từ chối: ", "Reject reason: ")}{a.reject_reason}</div>
+                      )}
                       {Array.isArray(a.topics) && a.topics.length > 0 && (
                         <div className="adm-row-tags">
                           {a.topics.map((t) => <span key={t.slug} className="adm-tag">{t.name_en}</span>)}
