@@ -62,6 +62,13 @@ function parseResult(output) {
   return { success, wayback_url, local_url };
 }
 
+// auto-archiver doesn't print a clean version string we can parse reliably,
+// so the Docker image reference (e.g. "bellingcat/auto-archiver:1.2.7") is
+// the most honest identifier of which build produced the snapshot.
+function version() {
+  return `auto-archiver (${IMAGE})`;
+}
+
 async function archive(url) {
   // No local storage: artifacts upload straight to Supabase S3 (per the config).
   // Only the read-only config volume is mounted.
@@ -82,4 +89,4 @@ async function archive(url) {
   return { wayback_url, local_url };
 }
 
-module.exports = { archive };
+module.exports = { archive, version };

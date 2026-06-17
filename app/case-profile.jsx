@@ -73,7 +73,10 @@ function ArchiveCard({ item, lang }) {
         <span className="arc-media-type"><span className="arc-glyph">{glyph}</span>{item.mediaType}</span>
         {item.date && <span className="arc-date">{item.date}</span>}
         {item.sha256 && (
-          <span className="arc-verified" title={`SHA-256: ${item.sha256}`}>
+          <span
+            className="arc-verified"
+            title={`SHA-256: ${item.sha256}${item.toolVersion ? `\n${lang === "vi" ? "Công cụ" : "Tool"}: ${item.toolVersion}` : ""}`}
+          >
             ✓ {lang === "vi" ? "Đã xác thực" : "Verified"}
           </span>
         )}

@@ -19,6 +19,7 @@ const db = require("./db");
 const wayback = require("./archivers/wayback");
 const archivebox = require("./archivers/archivebox");
 const autoarchiver = require("./archivers/autoarchiver");
+const integrity = require("./integrity");
 
 const POLL_MS      = parseInt(process.env.POLL_INTERVAL_MS, 10) || 15000;
 const MAX_ATTEMPTS = parseInt(process.env.MAX_ATTEMPTS, 10) || 3;
@@ -40,23 +41,30 @@ async function tryStep(label, fn, out) {
 
 async function processJob(job) {
   const out = { tried: 0, ok: 0, wayback_url: null, local_url: null };
+  let tool_version = null;
 
   if (DRY_RUN) {
     out.tried = out.ok = 1;
     out.wayback_url = `https://web.archive.org/web/DRYRUN/${job.original_url}`;
     out.local_url = `http://localhost:8000/archive/DRYRUN/${job.id}/index.html`;
+    tool_version = "dry-run";
   } else if (job.tool === "auto-archiver") {
     await tryStep("auto-archiver", () => autoarchiver.archive(job.original_url), out);
     await tryStep("wayback", () => wayback.save(job.original_url), out);
+    tool_version = autoarchiver.version();
   } else {
     await tryStep("archivebox", () => archivebox.archive(job.original_url), out);
     await tryStep("wayback", () => wayback.save(job.original_url), out);
+    tool_version = await archivebox.version();
   }
 
   if (out.ok === 0) throw new Error("all archivers failed");
   const status = out.ok === out.tried ? "archived" : "partial";
-  await db.complete(job.id, { wayback_url: out.wayback_url, local_url: out.local_url, status });
-  console.log(`[worker]   -> ${status} (wayback=${!!out.wayback_url} local=${!!out.local_url})`);
+  // Hash our own served copy (local snapshot first, public Wayback link as
+  // fallback) so the fingerprint reflects what readers can actually verify.
+  const sha256 = DRY_RUN ? "dryrun" : await integrity.sha256OfUrl(out.local_url || out.wayback_url);
+  await db.complete(job.id, { wayback_url: out.wayback_url, local_url: out.local_url, status, sha256, tool_version });
+  console.log(`[worker]   -> ${status} (wayback=${!!out.wayback_url} local=${!!out.local_url} sha256=${!!sha256})`);
 }
 
 async function drainQueue() {

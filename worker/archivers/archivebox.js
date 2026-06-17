@@ -53,6 +53,21 @@ function captureSucceeded(snap) {
   });
 }
 
+// Memoized for the worker's process lifetime — the container's ArchiveBox
+// build doesn't change between jobs, so there's no reason to shell out twice.
+let cachedVersion = null;
+async function version() {
+  if (cachedVersion) return cachedVersion;
+  try {
+    const out = await run("version");
+    const m = out.match(/ArchiveBox\s+v?([\d.]+)/i);
+    cachedVersion = m ? `archivebox ${m[1]}` : "archivebox";
+  } catch {
+    cachedVersion = "archivebox";
+  }
+  return cachedVersion;
+}
+
 async function archive(url) {
   // 1. Capture. ArchiveBox is idempotent — re-adding an existing URL re-snapshots.
   await run("add", url);
@@ -71,4 +86,4 @@ async function archive(url) {
   return { local_url: `${PUBLIC_URL}/archive/${snap.timestamp}/index.html` };
 }
 
-module.exports = { archive };
+module.exports = { archive, version };

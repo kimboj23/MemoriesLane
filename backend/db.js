@@ -250,6 +250,7 @@ function mapMaterial(r) {
     localUrl: r.local_url || null,
     waczUrl: r.wacz_url || null,
     sha256: r.sha256 || null,
+    toolVersion: r.tool_version || null,
     status: r.status,
     caseId: r.case_id || null,
     caseTitleVi: r.case_title_vi || null,
@@ -442,7 +443,7 @@ const queries = {
     const { rows } = await getPool().query(
       `SELECT a.id, a.tool, a.media_type, a.collection, a.title_vi, a.title_en, a.source,
               a.account, a.doc_date, a.notes, a.lat, a.lng, a.city, a.original_url,
-              a.wayback_url, a.local_url, a.wacz_url, a.sha256, a.status, a.case_id,
+              a.wayback_url, a.local_url, a.wacz_url, a.sha256, a.tool_version, a.status, a.case_id,
               c.title_vi AS case_title_vi, c.title_en AS case_title_en,
               COALESCE(
                 (SELECT json_agg(json_build_object('id',t.id,'slug',t.slug,'name_vi',t.name_vi,'name_en',t.name_en) ORDER BY t.name_en)
@@ -471,7 +472,7 @@ const queries = {
     const { rows } = await getPool().query(
       `SELECT a.id, a.tool, a.media_type, a.collection, a.title_vi, a.title_en, a.source,
               a.account, a.doc_date, a.notes, a.lat, a.lng, a.city, a.original_url,
-              a.wayback_url, a.local_url, a.wacz_url, a.sha256, a.status, a.case_id,
+              a.wayback_url, a.local_url, a.wacz_url, a.sha256, a.tool_version, a.status, a.case_id,
               c.title_vi AS case_title_vi, c.title_en AS case_title_en,
               COALESCE(
                 (SELECT json_agg(json_build_object('id',t.id,'slug',t.slug,'name_vi',t.name_vi,'name_en',t.name_en) ORDER BY t.name_en)

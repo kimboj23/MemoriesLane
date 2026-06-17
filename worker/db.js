@@ -34,13 +34,16 @@ async function claimNext() {
   return rows[0] || null;
 }
 
-function complete(id, { wayback_url, local_url, status }) {
+function complete(id, { wayback_url, local_url, status, sha256, tool_version, wacz_url }) {
   return pool.query(
     `UPDATE archives
      SET wayback_url = $2, local_url = $3, status = $4, error = NULL,
+         sha256 = COALESCE($5, sha256),
+         tool_version = COALESCE($6, tool_version),
+         wacz_url = COALESCE($7, wacz_url),
          archived_at = EXTRACT(EPOCH FROM NOW())::BIGINT
      WHERE id = $1`,
-    [id, wayback_url || null, local_url || null, status]
+    [id, wayback_url || null, local_url || null, status, sha256 || null, tool_version || null, wacz_url || null]
   );
 }
 
