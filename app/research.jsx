@@ -237,7 +237,7 @@ function AdvancedSearch({
 
           <div className="rs-facet">
             <span className="rs-facet-cap">{S.fContent}</span>
-            <RSCheckChips items={[{ v: "photo", label: S.ctPhoto }, { v: "video", label: S.ctVideo }, { v: "text", label: S.ctText }]}
+            <RSCheckChips items={[{ v: "photo", label: S.ctPhoto }, { v: "video", label: S.ctVideo }, { v: "document", label: S.ctDocument }, { v: "text", label: S.ctText }]}
               selected={adv.content} onToggle={(v) => toggleIn("content", v)} />
           </div>
 

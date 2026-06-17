@@ -6,7 +6,7 @@ let pool;
 
 const VALID_CATS   = new Set(["personal", "news", "community", "event"]);
 const VALID_CITIES = new Set(["hanoi", "hcmc", "hue", "danang", "cantho"]);
-const VALID_MEDIA  = new Set(["text", "photo", "video"]);
+const VALID_MEDIA  = new Set(["text", "photo", "video", "document"]);
 const VALID_LANGS  = new Set(["vi", "en"]);
 const VALID_ATTRIBUTION = new Set(["anonymous", "pseudonym", "real-name"]);
 
@@ -44,8 +44,9 @@ async function initDb() {
       text_en       TEXT,
       has_photo     INTEGER NOT NULL DEFAULT 0,
       photo_path    TEXT,
+      file_mime     TEXT,
       media_type    TEXT NOT NULL DEFAULT 'text'
-                         CHECK(media_type IN ('text','photo','video')),
+                         CHECK(media_type IN ('text','photo','video','document')),
       case_id       TEXT,
       approved      INTEGER NOT NULL DEFAULT 0,
       rejected      INTEGER NOT NULL DEFAULT 0,
@@ -189,6 +190,11 @@ async function initDb() {
   await pool.query(`ALTER TABLE memories ADD COLUMN IF NOT EXISTS attribution TEXT NOT NULL DEFAULT 'anonymous'`);
   await pool.query(`ALTER TABLE memories ADD COLUMN IF NOT EXISTS author_name TEXT`);
   await pool.query(`ALTER TABLE memories ADD COLUMN IF NOT EXISTS media_url   TEXT`);
+  // Uploaded video/document support alongside photos — file_mime tells the
+  // serving route what Content-Type to send back for whatever's at photo_path.
+  await pool.query(`ALTER TABLE memories ADD COLUMN IF NOT EXISTS file_mime TEXT`);
+  await pool.query(`ALTER TABLE memories DROP CONSTRAINT IF EXISTS memories_media_type_check`);
+  await pool.query(`ALTER TABLE memories ADD CONSTRAINT memories_media_type_check CHECK (media_type IN ('text','photo','video','document'))`);
   // Partial index: pending moderation queue
   await pool.query(`
     CREATE INDEX IF NOT EXISTS idx_mem_pending
@@ -269,13 +275,13 @@ const queries = {
   insert: (row) => getPool().query(
     `INSERT INTO memories
        (id, lat, lng, city, ward, cat, year, month, day, date_label, date_label_en,
-        lang, text_vi, text_en, has_photo, photo_path, media_type, submit_date,
+        lang, text_vi, text_en, has_photo, photo_path, file_mime, media_type, submit_date,
         attribution, author_name, media_url)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
     [row.id, row.lat, row.lng, row.city, row.ward, row.cat,
      row.year, row.month, row.day, row.date_label, row.date_label_en,
      row.lang, row.text_vi, row.text_en,
-     row.has_photo, row.photo_path, row.media_type, row.submit_date,
+     row.has_photo, row.photo_path, row.file_mime || null, row.media_type, row.submit_date,
      row.attribution || "anonymous", row.author_name || null, row.media_url || null]
   ),
 
@@ -331,7 +337,7 @@ const queries = {
 
   photoPath: async (id) => {
     const { rows } = await getPool().query(
-      `SELECT photo_path FROM memories
+      `SELECT photo_path, file_mime FROM memories
        WHERE id = $1 AND approved = 1 AND has_photo = 1`,
       [id]
     );

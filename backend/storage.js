@@ -29,10 +29,21 @@ function storageEnabled() {
   return !!getClient();
 }
 
+// Photos (webp), short testimony videos (mp4/webm), and scanned/typed
+// documents (pdf) all share this one private bucket.
+const BUCKET_OPTS = {
+  public: false,
+  fileSizeLimit: "20MB",
+  allowedMimeTypes: ["image/webp", "video/mp4", "video/webm", "application/pdf"],
+};
+
 /**
- * Ensure the photo bucket exists (private). Idempotent — safe to call on every
- * boot, mirroring db.js's "CREATE TABLE IF NOT EXISTS". Returns true if it had
- * to create the bucket, false if it already existed. Throws on API errors.
+ * Ensure the photo bucket exists (private) with the current size/mime limits.
+ * Idempotent — safe to call on every boot, mirroring db.js's
+ * "CREATE TABLE IF NOT EXISTS". Returns true if it had to create the bucket,
+ * false if it already existed (in which case its config is refreshed in
+ * place, so loosening BUCKET_OPTS above takes effect without manual steps).
+ * Throws on API errors.
  */
 async function ensureBucket() {
   const c = getClient();
@@ -40,13 +51,14 @@ async function ensureBucket() {
 
   const { data: buckets, error } = await c.storage.listBuckets();
   if (error) throw error;
-  if (buckets.some((b) => b.name === BUCKET)) return false;
 
-  const { error: createErr } = await c.storage.createBucket(BUCKET, {
-    public: false,
-    fileSizeLimit: "2MB",
-    allowedMimeTypes: ["image/webp"],
-  });
+  if (buckets.some((b) => b.name === BUCKET)) {
+    const { error: updateErr } = await c.storage.updateBucket(BUCKET, BUCKET_OPTS);
+    if (updateErr) throw updateErr;
+    return false;
+  }
+
+  const { error: createErr } = await c.storage.createBucket(BUCKET, BUCKET_OPTS);
   if (createErr) throw createErr;
   return true;
 }

@@ -37,7 +37,7 @@ function ComposeSheet({ point, lang, accent, gold, city, onSubmit, onClose, near
   const [day, setDay] = React.useState("");
   const [hour, setHour] = React.useState("");
   const [minute, setMinute] = React.useState("");
-  const [photo, setPhoto] = React.useState(null);
+  const [file, setFile] = React.useState(null); // { dataUrl, kind: photo|video|document, name }
   const [optimizing, setOptimizing] = React.useState(false);
   const [attribution, setAttribution] = React.useState("anonymous");
   const [authorName, setAuthorName] = React.useState("");
@@ -54,11 +54,37 @@ function ComposeSheet({ point, lang, accent, gold, city, onSubmit, onClose, near
   const attributionValid = attribution === "anonymous" || authorName.trim().length > 0;
   const canSend = !!point && hasText && !!year && attributionValid;
 
-  const pickPhoto = async (e) => {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
+  const MAX_VIDEO_BYTES = 20 * 1024 * 1024;
+  const MAX_DOC_BYTES = 8 * 1024 * 1024;
+
+  const pickFile = async (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
     setOptimizing(true);
-    try { setPhoto(await compressImage(file, 1280, 0.7)); } catch (_) { alert(t.photoError || (lang === "vi" ? "Không thể đọc ảnh. Hãy thử tệp khác." : "Could not read image. Try a different file.")); }
+    try {
+      if (f.type.startsWith("image/")) {
+        const img = await compressImage(f, 1280, 0.7);
+        setFile({ dataUrl: img.dataUrl, kind: "photo", name: f.name });
+      } else if (f.type === "video/mp4" || f.type === "video/webm") {
+        if (f.size > MAX_VIDEO_BYTES) {
+          alert(lang === "vi" ? "Video tối đa 20 MB." : "Video must be 20 MB or smaller.");
+        } else {
+          setFile({ dataUrl: await readFileAsDataUrl(f), kind: "video", name: f.name });
+        }
+      } else if (f.type === "application/pdf") {
+        if (f.size > MAX_DOC_BYTES) {
+          alert(lang === "vi" ? "Tài liệu tối đa 8 MB." : "Document must be 8 MB or smaller.");
+        } else {
+          setFile({ dataUrl: await readFileAsDataUrl(f), kind: "document", name: f.name });
+        }
+      } else {
+        alert(lang === "vi"
+          ? "Loại tệp không được hỗ trợ. Hãy chọn ảnh, video MP4/WebM, hoặc PDF."
+          : "Unsupported file type. Choose an image, an MP4/WebM video, or a PDF.");
+      }
+    } catch (_) {
+      alert(t.photoError || (lang === "vi" ? "Không thể đọc tệp. Hãy thử tệp khác." : "Could not read file. Try a different one."));
+    }
     setOptimizing(false);
   };
 
@@ -75,8 +101,8 @@ function ComposeSheet({ point, lang, accent, gold, city, onSubmit, onClose, near
       dateEn: built ? built.labelEn : "Undated",
       vi: text.trim(), en: text.trim(),
       lang,
-      photo: !!photo, photoData: photo ? photo.dataUrl : null,
-      media: photo ? "photo" : "text",
+      photo: !!(file && file.kind === "photo"), photoData: file ? file.dataUrl : null,
+      media: file ? file.kind : "text",
       attribution,
       authorName: attribution === "anonymous" ? null : authorName.trim(),
       mediaUrl: mediaUrl.trim() || null,
@@ -187,7 +213,7 @@ function ComposeSheet({ point, lang, accent, gold, city, onSubmit, onClose, near
           )}
 
           <div className="field-label">{t.addPhoto}</div>
-          {!photo && !optimizing && (
+          {!file && !optimizing && (
             <button className="photo-drop" onClick={() => fileRef.current && fileRef.current.click()}>
               <span className="photo-plus">＋</span>
               <span>{t.photoOptional}</span>
@@ -196,13 +222,26 @@ function ComposeSheet({ point, lang, accent, gold, city, onSubmit, onClose, near
           {optimizing && (
             <div className="photo-drop optimizing"><span className="mini-spin" />{t.optimizing}</div>
           )}
-          {photo && (
+          {file && file.kind === "photo" && (
             <div className="photo-preview">
-              <img src={photo.dataUrl} alt="" />
-              <button className="photo-remove" onClick={() => setPhoto(null)}>{t.remove}</button>
+              <img src={file.dataUrl} alt="" />
+              <button className="photo-remove" onClick={() => setFile(null)}>{t.remove}</button>
             </div>
           )}
-          <input ref={fileRef} type="file" accept="image/*" onChange={pickPhoto} hidden />
+          {file && file.kind === "video" && (
+            <div className="photo-preview">
+              <video src={file.dataUrl} controls />
+              <button className="photo-remove" onClick={() => setFile(null)}>{t.remove}</button>
+            </div>
+          )}
+          {file && file.kind === "document" && (
+            <div className="file-chip">
+              <span className="file-chip-glyph">▤</span>
+              <span className="file-chip-name">{file.name}</span>
+              <button className="photo-remove" onClick={() => setFile(null)}>{t.remove}</button>
+            </div>
+          )}
+          <input ref={fileRef} type="file" accept="image/*,video/mp4,video/webm,application/pdf" onChange={pickFile} hidden />
 
           <div className="field-label">{lang === "vi" ? "Ghi danh tác giả" : "Attribution"}</div>
           <div className="cat-chips">

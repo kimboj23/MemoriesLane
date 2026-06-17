@@ -90,19 +90,27 @@ function validateSubmission(body) {
 
   const media_type = VALID_MEDIA.has(body.media) ? body.media : "text";
 
-  // Photo: client sends a data URL. We accept it here and handle EXIF
-  // stripping in the route handler where we have access to the file system.
-  // Enforce a rough size ceiling (base64 of 1.5 MB JPEG ≈ 2 MB string).
+  // Uploaded file: client sends a data URL (image, mp4/webm video, or PDF).
+  // We accept it here and hand off actual decoding/processing to the route
+  // handler, where we have access to the file system / image library.
+  // Size ceilings are on the base64 *string* (≈ 4/3 of the raw byte size),
+  // matched to the per-kind raw limits enforced again in the route handler.
   let photoData = null;
   if (body.photoData) {
-    if (typeof body.photoData !== "string")
+    if (typeof body.photoData !== "string") {
       errors.push("photoData must be a string");
-    else if (!body.photoData.startsWith("data:image/"))
-      errors.push("photoData must be a base64 image data URL");
-    else if (body.photoData.length > 2_200_000)
-      errors.push("image too large — maximum ~1.5 MB before encoding");
-    else
-      photoData = body.photoData;
+    } else if (body.photoData.startsWith("data:image/")) {
+      if (body.photoData.length > 2_200_000) errors.push("image too large — maximum ~1.5 MB before encoding");
+      else photoData = body.photoData;
+    } else if (/^data:video\/(mp4|webm);base64,/.test(body.photoData)) {
+      if (body.photoData.length > 28_000_000) errors.push("video too large — maximum ~20 MB before encoding");
+      else photoData = body.photoData;
+    } else if (body.photoData.startsWith("data:application/pdf")) {
+      if (body.photoData.length > 11_500_000) errors.push("document too large — maximum ~8 MB before encoding");
+      else photoData = body.photoData;
+    } else {
+      errors.push("photoData must be an image, mp4/webm video, or PDF data URL");
+    }
   }
 
   // Attribution choice — how the storyteller wants to be credited.

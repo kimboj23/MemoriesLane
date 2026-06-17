@@ -65,8 +65,9 @@ app.use(
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'none'"],
-        // The API serves JSON and images — no scripts, no frames.
+        // The API serves JSON, images, and (for memory submissions) video — no scripts, no frames.
         imgSrc: ["'self'"],
+        mediaSrc: ["'self'"],
         connectSrc: ["'self'"],
       },
     },
@@ -82,7 +83,11 @@ app.use(
 app.use(cors({ origin: corsOrigin, methods: ["GET", "POST", "PATCH", "DELETE"], allowedHeaders: ["Content-Type", "Authorization"], maxAge: 600 }));
 
 // Body parsing — 3 MB covers base64-encoded compressed images (a 1.5 MB binary
-// image encodes to ~2 MB in base64, plus JSON framing overhead).
+// image encodes to ~2 MB in base64, plus JSON framing overhead). Memory
+// submissions can also carry a video (~20 MB) or PDF (~8 MB), base64-encoded,
+// so that route gets its own larger limit applied before the global one below
+// — body-parser skips re-parsing a body it's already consumed.
+app.use("/api/memories", express.json({ limit: "30mb" }));
 app.use(express.json({ limit: "3mb" }));
 
 // Do not advertise the server technology.

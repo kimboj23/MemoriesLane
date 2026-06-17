@@ -26,6 +26,12 @@ function MemoryDetail({ memory, lang, onClose, onPrev, onNext, onOpenCase }) {
   const m = memory;
   const c0 = catOf(m.cat);
   const cc = c0.color;
+  // "mine" (just-submitted, unapproved) memories carry the file inline as a
+  // data URL; approved ones fetched from the server are streamed from the
+  // serving route instead.
+  const fileUrl = m.photoData || (m.id ? `/api/memories/${m.id}/photo` : null);
+  const mediaKind = m.media === "video" ? "video" : m.media === "document" ? "document"
+    : (m.photo || m.photoData) ? "photo" : null;
 
   React.useEffect(() => {
     const onKey = (e) => {
@@ -49,12 +55,20 @@ function MemoryDetail({ memory, lang, onClose, onPrev, onNext, onOpenCase }) {
           <span className="read-coord">{fauxCoord(m.lat, m.lng)}</span>
         </header>
 
-        {(m.photo || m.photoData) && (
+        {mediaKind === "photo" && fileUrl && (
           <div className="read-photo">
-            {m.photoData
-              ? <img src={m.photoData} alt="" />
-              : <PhotoPlaceholder label={t.photoPlaceholder} />}
+            <img src={fileUrl} alt="" />
           </div>
+        )}
+        {mediaKind === "video" && fileUrl && (
+          <div className="read-photo">
+            <video src={fileUrl} controls />
+          </div>
+        )}
+        {mediaKind === "document" && fileUrl && (
+          <a className="read-media-link read-doc-link" href={fileUrl} target="_blank" rel="noopener noreferrer">
+            {lang === "vi" ? "Mở tài liệu đính kèm ↗" : "Open attached document ↗"}
+          </a>
         )}
 
         <blockquote className="read-quote">{lang === "vi" ? m.vi : m.en}</blockquote>

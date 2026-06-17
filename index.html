@@ -257,7 +257,11 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 @keyframes spin{to{transform:rotate(360deg)}}
 .photo-preview{position:relative;border-radius:12px;overflow:hidden;border:1px solid var(--line-2)}
 .photo-preview img{width:100%;display:block;max-height:260px;object-fit:cover}
+.photo-preview video{width:100%;display:block;max-height:260px;background:#000}
 .photo-remove{position:absolute;top:9px;right:9px;background:var(--glass);border:1px solid var(--line-2);border-radius:8px;padding:6px 11px;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink)}
+.file-chip{position:relative;display:flex;align-items:center;gap:10px;border:1px solid var(--line-2);border-radius:12px;padding:14px 60px 14px 16px;background:var(--ground-2)}
+.file-chip-glyph{font-size:18px;color:var(--gold)}
+.file-chip-name{font-size:12px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 .send-btn{width:100%;margin-top:26px;border-radius:12px;padding:16px;background:var(--ember);color:#fff;font-size:13px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;transition:.18s}
 .send-btn:hover{filter:brightness(1.06)}
@@ -364,6 +368,8 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 .read-coord{font-size:10px;color:var(--ink-faint);letter-spacing:.04em}
 .read-photo{border-radius:12px;overflow:hidden;margin-bottom:22px;border:1px solid var(--line)}
 .read-photo img{width:100%;display:block;max-height:300px;object-fit:cover}
+.read-photo video{width:100%;display:block;max-height:340px;background:#000}
+.read-doc-link{margin-bottom:22px}
 .photo-ph{position:relative;height:170px;color:var(--ink-faint);background:var(--ground-2)}
 .photo-ph svg{position:absolute;inset:0;width:100%;height:100%}
 .photo-ph-label{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint)}

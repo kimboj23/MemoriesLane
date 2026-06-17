@@ -74,7 +74,7 @@ const STR = {
     boolErr: "Truy vấn không hợp lệ", boolSub: "AND · OR · NOT · () · \"cụm từ\"",
     filters: "Bộ lọc", fLang: "Ngôn ngữ", fStatus: "Trạng thái", fContent: "Loại nội dung",
     stAll: "Tất cả", stVer: "Đã duyệt", stUnver: "Chưa duyệt",
-    ctPhoto: "Ảnh", ctVideo: "Video", ctText: "Văn bản",
+    ctPhoto: "Ảnh", ctVideo: "Video", ctText: "Văn bản", ctDocument: "Tài liệu",
     resetAll: "Đặt lại tất cả", exportView: "Xuất dữ liệu",
     // export ecosystem
     exportTitle: "Xuất dữ liệu", exportSub: "Chỉ xuất những kết quả đang được lọc.",
@@ -155,7 +155,7 @@ const STR = {
     boolErr: "Invalid query", boolSub: "AND · OR · NOT · () · \"phrase\"",
     filters: "Filters", fLang: "Language", fStatus: "Status", fContent: "Content type",
     stAll: "All", stVer: "Verified", stUnver: "Unverified",
-    ctPhoto: "Photo", ctVideo: "Video", ctText: "Text",
+    ctPhoto: "Photo", ctVideo: "Video", ctText: "Text", ctDocument: "Document",
     resetAll: "Reset all", exportView: "Export data",
     // export ecosystem
     exportTitle: "Export data", exportSub: "Exports only the results currently filtered in your view.",
@@ -353,6 +353,17 @@ function compressImage(file, maxDim = 1280, quality = 0.7) {
   });
 }
 
+// Reads a file (video/PDF — anything that shouldn't be re-encoded) to a
+// base64 data URL as-is, for upload alongside compressed images.
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = () => resolve(reader.result);
+    reader.readAsDataURL(file);
+  });
+}
+
 function isApprox(m) {
   return /khoảng|ước/i.test(m.date || "") || /circa|approx|around|before/i.test(m.dateEn || "");
 }
@@ -398,6 +409,7 @@ function isVerified(m) { return !m.mine; }
 function memoryLang(m) { return m.lang || "vi"; }
 function memoryMedia(m) {
   if (m.media === "video") return "video";
+  if (m.media === "document") return "document";
   if (m.photo || m.photoData) return "photo";
   return "text";
 }
@@ -481,7 +493,7 @@ function inShape(m, shape) {
 Object.assign(window, {
   STR, CATS, CAT, MEMORY_CATS, ARCHIVE_CATS, catOf, MONTHS, MEMORIES, HANOI_CENTER, BASEMAPS, BASEMAP, WARDS, nearestWard,
   CLEARANCE_ZONE, CLEARANCE_LABEL, MIN_YEAR, MAX_YEAR,
-  uid, compressImage, dist, fauxCoord, isApprox,
+  uid, compressImage, readFileAsDataUrl, dist, fauxCoord, isApprox,
   parseMemoryDate, dateBoundsInt, memoryDateBounds, isVerified, memoryLang, memoryMedia,
   arweaveHash, submittedISO, deriveTags, searchHaystack, CAT_SLUG,
   haversineM, pointInPolygon, inShape,

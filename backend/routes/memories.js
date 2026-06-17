@@ -5,7 +5,8 @@
  * POST /api/memories       — submit a new memory (goes to pending queue)
  * GET  /api/memories       — list approved memories (?city=hanoi&minYear=2020&maxYear=2026)
  * GET  /api/memories/:id   — single approved memory
- * GET  /api/memories/:id/photo — serve the approved memory's photo (EXIF-stripped WebP)
+ * GET  /api/memories/:id/photo — serve the approved memory's uploaded file
+ *      (photo, video, or document — Content-Type reflects whichever it is)
  */
 const express = require("express");
 const path = require("path");
@@ -39,6 +40,16 @@ function todayUTC() {
   return new Date().toISOString().slice(0, 10);
 }
 
+async function storeBuffer(buffer, filename, mime) {
+  // Primary store: Supabase Storage (private bucket). Fall back to local disk
+  // only when Storage is not configured (e.g. local dev without keys).
+  if (storage.storageEnabled()) {
+    await storage.uploadPhoto(filename, buffer, mime);
+  } else {
+    fs.writeFileSync(path.join(UPLOADS_DIR, filename), buffer);
+  }
+}
+
 async function processAndStoreImage(dataUrl, memoryId) {
   if (!sharp) throw new Error("Image processing unavailable — sharp not installed");
 
@@ -56,14 +67,34 @@ async function processAndStoreImage(dataUrl, memoryId) {
     .toBuffer();
 
   const filename = `${memoryId}.webp`;
-  // Primary store: Supabase Storage (private bucket). Fall back to local disk
-  // only when Storage is not configured (e.g. local dev without keys).
-  if (storage.storageEnabled()) {
-    await storage.uploadPhoto(filename, webpBuffer, "image/webp");
-  } else {
-    fs.writeFileSync(path.join(UPLOADS_DIR, filename), webpBuffer);
-  }
-  return filename;
+  await storeBuffer(webpBuffer, filename, "image/webp");
+  return { path: filename, mime: "image/webp" };
+}
+
+async function processAndStoreVideo(dataUrl, memoryId) {
+  const match = dataUrl.match(/^data:(video\/(?:mp4|webm));base64,(.+)$/s);
+  if (!match) throw new Error("Invalid video data URL");
+
+  const mime = match[1];
+  const buffer = Buffer.from(match[2], "base64");
+  if (buffer.length > 20_000_000) throw new Error("Video exceeds 20 MB after decoding");
+
+  const filename = `${memoryId}.${mime === "video/webm" ? "webm" : "mp4"}`;
+  await storeBuffer(buffer, filename, mime);
+  return { path: filename, mime };
+}
+
+async function processAndStoreDocument(dataUrl, memoryId) {
+  const match = dataUrl.match(/^data:(application\/pdf);base64,(.+)$/s);
+  if (!match) throw new Error("Invalid document data URL");
+
+  const mime = match[1];
+  const buffer = Buffer.from(match[2], "base64");
+  if (buffer.length > 8_000_000) throw new Error("Document exceeds 8 MB after decoding");
+
+  const filename = `${memoryId}.pdf`;
+  await storeBuffer(buffer, filename, mime);
+  return { path: filename, mime };
 }
 
 // ---------------------------------------------------------------------------
@@ -80,16 +111,21 @@ router.post("/", rateLimit(5, "submit"), async (req, res, next) => {
     const id = serverGeneratedId();
 
     let photo_path = null;
+    let file_mime = null;
     let has_photo = 0;
-    let final_media_type = media_type === "photo" && !photoData ? "text" : media_type;
+    let final_media_type = media_type !== "text" && !photoData ? "text" : media_type;
 
     if (photoData) {
       try {
-        photo_path = await processAndStoreImage(photoData, id);
+        const processor = media_type === "video" ? processAndStoreVideo
+          : media_type === "document" ? processAndStoreDocument
+          : processAndStoreImage;
+        const result = await processor(photoData, id);
+        photo_path = result.path;
+        file_mime = result.mime;
         has_photo = 1;
-        final_media_type = "photo";
-      } catch (imgErr) {
-        console.warn("[warn] image processing failed:", imgErr.message);
+      } catch (fileErr) {
+        console.warn(`[warn] ${media_type} processing failed:`, fileErr.message);
         final_media_type = "text";
       }
     }
@@ -99,6 +135,7 @@ router.post("/", rateLimit(5, "submit"), async (req, res, next) => {
       media_type: final_media_type,
       has_photo,
       photo_path,
+      file_mime,
       submit_date: todayUTC(),
     });
 
@@ -154,7 +191,8 @@ router.get("/:id([A-Za-z0-9_-]{1,24})/photo", async (req, res, next) => {
     const row = await queries.photoPath(req.params.id);
     if (!row || !row.photo_path) return res.status(404).json({ error: "Not found" });
 
-    res.setHeader("Content-Type", "image/webp");
+    // Pre-migration rows have no file_mime stored — they're always images.
+    res.setHeader("Content-Type", row.file_mime || "image/webp");
     res.setHeader("Cache-Control", "public, max-age=86400, immutable");
     res.setHeader("X-Content-Type-Options", "nosniff");
 
