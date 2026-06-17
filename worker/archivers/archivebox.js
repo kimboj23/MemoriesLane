@@ -29,12 +29,49 @@ function run(...cmd) {
   return docker(["exec", "--user=archivebox", CONTAINER, "archivebox", ...cmd]);
 }
 
-// ArchiveBox prints a log banner before the JSON payload — slice out the array.
+// Find the bracket-balanced span starting at `start` (a "["), ignoring
+// brackets inside quoted strings, returning null if it never closes.
+function matchJsonArrayAt(out, start) {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < out.length; i++) {
+    const ch = out[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === "[") depth++;
+    else if (ch === "]") {
+      depth--;
+      if (depth === 0) return out.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
+// ArchiveBox prints a log banner before the JSON payload, and some banner
+// lines use bracketed tags (e.g. "[i]", "[*]") that are themselves balanced
+// brackets but not valid JSON. Rather than assume the first or last "[" / "]"
+// in the output belongs to the payload (fragile either way), try each "["
+// in turn and keep the first span that both balances and parses as an array.
 function parseJsonList(out) {
-  const i = out.indexOf("[");
-  const j = out.lastIndexOf("]");
-  if (i === -1 || j === -1) return [];
-  try { return JSON.parse(out.slice(i, j + 1)); } catch { return []; }
+  let from = 0;
+  for (;;) {
+    const start = out.indexOf("[", from);
+    if (start === -1) return [];
+    const slice = matchJsonArrayAt(out, start);
+    if (slice) {
+      try {
+        const parsed = JSON.parse(slice);
+        if (Array.isArray(parsed)) return parsed;
+      } catch { /* not the payload, keep scanning */ }
+    }
+    from = start + 1;
+  }
 }
 
 // A snapshot only has viewable content if a *content* extractor succeeded.

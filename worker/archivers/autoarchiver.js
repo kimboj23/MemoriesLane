@@ -32,12 +32,13 @@ function docker(args, timeoutMs = 1000 * 60 * 15) {
   });
 }
 
-// Parse the tool's output for success + links. Artifacts are stored in Supabase
-// Storage (S3), so the tool prints their public cdn_url; we pick the formatted
-// HTML snapshot URL (under AUTOARCHIVER_PUBLIC_URL) as the local_url.
+// Parse the tool's output for the artifact links. Artifacts are stored in
+// Supabase Storage (S3), so the tool prints their public cdn_url; we pick the
+// formatted HTML snapshot URL (under AUTOARCHIVER_PUBLIC_URL) as the local_url.
+// Presence of an extracted URL — not log text — is what counts as success;
+// auto-archiver's log phrasing has changed across versions and isn't a
+// reliable signal on its own.
 function parseResult(output) {
-  const success = /:\s*success'|SUCCESS\s+\||Processed\s+1\s+URL/i.test(output);
-
   let wayback_url = null;
   const ia = output.match(/https?:\/\/web\.archive\.org\/web\/\S+/);
   if (ia) wayback_url = ia[0].replace(/['")\],]+$/, "");
@@ -59,7 +60,7 @@ function parseResult(output) {
       urls[0] || null;
   }
 
-  return { success, wayback_url, local_url };
+  return { wayback_url, local_url };
 }
 
 // auto-archiver doesn't print a clean version string we can parse reliably,
@@ -80,11 +81,14 @@ async function archive(url) {
     url, // auto-archiver 1.2.7 takes the URL as a positional argument
   ]);
 
-  const { success, wayback_url, local_url } = parseResult(out);
-  if (!success && !local_url && !wayback_url) {
+  const { wayback_url, local_url } = parseResult(out);
+  // The "success" log line is just corroborating text, not proof of an
+  // artifact — trust only an actually-extracted URL, otherwise a run that
+  // logs success but uploaded nothing would be recorded as archived.
+  if (!local_url && !wayback_url) {
     // Surface the tool's own error line (e.g. login-required) for the job record.
     const err = (out.match(/ERROR[^\n]*registered users[^\n]*/i) || out.match(/ERROR[^\n]*/))?.[0];
-    throw new Error(err ? err.slice(0, 200) : "auto-archiver: no successful archive");
+    throw new Error(err ? err.slice(0, 200) : "auto-archiver: no archive artifact found in output");
   }
   return { wayback_url, local_url };
 }
