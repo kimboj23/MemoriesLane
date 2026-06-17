@@ -3,10 +3,59 @@
    archived source materials (gap: public discovery, independent of cases).
    ============================================================================ */
 
+function materialYear(m) {
+  const y = m.date && /^\d{4}/.test(m.date) ? m.date.slice(0, 4) : null;
+  return y;
+}
+
+function MaterialsTimeline({ materials, lang, onOpenCase }) {
+  const groups = [];
+  const byYear = new Map();
+  materials.forEach((m) => {
+    const y = materialYear(m) || (lang === "vi" ? "Không rõ ngày" : "Undated");
+    if (!byYear.has(y)) { byYear.set(y, []); groups.push(y); }
+    byYear.get(y).push(m);
+  });
+
+  return (
+    <div className="case-timeline ml-timeline">
+      {groups.map((y) => (
+        <React.Fragment key={y}>
+          <div className="case-tl-event ml-timeline-year">
+            <div className="case-tl-dot" />
+            <div className="case-tl-when">{y}</div>
+          </div>
+          {byYear.get(y).map((m) => {
+            const title = lang === "vi" ? m.titleVi : (m.titleEn || m.titleVi);
+            return (
+              <div key={m.id} className="case-tl-event">
+                <div className="case-tl-dot" />
+                <div className="case-tl-when">{m.date || y}</div>
+                <div className="case-tl-label">{title}</div>
+                {(m.source || m.notes) && (
+                  <p className="case-tl-detail">
+                    {m.source}{m.source && m.notes ? " — " : ""}{m.notes}
+                  </p>
+                )}
+                {m.caseId && (
+                  <button className="arc-link" style={{ marginTop: 6 }} onClick={() => onOpenCase && onOpenCase(m.caseId)}>
+                    {lang === "vi" ? "Xem vụ việc liên quan →" : "View related case →"}
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </React.Fragment>
+      ))}
+    </div>
+  );
+}
+
 function MaterialsPanel({ lang, onClose, onOpenCase }) {
   const [q, setQ] = React.useState("");
   const [collection, setCollection] = React.useState("");
   const [mediaType, setMediaType] = React.useState("");
+  const [view, setView] = React.useState("grid"); // "grid" | "timeline"
   const [collections, setCollections] = React.useState([]);
   const [materials, setMaterials] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
@@ -97,6 +146,13 @@ function MaterialsPanel({ lang, onClose, onOpenCase }) {
             </div>
           )}
 
+          <div className="feed-tags" style={{ marginBottom: 16 }}>
+            <button className={"topic-tag" + (view === "grid" ? " topic-tag--case" : "")}
+              onClick={() => setView("grid")}>{lang === "vi" ? "Lưới" : "Grid"}</button>
+            <button className={"topic-tag" + (view === "timeline" ? " topic-tag--case" : "")}
+              onClick={() => setView("timeline")}>{lang === "vi" ? "Dòng thời gian" : "Timeline"}</button>
+          </div>
+
           {loading && <div className="feed-view feed-loading"><div className="feed-spinner" /><span>{lang === "vi" ? "Đang tải…" : "Loading…"}</span></div>}
 
           {!loading && materials.length === 0 && (
@@ -106,7 +162,7 @@ function MaterialsPanel({ lang, onClose, onOpenCase }) {
             </div>
           )}
 
-          {!loading && materials.length > 0 && (
+          {!loading && materials.length > 0 && view === "grid" && (
             <div className="arc-grid">
               {materials.map((m) => (
                 <div key={m.id}>
@@ -120,6 +176,10 @@ function MaterialsPanel({ lang, onClose, onOpenCase }) {
                 </div>
               ))}
             </div>
+          )}
+
+          {!loading && materials.length > 0 && view === "timeline" && (
+            <MaterialsTimeline materials={materials} lang={lang} onOpenCase={onOpenCase} />
           )}
         </div>
       </div>
