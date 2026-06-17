@@ -10,7 +10,9 @@
  */
 const express = require("express");
 const path = require("path");
+const os = require("os");
 const fs = require("fs");
+const fsp = require("fs/promises");
 const crypto = require("crypto");
 const { queries } = require("../db");
 const storage = require("../storage");
@@ -24,6 +26,17 @@ try {
   console.warn(
     "[warn] sharp not installed — photo uploads are disabled.\n" +
     "       Run: npm install sharp"
+  );
+}
+
+let ffmpeg;
+try {
+  ffmpeg = require("fluent-ffmpeg");
+  ffmpeg.setFfmpegPath(require("ffmpeg-static"));
+} catch {
+  console.warn(
+    "[warn] ffmpeg-static/fluent-ffmpeg not installed — oversized videos will be rejected instead of compressed.\n" +
+    "       Run: npm install ffmpeg-static fluent-ffmpeg"
   );
 }
 
@@ -71,13 +84,67 @@ async function processAndStoreImage(dataUrl, memoryId) {
   return { path: filename, mime: "image/webp" };
 }
 
+const MAX_VIDEO_BYTES = 20_000_000;
+
+// Progressively more aggressive re-encode settings, tried in order — we stop
+// at the first one that fits, so quality is only sacrificed as far as needed.
+const VIDEO_COMPRESS_STEPS = [
+  { crf: 26, maxWidth: 1280 },
+  { crf: 30, maxWidth: 1280 },
+  { crf: 30, maxWidth: 854 },
+  { crf: 34, maxWidth: 854 },
+];
+
+function transcodeVideo(inputPath, outputPath, { crf, maxWidth }) {
+  return new Promise((resolve, reject) => {
+    ffmpeg(inputPath)
+      .videoCodec("libx264")
+      .videoFilters(`scale='min(${maxWidth},iw)':-2`)
+      .outputOptions([`-crf ${crf}`, "-preset veryfast", "-movflags +faststart"])
+      .audioCodec("aac")
+      .audioBitrate("128k")
+      .format("mp4")
+      .on("end", resolve)
+      .on("error", reject)
+      .save(outputPath);
+  });
+}
+
+// Re-encodes a too-large video down toward MAX_VIDEO_BYTES, trying the least
+// lossy settings first. Always emits mp4 regardless of the input container.
+async function compressVideo(buffer, mime) {
+  if (!ffmpeg) throw new Error("Video exceeds 20 MB and compression is unavailable");
+
+  const tag = `${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
+  const tmpIn = path.join(os.tmpdir(), `ml-in-${tag}.${mime === "video/webm" ? "webm" : "mp4"}`);
+  const tmpOut = path.join(os.tmpdir(), `ml-out-${tag}.mp4`);
+  await fsp.writeFile(tmpIn, buffer);
+  try {
+    let last = null;
+    for (const step of VIDEO_COMPRESS_STEPS) {
+      await transcodeVideo(tmpIn, tmpOut, step);
+      last = await fsp.readFile(tmpOut);
+      if (last.length <= MAX_VIDEO_BYTES) return last;
+    }
+    return last; // smallest we could get — caller checks and rejects if still too big
+  } finally {
+    await fsp.unlink(tmpIn).catch(() => {});
+    await fsp.unlink(tmpOut).catch(() => {});
+  }
+}
+
 async function processAndStoreVideo(dataUrl, memoryId) {
   const match = dataUrl.match(/^data:(video\/(?:mp4|webm));base64,(.+)$/s);
   if (!match) throw new Error("Invalid video data URL");
 
-  const mime = match[1];
-  const buffer = Buffer.from(match[2], "base64");
-  if (buffer.length > 20_000_000) throw new Error("Video exceeds 20 MB after decoding");
+  let mime = match[1];
+  let buffer = Buffer.from(match[2], "base64");
+
+  if (buffer.length > MAX_VIDEO_BYTES) {
+    buffer = await compressVideo(buffer, mime);
+    mime = "video/mp4";
+    if (buffer.length > MAX_VIDEO_BYTES) throw new Error("Video still exceeds 20 MB after compression");
+  }
 
   const filename = `${memoryId}.${mime === "video/webm" ? "webm" : "mp4"}`;
   await storeBuffer(buffer, filename, mime);

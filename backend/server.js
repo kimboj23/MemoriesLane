@@ -84,10 +84,11 @@ app.use(cors({ origin: corsOrigin, methods: ["GET", "POST", "PATCH", "DELETE"], 
 
 // Body parsing — 3 MB covers base64-encoded compressed images (a 1.5 MB binary
 // image encodes to ~2 MB in base64, plus JSON framing overhead). Memory
-// submissions can also carry a video (~20 MB) or PDF (~8 MB), base64-encoded,
+// submissions can also carry a video (up to ~60 MB source, base64-encoded —
+// oversized ones get compressed server-side down to 20 MB) or a PDF (~8 MB),
 // so that route gets its own larger limit applied before the global one below
 // — body-parser skips re-parsing a body it's already consumed.
-app.use("/api/memories", express.json({ limit: "30mb" }));
+app.use("/api/memories", express.json({ limit: "90mb" }));
 app.use(express.json({ limit: "3mb" }));
 
 // Do not advertise the server technology.

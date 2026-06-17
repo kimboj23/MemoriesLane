@@ -103,7 +103,10 @@ function validateSubmission(body) {
       if (body.photoData.length > 2_200_000) errors.push("image too large — maximum ~1.5 MB before encoding");
       else photoData = body.photoData;
     } else if (/^data:video\/(mp4|webm);base64,/.test(body.photoData)) {
-      if (body.photoData.length > 28_000_000) errors.push("video too large — maximum ~20 MB before encoding");
+      // Oversized videos are re-encoded server-side rather than rejected
+      // outright, so the ceiling here is well above the 20 MB stored limit —
+      // it just bounds how large a source file we'll attempt to compress.
+      if (body.photoData.length > 82_000_000) errors.push("video too large — maximum ~60 MB before encoding");
       else photoData = body.photoData;
     } else if (body.photoData.startsWith("data:application/pdf")) {
       if (body.photoData.length > 11_500_000) errors.push("document too large — maximum ~8 MB before encoding");

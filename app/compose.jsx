@@ -54,7 +54,9 @@ function ComposeSheet({ point, lang, accent, gold, city, onSubmit, onClose, near
   const attributionValid = attribution === "anonymous" || authorName.trim().length > 0;
   const canSend = !!point && hasText && !!year && attributionValid;
 
-  const MAX_VIDEO_BYTES = 20 * 1024 * 1024;
+  // Videos over the server's 20 MB stored cap are compressed automatically —
+  // this only bounds what we'll attempt to read and upload in the first place.
+  const MAX_VIDEO_PICK_BYTES = 60 * 1024 * 1024;
   const MAX_DOC_BYTES = 8 * 1024 * 1024;
 
   const pickFile = async (e) => {
@@ -66,8 +68,8 @@ function ComposeSheet({ point, lang, accent, gold, city, onSubmit, onClose, near
         const img = await compressImage(f, 1280, 0.7);
         setFile({ dataUrl: img.dataUrl, kind: "photo", name: f.name });
       } else if (f.type === "video/mp4" || f.type === "video/webm") {
-        if (f.size > MAX_VIDEO_BYTES) {
-          alert(lang === "vi" ? "Video tối đa 20 MB." : "Video must be 20 MB or smaller.");
+        if (f.size > MAX_VIDEO_PICK_BYTES) {
+          alert(lang === "vi" ? "Video tối đa 60 MB." : "Video must be 60 MB or smaller.");
         } else {
           setFile({ dataUrl: await readFileAsDataUrl(f), kind: "video", name: f.name });
         }

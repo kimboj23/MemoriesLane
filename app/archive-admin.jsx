@@ -26,6 +26,35 @@ const ARC_STATUS = {
   failed:   { vi: "Thất bại",   en: "Failed",   cls: "is-fail" },
 };
 
+// A pending memory rendered in the shared queue — same row chrome as an
+// archive job, but memory fields (testimony text, ward, category) instead of
+// title/URL/status, since memories never go through the ArchiveBox pipeline.
+function MemoryQueueRow({ m, lang, L, onApprove, onReject }) {
+  const c = catOf(m.cat);
+  const text = (lang === "vi" ? m.text_vi : (m.text_en || m.text_vi)) || "";
+  const snippet = text.length > 220 ? text.slice(0, 220) + "…" : text;
+  return (
+    <div className="adm-row">
+      <div className="adm-row-top">
+        <span className="adm-badge is-pending">{L("Ký ức", "Memory")}</span>
+        <span className="adm-row-media">{m.media_type}</span>
+        <span className="adm-row-actions">
+          <button className="adm-retry" onClick={() => onApprove(m.id)}>{L("Duyệt", "Approve")}</button>
+          <button className="adm-retry adm-del" onClick={() => onReject(m.id)}>{L("Từ chối", "Reject")}</button>
+        </span>
+      </div>
+      <div className="adm-row-title">{snippet}</div>
+      <div className="adm-row-tags">
+        <span className="adm-tag" style={{ color: c.color }}>{c[lang]}</span>
+        {(m.ward || m.city) && <span className="adm-tag">{[m.ward, m.city].filter(Boolean).join(" · ")}</span>}
+        {(m.date_label || m.date_label_en) && (
+          <span className="adm-tag">{lang === "vi" ? m.date_label : (m.date_label_en || m.date_label)}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function TopicChips({ topics, selected, onToggle, lang }) {
   return (
     <div className="adm-chips">
@@ -74,13 +103,14 @@ function ArchiveAdmin({ lang, onClose, point, picking, onStartPick, onCancelPick
   const dBuilt = dYear ? buildDate(lang, { year: dYear, month: dMonth, day: dDay, hour: dHour, minute: dMinute }) : null;
   const resetDate = () => { setDYear(""); setDMonth(""); setDDay(""); setDHour(""); setDMinute(""); };
 
-  // queue
+  // queue — archive jobs and pending memories share this one queue UI.
   const [queue, setQueue] = React.useState([]);
+  const [memQueue, setMemQueue] = React.useState([]);
   const [qLoading, setQLoading] = React.useState(false);
   // queue search/filter
   const [qSearch, setQSearch] = React.useState("");
-  const [qStatus, setQStatus] = React.useState("");  // "" = all
-  const [qMedia, setQMedia] = React.useState("");     // "" = all
+  const [qStatus, setQStatus] = React.useState("");  // "" = all (archive-only: memories have no pipeline status)
+  const [qMedia, setQMedia] = React.useState("");     // "" = all; "memory" = pending memories regardless of their own media_type
   const [qAdvOpen, setQAdvOpen] = React.useState(false);
   const [qSort, setQSort] = React.useState("desc");  // by date added: desc = newest first
 
@@ -118,6 +148,13 @@ function ArchiveAdmin({ lang, onClose, point, picking, onStartPick, onCancelPick
       .finally(() => setQLoading(false));
   }, [token]);
 
+  const loadMemQueue = React.useCallback(() => {
+    authFetch("/api/moderate/queue")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d) setMemQueue(d.pending || []); })
+      .catch(() => {});
+  }, [token]);
+
   // Validate the token by hitting an authed endpoint.
   const unlock = () => {
     setAuthErr("");
@@ -126,6 +163,7 @@ function ArchiveAdmin({ lang, onClose, point, picking, onStartPick, onCancelPick
         localStorage.setItem(ARC_TOKEN_KEY, token);
         setAuthed(true);
         loadCases();
+        loadMemQueue();
         return r.json().then((d) => setQueue(d.archives || []));
       }
       setAuthErr(L("Mã không hợp lệ.", "Invalid token."));
@@ -139,13 +177,14 @@ function ArchiveAdmin({ lang, onClose, point, picking, onStartPick, onCancelPick
   React.useEffect(() => {
     if (!authed || tab !== "queue") return;
     loadQueue();
-    const t = setInterval(loadQueue, 20000);
+    loadMemQueue();
+    const t = setInterval(() => { loadQueue(); loadMemQueue(); }, 20000);
     return () => clearInterval(t);
-  }, [authed, tab, loadQueue]);
+  }, [authed, tab, loadQueue, loadMemQueue]);
 
   const lock = () => {
     localStorage.removeItem(ARC_TOKEN_KEY);
-    setToken(""); setAuthed(false); setQueue([]); setCases([]);
+    setToken(""); setAuthed(false); setQueue([]); setMemQueue([]); setCases([]);
   };
 
   const validUrl = (() => { try { const u = new URL(url); return u.protocol === "http:" || u.protocol === "https:"; } catch { return false; } })();
@@ -193,6 +232,14 @@ function ArchiveAdmin({ lang, onClose, point, picking, onStartPick, onCancelPick
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason }),
     }).then(loadQueue).catch(() => {});
   };
+  const approveMemory = (id) => authFetch(`/api/moderate/${id}/approve`, { method: "POST" }).then(loadMemQueue).catch(() => {});
+  const rejectMemory = (id) => {
+    const reason = window.prompt(L("Lý do từ chối (không bắt buộc):", "Reason for rejecting (optional):"), "");
+    if (reason === null) return;
+    authFetch(`/api/moderate/${id}/reject`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason }),
+    }).then(loadMemQueue).catch(() => {});
+  };
 
   // Load the topic taxonomy once authed (public endpoint).
   React.useEffect(() => {
@@ -232,20 +279,32 @@ function ArchiveAdmin({ lang, onClose, point, picking, onStartPick, onCancelPick
       .then(() => { setEditId(null); loadQueue(); }).catch(() => {});
   };
 
-  // Client-side keyword + filters over the loaded queue (<=200 rows).
-  const filteredQueue = queue.filter((a) => {
-    if (qStatus && a.status !== qStatus) return false;
-    if (qMedia && a.media_type !== qMedia) return false;
+  // Pending memories share this one queue UI with archive jobs — each item is
+  // tagged with `kind` so filtering/sorting/rendering can branch on it.
+  const combinedQueue = [
+    ...queue.map((a) => ({ ...a, kind: "archive", _date: a.created_at })),
+    ...memQueue.map((m) => ({ ...m, kind: "memory", _date: m.submit_date })),
+  ];
+
+  // Client-side keyword + filters over the loaded queue (<=250 rows).
+  const filteredQueue = combinedQueue.filter((item) => {
+    // Pipeline status (pending/running/archived/…) only applies to archive
+    // jobs — selecting one implicitly hides memories, which have no such state.
+    if (qStatus && item.status !== qStatus) return false;
+    if (qMedia === "memory" && item.kind !== "memory") return false;
+    if (qMedia && qMedia !== "memory" && (item.kind !== "archive" || item.media_type !== qMedia)) return false;
     const q = qSearch.trim().toLowerCase();
     if (q) {
-      const tags = Array.isArray(a.topics) ? a.topics.map((t) => t.name_en || t.slug).join(" ") : "";
-      const hay = [a.title_en, a.title_vi, a.original_url, a.wayback_url, a.local_url, a.source, a.id, tags]
-        .filter(Boolean).join(" ").toLowerCase();
+      const hay = item.kind === "memory"
+        ? [item.text_vi, item.text_en, item.ward, item.city, item.id].filter(Boolean).join(" ").toLowerCase()
+        : [item.title_en, item.title_vi, item.original_url, item.wayback_url, item.local_url, item.source, item.id,
+            Array.isArray(item.topics) ? item.topics.map((t) => t.name_en || t.slug).join(" ") : ""]
+            .filter(Boolean).join(" ").toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;
   }).sort((a, b) => {
-    const cmp = String(a.created_at || "").localeCompare(String(b.created_at || ""));
+    const cmp = String(a._date || "").localeCompare(String(b._date || ""));
     return qSort === "asc" ? cmp : -cmp;  // by date added
   });
   const qFiltered = qSearch.trim() || qStatus || qMedia;
@@ -432,7 +491,7 @@ function ArchiveAdmin({ lang, onClose, point, picking, onStartPick, onCancelPick
             {tab === "queue" && (
               <div className="adm-queue">
                 <div className="adm-queue-head">
-                  <span>{filteredQueue.length}{qFiltered ? ` / ${queue.length}` : ""} {L("mục", "jobs")}</span>
+                  <span>{filteredQueue.length}{qFiltered ? ` / ${combinedQueue.length}` : ""} {L("mục", "jobs")}</span>
                   <span className="adm-queue-actions">
                     <a className="adm-extlink" href={(archiveboxBase || ARCHIVEBOX_FALLBACK).replace(/\/$/, "") + "/admin/core/snapshot/"} target="_blank" rel="noopener noreferrer">ArchiveBox ↗</a>
                     <button className="adm-refresh" onClick={loadQueue}>{qLoading ? "…" : "↻"}</button>
@@ -463,9 +522,9 @@ function ArchiveAdmin({ lang, onClose, point, picking, onStartPick, onCancelPick
                     </div>
                     <div className="field-label">{L("Loại", "Type")}</div>
                     <div className="adm-chips">
-                      {["", "web", "document", "social"].map((m) => (
+                      {["", "memory", "web", "document", "social"].map((m) => (
                         <button key={m || "all"} className={"adm-chip " + (qMedia === m ? "on" : "")} onClick={() => setQMedia(m)}>
-                          {m || L("Tất cả", "All")}
+                          {m === "memory" ? L("Ký ức", "Memory") : (m || L("Tất cả", "All"))}
                         </button>
                       ))}
                     </div>
@@ -474,7 +533,11 @@ function ArchiveAdmin({ lang, onClose, point, picking, onStartPick, onCancelPick
                 )}
 
                 {filteredQueue.length === 0 && !qLoading && <div className="adm-hint">{qFiltered ? L("Không khớp bộ lọc.", "No matches.") : L("Chưa có mục nào.", "Nothing queued yet.")}</div>}
-                {filteredQueue.map((a) => {
+                {filteredQueue.map((item) => {
+                  if (item.kind === "memory") {
+                    return <MemoryQueueRow key={"mem-" + item.id} m={item} lang={lang} L={L} onApprove={approveMemory} onReject={rejectMemory} />;
+                  }
+                  const a = item;
                   const st = ARC_STATUS[a.status] || { en: a.status, vi: a.status, cls: "" };
                   const editing = editId === a.id;
                   return (

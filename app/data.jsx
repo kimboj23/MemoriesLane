@@ -329,7 +329,10 @@ function uid() {
   return "u" + Math.random().toString(36).slice(2, 9);
 }
 
-function compressImage(file, maxDim = 1280, quality = 0.7) {
+// Compresses to fit under targetBytes (the server's post-decode cap), trying
+// the least lossy setting first: quality steps down before dimensions do, so
+// a photo only loses resolution once quality alone can't make it small enough.
+function compressImage(file, maxDim = 1280, quality = 0.7, targetBytes = 1_500_000) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = reject;
@@ -337,15 +340,29 @@ function compressImage(file, maxDim = 1280, quality = 0.7) {
       const img = new Image();
       img.onerror = reject;
       img.onload = () => {
-        let { width, height } = img;
-        const scale = Math.min(1, maxDim / Math.max(width, height));
-        width = Math.round(width * scale);
-        height = Math.round(height * scale);
-        const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
-        resolve({ dataUrl: canvas.toDataURL("image/jpeg", quality), width, height });
+        const render = (dim, q) => {
+          let { width, height } = img;
+          const scale = Math.min(1, dim / Math.max(width, height));
+          width = Math.round(width * scale);
+          height = Math.round(height * scale);
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+          return { dataUrl: canvas.toDataURL("image/jpeg", q), width, height };
+        };
+        let dim = maxDim, q = quality;
+        let result = render(dim, q);
+        // toDataURL length is ~4/3 of the encoded byte size — compare against
+        // that to estimate when we're under targetBytes.
+        let attempts = 0;
+        while (result.dataUrl.length > targetBytes * 1.34 && attempts < 7) {
+          if (q > 0.4) q = Math.max(0.4, q - 0.15);
+          else dim = Math.round(dim * 0.75);
+          result = render(dim, q);
+          attempts++;
+        }
+        resolve(result);
       };
       img.src = reader.result;
     };
