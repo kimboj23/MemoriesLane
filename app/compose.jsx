@@ -124,7 +124,7 @@ function ComposeSheet({ point, lang, accent, gold, city, onSubmit, onClose, near
 
           <div className="field-label">{t.category}</div>
           <div className="cat-chips">
-            {CATS.map((c) => (
+            {MEMORY_CATS.map((c) => (
               <button key={c.key} className={"cat-chip " + (cat === c.key ? "on" : "")}
                 onClick={() => setCat(c.key)}
                 style={cat === c.key ? { borderColor: c.color, color: c.color } : undefined}>

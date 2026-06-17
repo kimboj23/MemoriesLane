@@ -40,7 +40,7 @@ function TopicChips({ topics, selected, onToggle, lang }) {
   );
 }
 
-function ArchiveAdmin({ lang, onClose }) {
+function ArchiveAdmin({ lang, onClose, point, picking, onStartPick, onCancelPick, onClearPoint }) {
   const L = (vi, en) => (lang === "vi" ? vi : en);
 
   const [token, setToken] = React.useState(() => localStorage.getItem(ARC_TOKEN_KEY) || "");
@@ -55,14 +55,24 @@ function ArchiveAdmin({ lang, onClose }) {
   const [url, setUrl] = React.useState("");
   const [media, setMedia] = React.useState("document");
   const [tool, setTool] = React.useState("archive-box");
+  const [cat, setCat] = React.useState("news");
   const [titleEn, setTitleEn] = React.useState("");
   const [titleVi, setTitleVi] = React.useState("");
   const [source, setSource] = React.useState("");
   const [account, setAccount] = React.useState("");
-  const [date, setDate] = React.useState("");
+  const [dYear, setDYear] = React.useState("");
+  const [dMonth, setDMonth] = React.useState("");
+  const [dDay, setDDay] = React.useState("");
+  const [dHour, setDHour] = React.useState("");
+  const [dMinute, setDMinute] = React.useState("");
   const [notes, setNotes] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [msg, setMsg] = React.useState(null); // {ok, text}
+
+  const dSpecificMonth = /^\d+$/.test(dMonth);
+  const dSpecificDay = dSpecificMonth && /^\d+$/.test(dDay);
+  const dBuilt = dYear ? buildDate(lang, { year: dYear, month: dMonth, day: dDay, hour: dHour, minute: dMinute }) : null;
+  const resetDate = () => { setDYear(""); setDMonth(""); setDDay(""); setDHour(""); setDMinute(""); };
 
   // queue
   const [queue, setQueue] = React.useState([]);
@@ -149,14 +159,19 @@ function ArchiveAdmin({ lang, onClose }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         caseId: caseId.trim() || undefined, collection: collection.trim() || undefined,
-        originalUrl: url.trim(), mediaType: media, tool, titleEn, titleVi, source, account, date, notes,
+        originalUrl: url.trim(), mediaType: media, tool, titleEn, titleVi, source, account,
+        date: dBuilt ? dBuilt.label : "", notes,
+        lat: point ? point.lat : null, lng: point ? point.lng : null,
+        city: point ? nearestCity(point.lat, point.lng).key : null,
+        cat,
       }),
     })
       .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
       .then(({ ok, d }) => {
         if (ok) {
           setMsg({ ok: true, text: L("Đã đưa vào hàng chờ lưu trữ.", "Queued for archiving.") });
-          setUrl(""); setTitleEn(""); setTitleVi(""); setSource(""); setAccount(""); setDate(""); setNotes("");
+          setUrl(""); setTitleEn(""); setTitleVi(""); setSource(""); setAccount(""); resetDate(); setNotes("");
+          setCat("news"); onClearPoint && onClearPoint();
         } else {
           setMsg({ ok: false, text: (d && (d.error + (d.details ? ": " + d.details.join(", ") : ""))) || L("Gửi thất bại.", "Submit failed.") });
         }
@@ -293,6 +308,41 @@ function ArchiveAdmin({ lang, onClose }) {
                     </button>
                   ))}
                 </div>
+
+                <div className="field-label">{L("Vị trí trên bản đồ", "Map location")} <em className="adm-hint-inline">({L("không bắt buộc", "optional")})</em></div>
+                <ol className="compose-steps">
+                  <li className={"cstep " + (point ? "done" : picking ? "active" : "")}>
+                    <span className="cstep-n">{point ? "✓" : "📍"}</span>
+                    <div className="cstep-body">
+                      {point ? (
+                        <span className="cstep-meta">{fauxCoord(point.lat, point.lng)} <em>· {L("chạm để chọn lại", "tap to change")}</em></span>
+                      ) : (
+                        <span className="cstep-meta hint">{picking
+                          ? L("Chạm vào bản đồ để đánh dấu", "Touch the map to mark a place")
+                          : L("Chưa chọn nơi chốn — tư liệu sẽ không hiện trên bản đồ", "No place chosen — this material won't appear on the map")}</span>
+                      )}
+                    </div>
+                  </li>
+                </ol>
+                <div className="adm-chips">
+                  <button type="button" className="adm-chip" onClick={() => (picking ? onCancelPick && onCancelPick() : onStartPick && onStartPick())}>
+                    {picking ? L("Hủy chọn", "Cancel picking") : point ? L("Chọn lại vị trí", "Change location") : L("Chọn vị trí trên bản đồ", "Choose location on map")}
+                  </button>
+                  {point && <button type="button" className="adm-chip" onClick={() => onClearPoint && onClearPoint()}>{L("Xóa vị trí", "Clear location")}</button>}
+                </div>
+
+                <div className="field-label">{L("Thể loại trên bản đồ", "Map category")}</div>
+                <div className="adm-chips">
+                  {ARCHIVE_CATS.map((c) => (
+                    <button key={c.key} type="button" className={"adm-chip " + (cat === c.key ? "on" : "")}
+                      onClick={() => setCat(c.key)}
+                      style={cat === c.key ? { borderColor: c.color, color: c.color } : undefined}>
+                      <span className="cat-dot" style={{ background: c.color }} />
+                      {c[lang]}
+                    </button>
+                  ))}
+                </div>
+
                 <div className="field-label">{L("Công cụ lưu trữ", "Archive tool")}</div>
                 <div className="adm-chips">
                   <button className={"adm-chip " + (tool === "archive-box" ? "on" : "")} onClick={() => setTool("archive-box")}>
@@ -318,8 +368,56 @@ function ArchiveAdmin({ lang, onClose }) {
                   </div>
                 </div>
 
-                <div className="field-label">{L("Ngày tư liệu", "Material date")}</div>
-                <input className="adm-input" value={date} placeholder="2026-03-14" onChange={(e) => setDate(e.target.value)} />
+                <div className="field-label">{L("Ngày tư liệu", "Material date")} <em className="adm-hint-inline">({L("không bắt buộc", "optional")})</em></div>
+                <div className="date-grid">
+                  <label className="date-field">
+                    <span className="date-cap">{STR[lang].yearLabel}</span>
+                    <select className="date-sel" value={dYear}
+                      onChange={(e) => { setDYear(e.target.value); if (!e.target.value) { setDMonth(""); setDDay(""); setDHour(""); setDMinute(""); } }}>
+                      <option value="">{STR[lang].chooseYear}</option>
+                      {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                  </label>
+                  <label className="date-field">
+                    <span className="date-cap">{STR[lang].monthLabel}</span>
+                    <select className="date-sel" value={dMonth} disabled={!dYear}
+                      onChange={(e) => { const v = e.target.value; setDMonth(v); if (!/^\d+$/.test(v)) { setDDay(""); setDHour(""); setDMinute(""); } }}>
+                      <option value="">{STR[lang].anyOpt}</option>
+                      <option value="circa">{STR[lang].circa}…</option>
+                      <option value="unknown">{STR[lang].dontKnow}</option>
+                      {MONTHS[lang].map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+                    </select>
+                  </label>
+                  <label className={"date-field" + (dSpecificMonth ? "" : " off")}>
+                    <span className="date-cap">{STR[lang].dayLabel}</span>
+                    <select className="date-sel" value={dDay} disabled={!dSpecificMonth}
+                      onChange={(e) => { setDDay(e.target.value); if (!e.target.value) { setDHour(""); setDMinute(""); } }}>
+                      <option value="">{dSpecificMonth ? STR[lang].anyOpt : "—"}</option>
+                      {dSpecificMonth && Array.from({ length: 31 }, (_, i) => <option key={i} value={i + 1}>{i + 1}</option>)}
+                    </select>
+                  </label>
+                </div>
+                <div className={"time-field" + (dSpecificDay ? "" : " off")}>
+                  <span className="date-cap">{STR[lang].timeLabel}</span>
+                  <div className="time-hm">
+                    <select className="date-sel" value={dHour} disabled={!dSpecificDay} aria-label={STR[lang].timeLabel}
+                      onChange={(e) => { setDHour(e.target.value); if (!e.target.value) setDMinute(""); }}>
+                      <option value="">{dSpecificDay ? "––" : "—"}</option>
+                      {dSpecificDay && HOURS.map((h) => <option key={h} value={h}>{h}</option>)}
+                    </select>
+                    <span className="time-colon">:</span>
+                    <select className="date-sel" value={dMinute} disabled={!dSpecificDay || !dHour} aria-label={STR[lang].minuteLabel}
+                      onChange={(e) => setDMinute(e.target.value)}>
+                      <option value="">{dHour ? "00" : "—"}</option>
+                      {dSpecificDay && dHour && MINUTES.map((m) => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                  </div>
+                </div>
+                {dBuilt && (
+                  <div className="date-summary">
+                    {STR[lang].saving}: <b>{dBuilt.label}</b> <span className="date-tag">({dBuilt.tag})</span>
+                  </div>
+                )}
 
                 <div className="field-label">{L("Ghi chú", "Notes")}</div>
                 <textarea className="memory-input adm-notes" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} />

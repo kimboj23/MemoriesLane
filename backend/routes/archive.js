@@ -25,6 +25,7 @@ router.use(rateLimit(60, "archive"));
 
 const VALID_MEDIA = new Set(["web", "document", "social"]);
 const VALID_TOOL = new Set(["archive-box", "auto-archiver"]);
+const VALID_CAT = new Set(["news", "event"]);
 // Fallback tool when the client doesn't send one (older clients). Wayback (public
 // Internet Archive link) is attempted for every job by the worker regardless.
 const TOOL_FOR_MEDIA = { web: "archive-box", document: "archive-box", social: "auto-archiver" };
@@ -62,6 +63,8 @@ router.post("/", async (req, res, next) => {
     const lat = Number.isFinite(b.lat) ? b.lat : null;
     const lng = Number.isFinite(b.lng) ? b.lng : null;
     const city = clean(b.city, 100);
+    const cat = VALID_CAT.has(b.cat) ? b.cat : null;
+    if (b.cat && !cat) errors.push(`cat must be one of: ${[...VALID_CAT].join(", ")}`);
 
     if (errors.length) return res.status(400).json({ error: "Validation failed", details: errors });
 
@@ -91,6 +94,7 @@ router.post("/", async (req, res, next) => {
       lat,
       lng,
       city,
+      cat,
       original_url,
       created_at: todayUTC(),
     });

@@ -184,6 +184,10 @@ const CATS = [
   { key: "event", vi: "Sự kiện", en: "Event", color: "#C2461F" },
 ];
 const CAT = Object.fromEntries(CATS.map((c) => [c.key, c]));
+// Memories use "life story"/"community action"; the other two categories are
+// reserved for archived materials (selectable on the archive submission form).
+const MEMORY_CATS = CATS.filter((c) => c.key === "personal" || c.key === "community");
+const ARCHIVE_CATS = CATS.filter((c) => c.key === "news" || c.key === "event");
 
 const LEGACY_CAT = { everyday: "personal", memory: "personal", witness: "news", petition: "community", protest: "community", eviction: "turning" };
 function catOf(key) { return CAT[key] || CAT[LEGACY_CAT[key]] || CATS[0]; }
@@ -475,7 +479,7 @@ function inShape(m, shape) {
 }
 
 Object.assign(window, {
-  STR, CATS, CAT, catOf, MONTHS, MEMORIES, HANOI_CENTER, BASEMAPS, BASEMAP, WARDS, nearestWard,
+  STR, CATS, CAT, MEMORY_CATS, ARCHIVE_CATS, catOf, MONTHS, MEMORIES, HANOI_CENTER, BASEMAPS, BASEMAP, WARDS, nearestWard,
   CLEARANCE_ZONE, CLEARANCE_LABEL, MIN_YEAR, MAX_YEAR,
   uid, compressImage, dist, fauxCoord, isApprox,
   parseMemoryDate, dateBoundsInt, memoryDateBounds, isVerified, memoryLang, memoryMedia,

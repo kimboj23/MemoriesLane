@@ -2,7 +2,7 @@
 /**
  * Materials API — public, read-only.
  *
- * GET /api/materials              — list approved, archived materials (q/collection/mediaType/tool/limit/offset)
+ * GET /api/materials              — list approved, archived materials (q/collection/mediaType/tool/city/limit/offset)
  * GET /api/materials/collections  — collection facet counts, for browse nav
  * GET /api/materials/:id          — single material
  *
@@ -23,6 +23,7 @@ function clean(v, max) {
 
 const VALID_MEDIA = new Set(["web", "document", "social"]);
 const VALID_TOOL = new Set(["archive-box", "auto-archiver"]);
+const VALID_CITIES = new Set(["hanoi", "hcmc", "hue", "danang", "cantho"]);
 
 router.get("/collections", async (req, res, next) => {
   try {
@@ -49,10 +50,11 @@ router.get("/", async (req, res, next) => {
     const collection = clean(req.query.collection, 80);
     const mediaType = VALID_MEDIA.has(req.query.mediaType) ? req.query.mediaType : null;
     const tool = VALID_TOOL.has(req.query.tool) ? req.query.tool : null;
-    const limit = Math.min(parseInt(req.query.limit, 10) || 60, 100);
+    const city = VALID_CITIES.has(req.query.city) ? req.query.city : null;
+    const limit = Math.min(parseInt(req.query.limit, 10) || 60, 300);
     const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
 
-    const materials = await queries.materialsList({ q, collection, mediaType, tool, limit, offset });
+    const materials = await queries.materialsList({ q, collection, mediaType, tool, city, limit, offset });
     res.json({ materials, count: materials.length, limit, offset });
   } catch (err) {
     next(err);

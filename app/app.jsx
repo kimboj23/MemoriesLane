@@ -224,10 +224,27 @@ function App() {
   const [selected, setSelected] = React.useState(null);
   const [aboutOpen, setAboutOpen] = React.useState(false);
   const [adminOpen, setAdminOpen] = React.useState(false);
+  const [archivePoint, setArchivePoint] = React.useState(null);
+  const [pickingArchiveLoc, setPickingArchiveLoc] = React.useState(false);
+  const [materials, setMaterials] = React.useState([]);
+  const [selectedMaterial, setSelectedMaterial] = React.useState(null);
   const [materialsOpen, setMaterialsOpen] = React.useState(false);
   const [openCaseId, setOpenCaseId] = React.useState(null);
   const [caseProfile, setCaseProfile] = React.useState(null);
   const [allTopics, setAllTopics] = React.useState([]);
+
+  // Load approved, geotagged archived materials for the current city — shown
+  // on the map alongside memories (news/event categories, dot-coloured like
+  // memory categories but kept visually distinct via the "material" pins).
+  React.useEffect(() => {
+    if (city === "all") { setMaterials([]); return; }
+    const p = new URLSearchParams({ city, limit: "300" });
+    fetch("/api/materials?" + p.toString())
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (data && data.materials) setMaterials(data.materials.filter((m) => m.lat != null && m.lng != null)); })
+      .catch(() => {});
+  }, [city]);
+
   // --- research mode ---
   const [research, setResearch] = React.useState(false);
   const [exportOpen, setExportOpen] = React.useState(false);
@@ -329,6 +346,15 @@ function App() {
   }, [scopeMemories, lo, hi, adv, queryShape, compiled]);
   const visible = results;
   const mapMemories = visible;
+  // Approved, geotagged archived materials — shown as map markers alongside
+  // memories (not part of the Advanced Search filtered pipeline above).
+  const mapMarkers = React.useMemo(() => {
+    const matMarkers = materials.map((mt) => ({
+      id: "mat-" + mt.id, lat: mt.lat, lng: mt.lng, cat: mt.cat || "news",
+      _material: true, material: mt,
+    }));
+    return city === "all" ? [] : [...mapMemories, ...matMarkers];
+  }, [mapMemories, materials, city]);
   // List view shares the same filtered `results` for memory cards, so it
   // reflects every Advanced Search facet exactly like the map does.
   const feedItems = React.useMemo(
@@ -367,11 +393,16 @@ function App() {
       .slice(0, 3).map((x) => x.m);
   }, [placePoint, scopeMemories]);
 
-  const pickCity = (k) => { setCity(k); setCityOpen(false); setSelected(null); setComposing(false); setPlacePoint(null); setQueryShape(null); setQueryMode(null); if (k === "all") setListView(false); };
+  const pickCity = (k) => { setCity(k); setCityOpen(false); setSelected(null); setComposing(false); setPlacePoint(null); setPickingArchiveLoc(false); setArchivePoint(null); setQueryShape(null); setQueryMode(null); if (k === "all") setListView(false); };
   const openCompose = () => { if (city === "all") setCity("hanoi"); setSelected(null); setAboutOpen(false); setLayersOpen(false); setComposing(true); setPlacePoint(null); };
-  // Map clicks only set a location while actively composing (entered via the +
-  // button). A click on the map never opens the form on its own.
-  const mapClick = (p) => { if (city === "all" || !composing) return; setSelected(null); setAboutOpen(false); setLayersOpen(false); setPlacePoint(p); };
+  // Map clicks set a location while actively composing a memory (entered via
+  // the + button) or while picking a location for an archive submission. A
+  // click on the map never opens either form on its own.
+  const mapClick = (p) => {
+    if (city === "all") return;
+    if (composing) { setSelected(null); setAboutOpen(false); setLayersOpen(false); setPlacePoint(p); }
+    else if (pickingArchiveLoc) { setSelected(null); setAboutOpen(false); setLayersOpen(false); setArchivePoint(p); setPickingArchiveLoc(false); }
+  };
   const closeCompose = () => { setComposing(false); setPlacePoint(null); };
   const submit = (mem) => {
     setMemories((prev) => [...prev, mem]); // optimistic UI update
@@ -382,6 +413,10 @@ function App() {
     }).catch(() => {}); // silent — memory stays visible locally regardless
   };
   const openMemory = (m) => { setComposing(false); setPlacePoint(null); wanderHist.current = []; setSelected(m); };
+  const selectMapItem = (m) => {
+    if (m && m._material) { setSelectedMaterial(m.material); return; }
+    openMemory(m);
+  };
 
   const wanderNext = () => setSelected((cur) => {
     if (!cur) return cur;
@@ -492,8 +527,8 @@ function App() {
       )}
 
       <MapView
-        memories={city === "all" ? [] : mapMemories} placing={placePoint} onPlace={mapClick} onSelect={openMemory}
-        selectedId={selected && selected.id} placingMode={composing && !placePoint}
+        memories={mapMarkers} placing={placePoint || archivePoint} onPlace={mapClick} onSelect={selectMapItem}
+        selectedId={selected && selected.id} placingMode={(composing && !placePoint) || pickingArchiveLoc}
         focus={selected ? { lat: selected.lat, lng: selected.lng, id: selected.id } : null}
         basemap={basemap} accent={accent}
         accumulation={t.accumulation} lang={lang}
@@ -520,6 +555,14 @@ function App() {
           <span className="place-banner-n">①</span>
           <span>{S.placePrompt}</span>
           <button className="place-banner-x" onClick={closeCompose} aria-label={S.close}>✕</button>
+        </div>
+      )}
+
+      {pickingArchiveLoc && (
+        <div className="place-banner">
+          <span className="place-banner-n">①</span>
+          <span>{S.placePrompt}</span>
+          <button className="place-banner-x" onClick={() => setPickingArchiveLoc(false)} aria-label={S.close}>✕</button>
         </div>
       )}
 
@@ -571,10 +614,30 @@ function App() {
           onSelectMemory={(m) => { setOpenCaseId(null); setCaseProfile(null); setSelected(m); }} />
       )}
       {aboutOpen && <AboutPanel lang={lang} onClose={() => setAboutOpen(false)} />}
-      {adminOpen && <ArchiveAdmin lang={lang} onClose={() => setAdminOpen(false)} />}
+      {adminOpen && (
+        <ArchiveAdmin lang={lang}
+          onClose={() => { setAdminOpen(false); setPickingArchiveLoc(false); setArchivePoint(null); }}
+          point={archivePoint} picking={pickingArchiveLoc}
+          onStartPick={() => setPickingArchiveLoc(true)}
+          onCancelPick={() => setPickingArchiveLoc(false)}
+          onClearPoint={() => setArchivePoint(null)} />
+      )}
       {materialsOpen && (
         <MaterialsPanel lang={lang} onClose={() => setMaterialsOpen(false)}
           onOpenCase={(id) => { setMaterialsOpen(false); setOpenCaseId(id); }} />
+      )}
+      {selectedMaterial && (
+        <div className="read-scrim" onPointerDown={(e) => { if (e.target === e.currentTarget) setSelectedMaterial(null); }}>
+          <aside className="about-card material-card">
+            <button className="sheet-close" onClick={() => setSelectedMaterial(null)} aria-label={S.close}>✕</button>
+            <ArchiveCard item={selectedMaterial} lang={lang} />
+            {selectedMaterial.caseId && (
+              <button className="ghost-btn" onClick={() => { setSelectedMaterial(null); setOpenCaseId(selectedMaterial.caseId); }}>
+                {lang === "vi" ? "Xem hồ sơ vụ việc →" : "View case profile →"}
+              </button>
+            )}
+          </aside>
+        </div>
       )}
 
       <TweaksPanel>

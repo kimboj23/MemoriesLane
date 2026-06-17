@@ -123,6 +123,7 @@ async function initDb() {
       lat           DOUBLE PRECISION,
       lng           DOUBLE PRECISION,
       city          TEXT,
+      cat           TEXT CHECK (cat IN ('news','event')),
       original_url  TEXT,
       wayback_url   TEXT,
       local_url     TEXT,
@@ -175,6 +176,7 @@ async function initDb() {
   await pool.query(`ALTER TABLE archives ADD COLUMN IF NOT EXISTS wacz_url      TEXT`);
   await pool.query(`ALTER TABLE archives ADD COLUMN IF NOT EXISTS sha256        TEXT`);
   await pool.query(`ALTER TABLE archives ADD COLUMN IF NOT EXISTS tool_version  TEXT`);
+  await pool.query(`ALTER TABLE archives ADD COLUMN IF NOT EXISTS cat           TEXT`);
   await pool.query(`ALTER TABLE archives ADD COLUMN IF NOT EXISTS approved      INTEGER NOT NULL DEFAULT 0`);
   await pool.query(`ALTER TABLE archives ADD COLUMN IF NOT EXISTS rejected      INTEGER NOT NULL DEFAULT 0`);
   await pool.query(`ALTER TABLE archives ADD COLUMN IF NOT EXISTS reject_reason TEXT`);
@@ -244,6 +246,7 @@ function mapMaterial(r) {
     lat: r.lat != null ? Number(r.lat) : null,
     lng: r.lng != null ? Number(r.lng) : null,
     city: r.city || null,
+    cat: r.cat || null,
     originalUrl: r.original_url,
     archivedUrl: r.wayback_url || r.local_url || null,
     waybackUrl: r.wayback_url || null,
@@ -426,11 +429,11 @@ const queries = {
   archiveInsert: (row) => getPool().query(
     `INSERT INTO archives
        (id, case_id, collection, tool, media_type, title_vi, title_en, source, account,
-        doc_date, notes, lat, lng, city, original_url, status, created_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'pending',$16)`,
+        doc_date, notes, lat, lng, city, cat, original_url, status, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,'pending',$17)`,
     [row.id, row.case_id || null, row.collection || null, row.tool, row.media_type,
      row.title_vi, row.title_en, row.source, row.account, row.doc_date, row.notes,
-     row.lat ?? null, row.lng ?? null, row.city || null, row.original_url, row.created_at]
+     row.lat ?? null, row.lng ?? null, row.city || null, row.cat || null, row.original_url, row.created_at]
   ),
 
   archiveById: async (id) => {
@@ -439,10 +442,10 @@ const queries = {
   },
 
   // ── Public materials (first-class, approved + successfully archived) ────────
-  materialsList: async ({ q, collection, mediaType, tool, limit = 60, offset = 0 } = {}) => {
+  materialsList: async ({ q, collection, mediaType, tool, city, limit = 60, offset = 0 } = {}) => {
     const { rows } = await getPool().query(
       `SELECT a.id, a.tool, a.media_type, a.collection, a.title_vi, a.title_en, a.source,
-              a.account, a.doc_date, a.notes, a.lat, a.lng, a.city, a.original_url,
+              a.account, a.doc_date, a.notes, a.lat, a.lng, a.city, a.cat, a.original_url,
               a.wayback_url, a.local_url, a.wacz_url, a.sha256, a.tool_version, a.status, a.case_id,
               c.title_vi AS case_title_vi, c.title_en AS case_title_en,
               COALESCE(
@@ -461,9 +464,10 @@ const queries = {
                a.title_en ILIKE '%'||$4||'%' OR a.title_vi ILIKE '%'||$4||'%' OR
                a.source   ILIKE '%'||$4||'%' OR a.notes    ILIKE '%'||$4||'%' OR
                a.original_url ILIKE '%'||$4||'%'))
+         AND ($7::text IS NULL OR a.city = $7)
        ORDER BY a.doc_date DESC NULLS LAST, a.created_at DESC
        LIMIT $5 OFFSET $6`,
-      [collection || null, mediaType || null, tool || null, q || null, limit, offset]
+      [collection || null, mediaType || null, tool || null, q || null, limit, offset, city || null]
     );
     return rows.map(mapMaterial);
   },
@@ -471,7 +475,7 @@ const queries = {
   materialById: async (id) => {
     const { rows } = await getPool().query(
       `SELECT a.id, a.tool, a.media_type, a.collection, a.title_vi, a.title_en, a.source,
-              a.account, a.doc_date, a.notes, a.lat, a.lng, a.city, a.original_url,
+              a.account, a.doc_date, a.notes, a.lat, a.lng, a.city, a.cat, a.original_url,
               a.wayback_url, a.local_url, a.wacz_url, a.sha256, a.tool_version, a.status, a.case_id,
               c.title_vi AS case_title_vi, c.title_en AS case_title_en,
               COALESCE(
