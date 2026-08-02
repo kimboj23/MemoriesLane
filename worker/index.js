@@ -3,10 +3,11 @@
  * MemoryLane archive-worker.
  *
  * Polls the shared Supabase `archives` table for pending jobs and runs them on
- * the local machine (where ArchiveBox / auto-archiver / a browser can run):
+ * its own host (a VPS in production; ArchiveBox / auto-archiver / a browser
+ * run alongside it there):
  *
- *   web | document  ->  ArchiveBox (local snapshot)  +  Wayback (public link)
- *   social          ->  auto-archiver (local)        +  Wayback (public link)
+ *   web | document  ->  ArchiveBox (snapshot)  +  Wayback (public link)
+ *   social          ->  auto-archiver          +  Wayback (public link)
  *
  * A job is 'archived' if every attempted archiver succeeded, 'partial' if at
  * least one did, 'failed' if none did. The API and UI read the results back

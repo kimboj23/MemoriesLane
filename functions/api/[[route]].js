@@ -1,6 +1,6 @@
 // Cloudflare Pages Function — proxies all /api/* requests to the backend.
 // Set BACKEND_URL in the Cloudflare Pages dashboard (Environment Variables).
-// e.g. BACKEND_URL = https://memorylane.up.railway.app
+// e.g. BACKEND_URL = https://archivebox-api.heomay.xyz
 export async function onRequest(context) {
   const { request, env } = context;
 

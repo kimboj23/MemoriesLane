@@ -1,0 +1,76 @@
+# VPS deployment — archivebox + archive-worker + backend, the whole always-on
+# half of the stack (everything except the static frontend, which stays on
+# Cloudflare Pages, and Postgres/Storage, which stay on Supabase).
+#
+# Usage on the VPS (after copying archivebox/, worker/, backend/, backend/.env,
+# archivebox/rclone.env to this same relative layout):
+#   docker compose -f docker-compose.vps.yml up -d --build
+#
+# Differences from the laptop docker-compose.yml:
+#   - no frontend/postgres/adminer — those are dev-only conveniences
+#   - restart: unless-stopped, so every service survives a VPS reboot unattended
+#   - every port is bound to 127.0.0.1 only — Cloudflare Tunnel reaches each
+#     service over localhost; nothing here is ever reachable on the VPS's
+#     public IP directly (backend was previously public via Railway's own
+#     TLS-terminating edge; here that job is done by the tunnel instead)
+
+services:
+  archivebox:
+    build: ./archivebox
+    container_name: memorieslane-archivebox-1
+    command: server --quick-init 0.0.0.0:8000
+    ports:
+      - "127.0.0.1:8000:8000"
+    cap_add:
+      - SYS_ADMIN
+    devices:
+      - /dev/fuse
+    security_opt:
+      - apparmor:unconfined
+    env_file: ./archivebox/rclone.env
+    environment:
+      - PUBLIC_INDEX=False
+      - PUBLIC_SNAPSHOTS=False
+      - PUBLIC_ADD_VIEW=False
+      - CHECK_SSL_VALIDITY=False
+      - ALLOWED_HOSTS=*
+      - CSRF_TRUSTED_ORIGINS=https://*.heomay.xyz,http://localhost:8000
+    volumes:
+      - archivebox-data:/data
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    env_file: ./backend/.env   # DATABASE_URL, SUPABASE_*, RATE_HMAC_SECRET, ADMIN_TOKEN_HASH,
+                                # ALLOWED_ORIGINS (must be the real CF Pages/custom domain, not "null")
+    environment:
+      - NODE_ENV=production
+      - BIND_ADDR=0.0.0.0
+    ports:
+      - "127.0.0.1:3001:3001"
+    volumes:
+      - memorylane-uploads:/data/uploads
+    restart: unless-stopped
+
+  archive-worker:
+    build: ./worker
+    env_file: ./backend/.env
+    environment:
+      - ARCHIVEBOX_CONTAINER=memorieslane-archivebox-1
+      - ARCHIVEBOX_PUBLIC_URL=${ARCHIVEBOX_PUBLIC_URL:-https://archivebox.heomay.xyz}
+      - AUTOARCHIVER_CONFIG_DIR=memorylane-autoarchiver-config
+      - AUTOARCHIVER_PUBLIC_URL=${AUTOARCHIVER_PUBLIC_URL:-https://xaztyzxdqgoowfrbnpkj.supabase.co/storage/v1/object/public/memory-archive}
+      - POLL_INTERVAL_MS=15000
+      - DRY_RUN=${ARCHIVE_DRY_RUN:-0}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - archivebox
+    restart: unless-stopped
+
+volumes:
+  archivebox-data:
+    name: memorylane-archivebox-data
+  autoarchiver-config:
+    name: memorylane-autoarchiver-config
+  memorylane-uploads:

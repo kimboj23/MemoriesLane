@@ -7,9 +7,9 @@
  * GET  /api/archive/:id        — single job status
  * POST /api/archive/:id/retry  — requeue a failed/partial job
  *
- * Archiving itself runs on the local archive-worker, which polls Supabase for
- * pending rows. This API only enqueues and reports status — it does no heavy
- * work, so it is safe to run on a serverless/cloud host.
+ * Archiving itself runs on archive-worker (a VPS in production), which polls
+ * Supabase for pending rows. This API only enqueues and reports status — it
+ * does no heavy work, so it is safe to run on a serverless/cloud host.
  *
  * All routes require Authorization: Bearer <admin_token>.
  */

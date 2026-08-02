@@ -20,8 +20,8 @@ RUN mkdir -p /data/uploads
 ENV UPLOADS_DIR=/data/uploads
 ENV PORT=3001
 ENV NODE_ENV=production
-# Bind all interfaces — required behind a PaaS/proxy (Koyeb, Render, Railway),
-# which terminate TLS and forward to the container.
+# Bind all interfaces — required behind any TLS-terminating proxy in front of
+# the container (a PaaS like Railway/Render, or a Cloudflare Tunnel on a VPS).
 ENV BIND_ADDR=0.0.0.0
 
 EXPOSE 3001
