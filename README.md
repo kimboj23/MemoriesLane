@@ -266,6 +266,24 @@ S3 credentials live in `archivebox/rclone.env` (gitignored, `RCLONE_CONFIG_SB_*`
 
 > `archive-worker` mounts the Docker socket to run the tools as sibling containers — it must run on the same Docker host as ArchiveBox (the VPS), never bundled into a serverless/edge API host.
 
+**Cookie-consent banners in captures — `COOKIES_FILE` setup (not yet done):** ArchiveBox currently captures every site with a fresh, cookie-less session, so consent banners on Vietnamese news sites often get baked directly into screenshots/SingleFile/PDF snapshots. To fix:
+
+1. Install **"Get cookies.txt LOCALLY"** in Chrome (search the Chrome Web Store for that exact name — the older extension just called "cookies.txt" was found exfiltrating data and got pulled; this is the safe, client-side-only replacement). Firefox has an equivalent called "cookies.txt" by Lennon Hill.
+2. In a normal (non-incognito) tab, visit each site this project archives from (e.g. vnexpress.net, tuoitre.vn, thanhnien.vn, plus any gov sources) and dismiss the cookie/consent banner as a normal visitor would.
+3. Click the extension → export **all** cookies (not per-site) → save as `cookies.txt`. Verify it's Netscape format: opens as plain text starting with `# Netscape HTTP Cookie File`, not JSON.
+4. Treat it as a secret, same as `rclone.env`/`backend/.env` — never commit it, transfer only via `scp` directly to the VPS: `scp cookies.txt <host>:~/MemoriesLane/archivebox/cookies.txt`.
+5. **On the VPS, confirm the file actually landed (`ls -la archivebox/cookies.txt`) before touching any config** — bind-mounting a path that doesn't exist yet makes Docker silently create an empty *directory* there instead, which is its own footgun.
+6. Only then add to `docker-compose.vps.yml`'s `archivebox` service:
+   ```yaml
+       volumes:
+         - archivebox-data:/data
+         - ./archivebox/cookies.txt:/data/cookies.txt:ro
+       environment:
+         # ...existing entries...
+         - COOKIES_FILE=/data/cookies.txt
+   ```
+7. Apply with `up -d`, **not** `restart` (see the `env_file`-reload gotcha below): `docker compose -f docker-compose.vps.yml up -d archivebox`, then confirm with `docker exec --user=archivebox memorieslane-archivebox-1 archivebox config | grep COOKIES_FILE`.
+
 **Rate limiting (testing phase):** the API limiter is tunable via env — `RATE_LIMIT_MULT=50` multiplies every limit, `RATE_LIMIT_DISABLED=true` bypasses it entirely. Set in `backend/.env` on the VPS during testing; default is production limits. Note the admin Queue tab auto-refreshes (every 20s) and consumes the `archive` namespace budget.
 
 ## Deploy
