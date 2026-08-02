@@ -84,10 +84,11 @@ $CLOUDFLARED_CONFIG does not yet route $API_HOSTNAME. Add this block to its
   - hostname: $API_HOSTNAME
     service: http://localhost:3001
 
-Opening it now with \$EDITOR (${EDITOR:-nano}). Save and exit when done.
+Opening it now with \$EDITOR (${EDITOR:-nano}), via sudo since this file is
+root-owned. Save and exit when done.
 EOF
   read -rp "Press Enter to open the editor... "
-  "${EDITOR:-nano}" "$CLOUDFLARED_CONFIG"
+  SUDO_EDITOR="${EDITOR:-nano}" sudo -e "$CLOUDFLARED_CONFIG"
 
   if ! grep -q "$API_HOSTNAME" "$CLOUDFLARED_CONFIG"; then
     echo "$API_HOSTNAME still not found in $CLOUDFLARED_CONFIG — aborting." >&2
