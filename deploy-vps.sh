@@ -16,7 +16,7 @@
 
 set -euo pipefail
 
-TUNNEL="${TUNNEL:?Set TUNNEL to your tunnel's name or ID, e.g. TUNNEL=memorylane ./deploy-vps.sh}"
+TUNNEL="${TUNNEL:?Set TUNNEL to the tunnel name or ID, e.g. TUNNEL=memorylane ./deploy-vps.sh}"
 CLOUDFLARED_CONFIG="${CLOUDFLARED_CONFIG:-/etc/cloudflared/config.yml}"
 API_HOSTNAME="archivebox-api.heomay.xyz"
 COMPOSE="docker compose -f docker-compose.vps.yml"
