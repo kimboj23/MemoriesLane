@@ -52,11 +52,24 @@ echo "Backed up to $BACKUP ($(du -h "$BACKUP" | cut -f1))"
 step "3. Upload archive/ content to Supabase S3 (additive, via rclone copy)"
 # ---------------------------------------------------------------------------
 if [ -d "$OLD_DATA_DIR/archive" ] && [ -n "$(ls -A "$OLD_DATA_DIR/archive" 2>/dev/null)" ]; then
+  # Don't let one bad object key (Supabase's S3 API rejects some characters,
+  # e.g. ';'/'@'/'=' from a Google-Fonts-style query string ArchiveBox saved
+  # literally into a filename) abort the whole migration — rclone already
+  # continues past per-file errors and re-running is safe/idempotent (already
+  # -uploaded files are skipped), so just surface the failure and carry on.
+  set +e
   docker run --rm \
     --env-file "$RCLONE_ENV" \
     -v "$OLD_DATA_DIR/archive:/src:ro" \
     rclone/rclone:latest \
     copy /src "$ARCHIVE_REMOTE" --checkers 4 --transfers 4 -v
+  RCLONE_STATUS=$?
+  set -e
+  if [ "$RCLONE_STATUS" -ne 0 ]; then
+    echo "WARNING: rclone reported errors (exit $RCLONE_STATUS) uploading to" >&2
+    echo "$ARCHIVE_REMOTE — check the log above for which object(s) failed and" >&2
+    echo "why. Continuing with the rest of the migration regardless." >&2
+  fi
   echo "Verifying upload:"
   docker run --rm --env-file "$RCLONE_ENV" rclone/rclone:latest \
     size "$ARCHIVE_REMOTE"
