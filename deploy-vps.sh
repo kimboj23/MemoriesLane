@@ -33,7 +33,15 @@ fi
 if grep -qE '^ALLOWED_ORIGINS=(null)?$' backend/.env; then
   echo "backend/.env: ALLOWED_ORIGINS is missing or 'null' — the backend will" >&2
   echo "refuse to start in production. Set it to your real frontend origin" >&2
-  echo "(e.g. ALLOWED_ORIGINS=https://memorylane.pages.dev) and re-run." >&2
+  echo "(e.g. ALLOWED_ORIGINS=https://memorylane101.pages.dev) and re-run." >&2
+  exit 1
+fi
+# Browsers never send a trailing slash in the Origin header, so one here means
+# every real CORS check silently fails even though the value "looks" right.
+if grep -qE '^ALLOWED_ORIGINS=.*/(,|$)' backend/.env; then
+  echo "backend/.env: ALLOWED_ORIGINS has a trailing slash on at least one" >&2
+  echo "origin — that will never match a browser's Origin header and CORS" >&2
+  echo "will silently reject every request. Remove the trailing slash(es)." >&2
   exit 1
 fi
 

@@ -1,6 +1,6 @@
 # Miền Ký Ức — MemoryLane
 
-**Live site:** https://memorylane.pages.dev
+**Live site:** https://memorylane101.pages.dev
 
 A collective, anonymous civic memory archive. People pin stories to a map of Vietnamese cities, documenting lived experience around urban restructuring and displacement. No account, no name, no email — submissions are moderated before they appear.
 
@@ -276,7 +276,7 @@ S3 credentials live in `archivebox/rclone.env` (gitignored, `RCLONE_CONFIG_SB_*`
 `deploy-vps.sh` in this repo automates steps 3–4 below (build/start the stack, wait for the backend health check, validate + wire up the Cloudflare Tunnel ingress rule, restart `cloudflared`, verify end-to-end) — run `TUNNEL=archivebox-vps ./deploy-vps.sh` from the repo root on the VPS after step 1–2. It pauses and opens `$EDITOR` for the one manual edit (adding the ingress block to `cloudflared`'s `config.yml`) rather than rewriting that file programmatically, since a round-tripped YAML dump would strip your comments and risks breaking the live tunnel.
 
 1. Copy `backend/`, `archivebox/`, `worker/`, `backend/.env`, and `archivebox/rclone.env` to the VPS (same relative layout as this repo).
-2. In `backend/.env`, make sure `ALLOWED_ORIGINS` is set to the real frontend origin (e.g. `https://memorylane.pages.dev`), not `null` — the backend refuses to start in production otherwise.
+2. In `backend/.env`, make sure `ALLOWED_ORIGINS` is set to the real frontend origin (`https://memorylane101.pages.dev`, **no trailing slash** — browsers never send one in the `Origin` header, so a trailing slash here silently breaks CORS for every real request), not `null`. The backend also refuses to start in production if it's `null`.
 3. `docker compose -f docker-compose.vps.yml up -d --build`
 4. Every service (`backend` on `3001`, `archivebox` on `8000`) is bound to `127.0.0.1` only — never exposed on the VPS's public IP directly. Each is reached via its own hostname on the VPS's permanent [named Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/), currently named **`archivebox-vps`** (`5552ec4f-50d0-40f4-8d72-ceff0bec9fe4` — confirm with `cloudflared tunnel list` on the VPS, as this can change), installed as a systemd service (`cloudflared service install`) so it auto-starts on boot:
    - `archivebox.heomay.xyz` → `localhost:8000`
