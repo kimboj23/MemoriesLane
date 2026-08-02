@@ -35,6 +35,30 @@ services:
       - CHECK_SSL_VALIDITY=False
       - ALLOWED_HOSTS=*
       - CSRF_TRUSTED_ORIGINS=https://*.heomay.xyz,http://localhost:8000
+      # ArchiveBox's own Wayback submission is redundant with archive-worker's
+      # explicit wayback.js call — every job was hitting archive.org's
+      # rate-limited Save-Page-Now API twice for no benefit.
+      - SAVE_ARCHIVE_DOT_ORG=False
+      # Default 60s is tight for JS-heavy VN news pages (100+ CDN requests per
+      # page) fetched from a Frankfurt VPS; VPS has idle headroom (6 cores,
+      # ~10GB free) to afford more per-capture time.
+      - TIMEOUT=180
+      # Never archiving a git-hosted source for this project — skip the
+      # per-capture git-domain check entirely.
+      - SAVE_GIT=False
+      # Default UA self-identifies as "ArchiveBox/0.7.4 (+github.com/...)",
+      # which invites blocking by sites that don't want to be archived —
+      # strip it down to a plain browser UA for all three tools.
+      - WGET_USER_AGENT=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36
+      - CHROME_USER_AGENT=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36
+      - CURL_USER_AGENT=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36
+      # Persistent Chrome profile (within the existing archivebox-data volume,
+      # not S3) so cookies/site state accumulate across captures instead of
+      # starting fresh every time — helps consent banners resolve themselves
+      # on repeat visits to the same domain. For sites that need cookies
+      # accepted from the first capture, additionally set COOKIES_FILE to a
+      # Netscape-format cookies.txt exported from a real browser session.
+      - CHROME_USER_DATA_DIR=/data/chrome_profile
     volumes:
       - archivebox-data:/data
     restart: unless-stopped
