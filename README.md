@@ -126,7 +126,7 @@ docker compose down -v    # stop + wipe local postgres volume (Supabase data unt
 | `ALLOWED_ORIGINS` | yes (prod) | CORS allowlist, e.g. your `*.pages.dev` URL; `null` for local `file://` |
 | `IA_ACCESS_KEY` / `IA_SECRET_KEY` | no | [archive.org S3 keys](https://archive.org/account/s3.php), for Wayback uploads from `archive-worker` |
 | `ARCHIVEBOX_ADMIN_USER` / `ARCHIVEBOX_ADMIN_PASSWORD` | no | auto-creates the ArchiveBox superuser |
-| `ARCHIVEBOX_PUBLIC_URL` | no | public URL shown for local snapshots, e.g. `https://archivebox.heomay.xyz` |
+| `ARCHIVEBOX_PUBLIC_URL` | no | public URL shown for local snapshots. **Must be set to `https://archivebox.heomay.xyz` in production** — it defaults to `http://localhost:8000` (the local-dev value), which silently ships broken snapshot links to real users if left unset on the VPS. Check via `GET /api/config` → `archiveboxUrl`. |
 | `RATE_LIMIT_MULT` / `RATE_LIMIT_DISABLED` | no | testing-phase rate-limit overrides (multiply / bypass) |
 | `PORT` / `BIND_ADDR` / `NODE_ENV` | no | `3001` / `127.0.0.1` (`0.0.0.0` in Docker) / `development` |
 | `UPLOADS_DIR` | no | local-disk photo fallback when `SUPABASE_*` unset |
@@ -287,6 +287,11 @@ S3 credentials live in `archivebox/rclone.env` (gitignored, `RCLONE_CONFIG_SB_*`
 5. In the Cloudflare Pages dashboard, set `BACKEND_URL=https://archivebox-api.heomay.xyz` and trigger a redeploy (Pages Functions read this at deploy time, not per-request).
 
 The backend serves everything **except** archiving's heavy lifting: it accepts memory submissions, serves the map/feed/materials, and enqueues archive jobs into the `archives` table. `archive-worker` (same VPS, same Docker host so it can reach ArchiveBox via `docker exec`) does the actual capture (ArchiveBox/auto-archiver/Wayback), since that needs a real browser/yt-dlp and Docker socket access.
+
+**Gotchas hit setting this up (worth knowing before you re-hit them):**
+- **Cloudflare Bot Fight Mode blocks the Pages Function → backend hop.** The `functions/api/[[route]].js` proxy calls `BACKEND_URL` server-to-server from Cloudflare's own edge — that request has no real-browser fingerprint, so if the zone's (`heomay.xyz`) **Bot Fight Mode** is on, it gets served a JS challenge page (HTTP 403, `cf-mitigated: challenge` header) instead of reaching the backend. Unlike **Super Bot Fight Mode**, the classic **Bot Fight Mode** toggle has no per-hostname WAF-rule exception on this plan — it had to be turned off entirely (Cloudflare dashboard → zone → Security → Settings → Bot Fight Mode). Diagnose via Security → Events in the dashboard, which names the exact blocking rule/service for a given `cf-ray` ID.
+- **`docker compose restart <service>` does not reload `env_file` changes.** It restarts the existing container's process in place; env vars are only re-read when the container is *recreated*. After editing `backend/.env` (e.g. fixing `ARCHIVEBOX_PUBLIC_URL`), use `docker compose -f docker-compose.vps.yml up -d backend` instead — `restart` will silently keep serving the old values.
+- **A trailing slash in `ALLOWED_ORIGINS` silently breaks CORS** — see the note on that variable above. `deploy-vps.sh` checks for this now, but it's easy to reintroduce by hand.
 
 ## Privacy
 
