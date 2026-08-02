@@ -71,6 +71,7 @@ functions/api/[[route]].js Cloudflare Pages proxy → BACKEND_URL
 docker-compose.yml         local dev: frontend (nginx) + backend + postgres (local fallback) + adminer + archivebox + archive-worker
 docker-compose.vps.yml     production: backend + archivebox + archive-worker, deployed on the VPS (restart: unless-stopped)
 deploy-vps.sh              run on the VPS: build/start the stack + wire up the Cloudflare Tunnel ingress rule
+migrate-archivebox-data.sh one-time: migrate a standalone local-disk ArchiveBox instance's data into the S3-backed setup
 nginx.conf                 proxies /api/* → backend
 backup/                    backup.ps1, register-task.ps1
 cloudflared-config.yml     named-tunnel config (gitignored — real tunnel ID + local path); exposes ArchiveBox only
