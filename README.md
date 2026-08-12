@@ -266,23 +266,54 @@ S3 credentials live in `archivebox/rclone.env` (gitignored, `RCLONE_CONFIG_SB_*`
 
 > `archive-worker` mounts the Docker socket to run the tools as sibling containers — it must run on the same Docker host as ArchiveBox (the VPS), never bundled into a serverless/edge API host.
 
-**Cookie-consent banners in captures — `COOKIES_FILE` setup (not yet done):** ArchiveBox currently captures every site with a fresh, cookie-less session, so consent banners on Vietnamese news sites often get baked directly into screenshots/SingleFile/PDF snapshots. To fix:
+**Cookie-consent banners in captures — solved via `COOKIES_FILE` + `CHROME_USER_DATA_DIR`.** ArchiveBox used to capture every site with a fresh, cookie-less session, so consent banners on Vietnamese news sites got baked directly into screenshots/SingleFile/PDF snapshots. Fixed and verified working (2026-08-12) against a real capture — see "Regenerating the cookies/profile" below for the exact commands.
 
-1. Install **"Get cookies.txt LOCALLY"** in Chrome (search the Chrome Web Store for that exact name — the older extension just called "cookies.txt" was found exfiltrating data and got pulled; this is the safe, client-side-only replacement). Firefox has an equivalent called "cookies.txt" by Lennon Hill.
-2. In a normal (non-incognito) tab, visit each site this project archives from (e.g. vnexpress.net, tuoitre.vn, thanhnien.vn, plus any gov sources) and dismiss the cookie/consent banner as a normal visitor would.
-3. Click the extension → export **all** cookies (not per-site) → save as `cookies.txt`. Verify it's Netscape format: opens as plain text starting with `# Netscape HTTP Cookie File`, not JSON.
-4. Treat it as a secret, same as `rclone.env`/`backend/.env` — never commit it, transfer only via `scp` directly to the VPS: `scp cookies.txt <host>:~/MemoriesLane/archivebox/cookies.txt`.
-5. **On the VPS, confirm the file actually landed (`ls -la archivebox/cookies.txt`) before touching any config** — bind-mounting a path that doesn't exist yet makes Docker silently create an empty *directory* there instead, which is its own footgun.
-6. Only then add to `docker-compose.vps.yml`'s `archivebox` service:
-   ```yaml
-       volumes:
-         - archivebox-data:/data
-         - ./archivebox/cookies.txt:/data/cookies.txt:ro
-       environment:
-         # ...existing entries...
-         - COOKIES_FILE=/data/cookies.txt
-   ```
-7. Apply with `up -d`, **not** `restart` (see the `env_file`-reload gotcha below): `docker compose -f docker-compose.vps.yml up -d archivebox`, then confirm with `docker exec --user=archivebox memorieslane-archivebox-1 archivebox config | grep COOKIES_FILE`.
+**How it works:** a script (`archivebox/generate-profile.js`, run with Playwright in a disposable container, not part of the deployed image) does what a human doing this by hand would — launches a real headless browser, visits each site this project archives from, and clicks the real "Accept" button on whatever consent banner appears. That real, genuinely-issued browser state becomes two things:
+- `archivebox/cookies.txt` (Netscape format) → mounted at `/data/cookies.txt`, `COOKIES_FILE` env var → covers `wget`'s capture (the core HTML/WARC).
+- `archivebox/chrome_profile/` (a full Chrome profile dir — cookies, **and** localStorage/IndexedDB, which some sites use for consent instead of cookies and which `cookies.txt` can never reach) → mounted at `/data/chrome_profile`, `CHROME_USER_DATA_DIR` env var → covers the `singlefile`/`pdf`/`screenshot`/`dom` extractors (all four share one `chrome_args()` helper in ArchiveBox's `util.py`).
+
+This isn't fabricated cookie data — LLMs can't know a site's real per-visit consent tokens (they're dynamically issued, often signed/random), and guessing plausible-looking values wouldn't dismiss the banner and would look like garbage to anti-bot detection. This is a real browser genuinely interacting with the real site, just scripted instead of clicked by hand.
+
+**Two sharp edges hit during setup, both now handled by the generation script / compose config — know about them before you touch this again:**
+1. **The profile must be generated with ArchiveBox's exact Chromium build**, not Playwright's bundled one. Mixing builds corrupts the profile's IndexedDB (`ERROR:...backing_store.cc: Got corruption`, chromium falls back to a hang instead of a clean failure) — confirmed by testing. `archivebox/generate-profile.js` takes a `CHROME_EXECUTABLE` env var for exactly this; the regeneration steps below copy the container's own binary out first.
+2. **ArchiveBox's entrypoint only `chown`s top-level `/data` entries** (`chown $PUID:$PGID "$DATA_DIR"/*` in `/app/bin/docker_entrypoint.sh` — no `-R`), not recursively. A flat file like `cookies.txt` gets fixed automatically; a directory tree like `chrome_profile/` does not — its *contents* stay owned by whatever generated them, invisible to the `archivebox` user (uid 911) at runtime, and every extractor silently can't read the profile. `chown -R` the whole tree to `911:911` yourself before (or after) mounting it.
+
+**Regenerating the cookies/profile** (e.g. to add a site, or refresh stale consent state) — run from the VPS:
+```bash
+# 1. Copy ArchiveBox's exact chromium build out (must match -- see sharp edge #1)
+docker cp memorieslane-archivebox-1:/browsers/chromium-1217 ~/profile-gen/chromium-1217
+
+# 2. Edit the TARGETS list in archivebox/generate-profile.js if needed, then run it
+#    against a clean profile dir using that exact binary (matches the npm playwright
+#    version to whatever mcr.microsoft.com/playwright tag you use -- check the error
+#    message if it complains about a version mismatch, it tells you the right tag).
+docker run --rm \
+  -v ~/profile-gen:/work -v ~/profile-gen/output:/output \
+  -v ~/profile-gen/chromium-1217:/chromium-1217:ro -w /work \
+  -e CHROME_EXECUTABLE=/chromium-1217/chrome-linux64/chrome \
+  mcr.microsoft.com/playwright:v1.62.1-jammy node generate-profile.js
+
+# 3. Convert cookies to Netscape format, strip Chrome's stale lock files, deploy
+docker run --rm -v ~/profile-gen:/work -v ~/profile-gen/output:/output -w /work \
+  mcr.microsoft.com/playwright:v1.62.1-jammy node cookies-to-netscape.js
+sudo rm -f ~/profile-gen/output/chrome_profile/Singleton*
+sudo cp ~/profile-gen/output/cookies.txt ~/MemoriesLane/archivebox/cookies.txt
+sudo rm -rf ~/MemoriesLane/archivebox/chrome_profile
+sudo cp -a ~/profile-gen/output/chrome_profile ~/MemoriesLane/archivebox/chrome_profile
+sudo chown -R debian:debian ~/MemoriesLane/archivebox/cookies.txt ~/MemoriesLane/archivebox/chrome_profile
+
+# 4. Apply with `up -d`, NOT `restart` (env_file-reload gotcha below), then fix
+#    ownership (sharp edge #2 -- the container's own chown won't recurse)
+cd ~/MemoriesLane && docker compose -f docker-compose.vps.yml up -d archivebox
+docker exec -u root memorieslane-archivebox-1 chown -R archivebox:archivebox /data/chrome_profile
+
+# 5. Verify: container didn't crash-loop, both configs picked up
+docker inspect memorieslane-archivebox-1 --format 'RestartCount={{.RestartCount}}'   # must be 0
+docker exec --user=archivebox memorieslane-archivebox-1 archivebox config | grep -E 'COOKIES_FILE|CHROME_USER_DATA_DIR'
+```
+Before trusting a freshly-generated profile against the live container, sanity-check it the same way this was validated: `docker cp` (or `sudo docker cp`, since the profile is uid 911-owned) it to a scratch path, `chown` it, and run `chromium-browser --headless=new --no-sandbox --no-zygote --disable-dev-shm-usage --user-data-dir=<scratch path> --screenshot=/tmp/t.png --window-size=1440,2000 <a target URL>` inside the container by hand first — wrap it in `timeout 90` (a real VN news homepage can take a while; without ArchiveBox's own `TIMEOUT` supervision around it a hung capture will otherwise just sit there).
+
+Both `archivebox/cookies.txt` and `archivebox/chrome_profile/` are gitignored (real browser state, not code) — copy them to a new VPS the same way as `rclone.env`.
 
 **Rate limiting (testing phase):** the API limiter is tunable via env — `RATE_LIMIT_MULT=50` multiplies every limit, `RATE_LIMIT_DISABLED=true` bypasses it entirely. Set in `backend/.env` on the VPS during testing; default is production limits. Note the admin Queue tab auto-refreshes (every 20s) and consumes the `archive` namespace budget.
 

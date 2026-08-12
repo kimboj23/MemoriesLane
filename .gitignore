@@ -2,6 +2,8 @@
 backend/.env
 archivebox/rclone.env
 archivebox/cookies.txt
+archivebox/chrome_profile/
+/cookies.txt
 # local Claude Code config — contains machine paths + command allowlists, not for a public repo
 .claude/
 backend/*.db

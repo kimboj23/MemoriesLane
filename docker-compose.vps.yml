@@ -52,18 +52,30 @@ services:
       - WGET_USER_AGENT=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36
       - CHROME_USER_AGENT=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36
       - CURL_USER_AGENT=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36
-      # NOT SET (deliberately): CHROME_USER_DATA_DIR. Tried it pointed at a
-      # fresh /data/chrome_profile dir for a persistent cookie/consent-banner
-      # profile, but ArchiveBox 0.7.4 validates for an already-bootstrapped
-      # Chrome profile at startup (not just an empty "Default" folder) and
-      # crash-loops the whole container if that check fails -- caused a real
-      # outage. Revisit by pre-generating a real profile (e.g. run chromium
-      # headlessly once against that dir outside ArchiveBox to let it
-      # initialize itself) before setting this again. COOKIES_FILE (a
-      # Netscape-format cookies.txt exported from a real browser session) is
-      # the safer route to the same goal and doesn't have this failure mode.
+      # CHROME_USER_DATA_DIR: previously left unset after an empty
+      # /data/chrome_profile dir crash-looped the container (ArchiveBox 0.7.4
+      # requires an already-bootstrapped profile -- a "Default" folder that's
+      # actually populated, not just present -- and dies otherwise). Fixed by
+      # pre-generating a REAL profile outside ArchiveBox: a scripted
+      # (Playwright) visit to each site this project archives, using the
+      # SAME exact chromium build as this container (mixing builds corrupts
+      # the profile's IndexedDB -- confirmed by testing), clicking through
+      # real consent banners, then copying the resulting profile dir in. See
+      # README.md "Cookie-consent banners in captures" for the full process
+      # and how to regenerate it.
+      - CHROME_USER_DATA_DIR=/data/chrome_profile
+      - COOKIES_FILE=/data/cookies.txt
     volumes:
       - archivebox-data:/data
+      # NOT :ro on either of these -- ArchiveBox's entrypoint chown's
+      # everything under /data to the archivebox user on startup (root ->
+      # uid 911 handoff); a read-only bind mount here blocks that chown and
+      # crash-loops the container (same failure class as the
+      # CHROME_USER_DATA_DIR note above). Neither is ever written back to by
+      # ArchiveBox itself, so a writable mount is safe -- it just needs to be
+      # chown-able.
+      - ./archivebox/chrome_profile:/data/chrome_profile
+      - ./archivebox/cookies.txt:/data/cookies.txt
     restart: unless-stopped
 
   backend:
