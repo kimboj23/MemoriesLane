@@ -21,10 +21,12 @@ const wayback = require("./archivers/wayback");
 const archivebox = require("./archivers/archivebox");
 const autoarchiver = require("./archivers/autoarchiver");
 const integrity = require("./integrity");
+const { reconcileWayback } = require("./reconcile");
 
-const POLL_MS      = parseInt(process.env.POLL_INTERVAL_MS, 10) || 15000;
-const MAX_ATTEMPTS = parseInt(process.env.MAX_ATTEMPTS, 10) || 3;
-const DRY_RUN      = process.env.DRY_RUN === "1";
+const POLL_MS       = parseInt(process.env.POLL_INTERVAL_MS, 10) || 15000;
+const MAX_ATTEMPTS  = parseInt(process.env.MAX_ATTEMPTS, 10) || 3;
+const RECONCILE_MS  = parseInt(process.env.RECONCILE_INTERVAL_MS, 10) || 5 * 60 * 1000;
+const DRY_RUN       = process.env.DRY_RUN === "1";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -81,9 +83,25 @@ async function drainQueue() {
   }
 }
 
+// Runs on its own slower cadence, independent of the job queue poll, since it
+// lists ArchiveBox's whole index each pass. DRY_RUN also skips it (nothing to
+// reconcile against without real ArchiveBox/Wayback calls).
+async function reconcileLoop() {
+  if (DRY_RUN) return;
+  for (;;) {
+    await sleep(RECONCILE_MS);
+    try {
+      await reconcileWayback();
+    } catch (e) {
+      console.error("[worker] [reconcile] loop error:", e.message);
+    }
+  }
+}
+
 async function main() {
-  console.log(`[worker] started (poll ${POLL_MS}ms, dryRun=${DRY_RUN}, wayback=${wayback.configured()})`);
+  console.log(`[worker] started (poll ${POLL_MS}ms, reconcile ${RECONCILE_MS}ms, dryRun=${DRY_RUN}, wayback=${wayback.configured()})`);
   await db.recoverStuck(MAX_ATTEMPTS).catch((e) => console.warn("[worker] recover:", e.message));
+  reconcileLoop();
   for (;;) {
     try {
       await drainQueue();

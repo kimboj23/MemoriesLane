@@ -88,6 +88,13 @@ services:
       - AUTOARCHIVER_CONFIG_DIR=memorylane-autoarchiver-config
       - AUTOARCHIVER_PUBLIC_URL=${AUTOARCHIVER_PUBLIC_URL:-https://xaztyzxdqgoowfrbnpkj.supabase.co/storage/v1/object/public/memory-archive}
       - POLL_INTERVAL_MS=15000
+      # Safety-net sweep (worker/reconcile.js): backfills a Wayback link for
+      # any ArchiveBox snapshot added directly in its own admin, bypassing the
+      # normal POST /api/archive -> archives row -> worker pipeline (the only
+      # path that normally triggers a Wayback submission -- see "Archiving"
+      # in README.md). Runs independently of the job queue poll above since
+      # it lists ArchiveBox's whole index each pass.
+      - RECONCILE_INTERVAL_MS=300000
       - DRY_RUN=${ARCHIVE_DRY_RUN:-0}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

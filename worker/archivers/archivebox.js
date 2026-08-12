@@ -105,6 +105,25 @@ async function version() {
   return cachedVersion;
 }
 
+// Every URL with a successfully-captured snapshot currently in ArchiveBox's
+// index (deduped to the latest timestamp per URL). Used by the reconcile
+// sweep to find snapshots that were added directly through ArchiveBox's own
+// admin (bypassing the app's submit -> archives row -> worker pipeline),
+// which never triggers a Wayback submission on their own (see reconcile.js).
+async function listCapturedUrls() {
+  const out = await run("list", "--json");
+  const list = parseJsonList(out).filter((s) => s && s.url && captureSucceeded(s));
+  const latestByUrl = new Map();
+  for (const s of list) {
+    const prev = latestByUrl.get(s.url);
+    if (!prev || parseFloat(s.timestamp) > parseFloat(prev.timestamp)) latestByUrl.set(s.url, s);
+  }
+  return [...latestByUrl.values()].map((s) => ({
+    url: s.url,
+    local_url: `${PUBLIC_URL}/archive/${s.timestamp}/index.html`,
+  }));
+}
+
 async function archive(url) {
   // 1. Capture. ArchiveBox is idempotent — re-adding an existing URL re-snapshots.
   await run("add", url);
@@ -123,4 +142,4 @@ async function archive(url) {
   return { local_url: `${PUBLIC_URL}/archive/${snap.timestamp}/index.html` };
 }
 
-module.exports = { archive, version };
+module.exports = { archive, version, listCapturedUrls };

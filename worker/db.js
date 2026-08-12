@@ -5,6 +5,7 @@
  * job queue: claim a pending row, run the archivers, write results back.
  */
 const { Pool } = require("pg");
+const crypto = require("crypto");
 
 const dbUrl = process.env.DATABASE_URL || "";
 const needsSsl =
@@ -65,4 +66,30 @@ function recoverStuck(maxAttempts) {
   );
 }
 
-module.exports = { claimNext, complete, fail, recoverStuck };
+// Has this URL already got a Wayback link recorded anywhere (any job, any
+// case)? Used by the reconcile sweep to avoid re-submitting the same URL.
+async function hasWaybackFor(url) {
+  const { rows } = await pool.query(
+    `SELECT 1 FROM archives WHERE original_url = $1 AND wayback_url IS NOT NULL LIMIT 1`,
+    [url]
+  );
+  return rows.length > 0;
+}
+
+// Record a Wayback link for a URL that was captured directly through
+// ArchiveBox's own admin (so it never went through POST /api/archive and has
+// no case_id). Kept as a standalone row -- case_id is nullable precisely for
+// materials that aren't tied to a specific case (see routes/archive.js).
+function insertBackfilled({ original_url, wayback_url, local_url }) {
+  const id = crypto.randomBytes(9).toString("base64url");
+  const created_at = new Date().toISOString().slice(0, 10);
+  return pool.query(
+    `INSERT INTO archives (id, tool, media_type, original_url, wayback_url, local_url, status, notes, created_at, archived_at)
+     VALUES ($1, 'archive-box', 'web', $2, $3, $4, 'archived',
+             'Auto-backfilled by archive-worker: snapshot was added directly in ArchiveBox''s admin, not submitted through a case.',
+             $5, EXTRACT(EPOCH FROM NOW())::BIGINT)`,
+    [id, original_url, wayback_url || null, local_url || null, created_at]
+  );
+}
+
+module.exports = { claimNext, complete, fail, recoverStuck, hasWaybackFor, insertBackfilled };
