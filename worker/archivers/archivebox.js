@@ -90,6 +90,19 @@ function captureSucceeded(snap) {
   });
 }
 
+// The public archive.org link, if ArchiveBox's own archive_org extractor ran
+// and succeeded (SAVE_ARCHIVE_DOT_ORG=True in docker-compose.vps.yml — the
+// worker no longer submits to Wayback itself for archive-box jobs; ArchiveBox
+// does it as part of the capture, and this just reads back what it produced).
+// `output` on a succeeded run is the literal archive.org URL (confirmed
+// against a real capture, not just the extractor source) — see save_archive_dot_org()
+// in ArchiveBox's own extractors/archive_org.py.
+function archiveOrgUrl(snap) {
+  const runs = (snap && snap.history || {}).archive_org;
+  const succeeded = (Array.isArray(runs) ? runs : [runs]).find((r) => r && r.status === "succeeded");
+  return succeeded && typeof succeeded.output === "string" ? succeeded.output : null;
+}
+
 // Memoized for the worker's process lifetime — the container's ArchiveBox
 // build doesn't change between jobs, so there's no reason to shell out twice.
 let cachedVersion = null;
@@ -108,8 +121,10 @@ async function version() {
 // Every URL with a successfully-captured snapshot currently in ArchiveBox's
 // index (deduped to the latest timestamp per URL). Used by the reconcile
 // sweep to find snapshots that were added directly through ArchiveBox's own
-// admin (bypassing the app's submit -> archives row -> worker pipeline),
-// which never triggers a Wayback submission on their own (see reconcile.js).
+// admin (bypassing the app's submit -> archives row -> worker pipeline) and
+// record whatever wayback_url ArchiveBox's own archive_org extractor already
+// produced for them (see reconcile.js — it no longer submits to Wayback
+// itself, just copies this over).
 async function listCapturedUrls() {
   const out = await run("list", "--json");
   const list = parseJsonList(out).filter((s) => s && s.url && captureSucceeded(s));
@@ -121,11 +136,13 @@ async function listCapturedUrls() {
   return [...latestByUrl.values()].map((s) => ({
     url: s.url,
     local_url: `${PUBLIC_URL}/archive/${s.timestamp}/index.html`,
+    wayback_url: archiveOrgUrl(s),
   }));
 }
 
 async function archive(url) {
   // 1. Capture. ArchiveBox is idempotent — re-adding an existing URL re-snapshots.
+  //    SAVE_ARCHIVE_DOT_ORG=True means this also submits to archive.org itself.
   await run("add", url);
 
   // 2. Resolve the snapshot for this exact URL (latest if re-archived).
@@ -139,7 +156,10 @@ async function archive(url) {
   if (!captureSucceeded(snap)) {
     throw new Error("ArchiveBox: no content captured (all content extractors failed)");
   }
-  return { local_url: `${PUBLIC_URL}/archive/${snap.timestamp}/index.html` };
+  return {
+    local_url: `${PUBLIC_URL}/archive/${snap.timestamp}/index.html`,
+    wayback_url: archiveOrgUrl(snap),
+  };
 }
 
 module.exports = { archive, version, listCapturedUrls };

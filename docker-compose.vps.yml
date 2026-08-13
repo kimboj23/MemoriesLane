@@ -27,7 +27,12 @@ services:
       - /dev/fuse
     security_opt:
       - apparmor:unconfined
-    env_file: ./archivebox/rclone.env
+    env_file:
+      - ./archivebox/rclone.env
+      # IA_ACCESS_KEY/IA_SECRET_KEY only, pulled in for the patched archive_org.py
+      # extractor (see below) -- everything else in backend/.env is irrelevant
+      # to this container and unused.
+      - ./backend/.env
     environment:
       - PUBLIC_INDEX=False
       - PUBLIC_SNAPSHOTS=False
@@ -35,10 +40,21 @@ services:
       - CHECK_SSL_VALIDITY=False
       - ALLOWED_HOSTS=*
       - CSRF_TRUSTED_ORIGINS=https://*.heomay.xyz,http://localhost:8000
-      # ArchiveBox's own Wayback submission is redundant with archive-worker's
-      # explicit wayback.js call — every job was hitting archive.org's
-      # rate-limited Save-Page-Now API twice for no benefit.
-      - SAVE_ARCHIVE_DOT_ORG=False
+      # ArchiveBox makes its OWN archive.org submission for every capture, so
+      # the app links to that one submission instead of archive-worker making
+      # a second, independent one. Stock ArchiveBox 0.7.4's extractor uses an
+      # unauthenticated legacy endpoint that started returning HTTP 498
+      # (blocked) for this project regardless of credentials -- confirmed by
+      # direct testing 2026-08-13 -- so extractors/archive_org.py is patched
+      # (archivebox/archive_org.py, applied via the Dockerfile) to use the
+      # authenticated SPN2 job API instead, the same flow archive-worker used
+      # successfully before this change. Needs IA_ACCESS_KEY/IA_SECRET_KEY
+      # (below, from backend/.env). archive-worker reads the result back
+      # (worker/archivers/archivebox.js's archiveOrgUrl()) rather than calling
+      # Wayback itself for archive-box jobs -- see worker/index.js and
+      # worker/reconcile.js (still used, and still calls Wayback directly, for
+      # social/auto-archiver jobs, which never go through ArchiveBox).
+      - SAVE_ARCHIVE_DOT_ORG=True
       # Default 60s is tight for JS-heavy VN news pages (100+ CDN requests per
       # page) fetched from a Frankfurt VPS; VPS has idle headroom (6 cores,
       # ~10GB free) to afford more per-capture time.
@@ -100,12 +116,15 @@ services:
       - AUTOARCHIVER_CONFIG_DIR=memorylane-autoarchiver-config
       - AUTOARCHIVER_PUBLIC_URL=${AUTOARCHIVER_PUBLIC_URL:-https://xaztyzxdqgoowfrbnpkj.supabase.co/storage/v1/object/public/memory-archive}
       - POLL_INTERVAL_MS=15000
-      # Safety-net sweep (worker/reconcile.js): backfills a Wayback link for
-      # any ArchiveBox snapshot added directly in its own admin, bypassing the
-      # normal POST /api/archive -> archives row -> worker pipeline (the only
-      # path that normally triggers a Wayback submission -- see "Archiving"
-      # in README.md). Runs independently of the job queue poll above since
-      # it lists ArchiveBox's whole index each pass.
+      # Safety-net sweep (worker/reconcile.js): for any ArchiveBox snapshot
+      # added directly in its own admin, bypassing the normal
+      # POST /api/archive -> archives row -> worker pipeline, records
+      # whatever archive.org link ArchiveBox's own archive_org extractor
+      # already produced (SAVE_ARCHIVE_DOT_ORG=True above) into this app's
+      # `archives` table, so it shows up in this app's UI too, not just
+      # ArchiveBox's own admin -- see "Archiving" in README.md. Runs
+      # independently of the job queue poll above since it lists ArchiveBox's
+      # whole index each pass.
       - RECONCILE_INTERVAL_MS=300000
       - DRY_RUN=${ARCHIVE_DRY_RUN:-0}
     volumes:

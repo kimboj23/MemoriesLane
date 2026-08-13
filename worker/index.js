@@ -6,8 +6,11 @@
  * its own host (a VPS in production; ArchiveBox / auto-archiver / a browser
  * run alongside it there):
  *
- *   web | document  ->  ArchiveBox (snapshot)  +  Wayback (public link)
- *   social          ->  auto-archiver          +  Wayback (public link)
+ *   web | document  ->  ArchiveBox (snapshot + its own Wayback submission,
+ *                        SAVE_ARCHIVE_DOT_ORG=True in docker-compose.vps.yml)
+ *   social          ->  auto-archiver  +  Wayback (public link, worker's own
+ *                        call -- auto-archiver doesn't go through ArchiveBox,
+ *                        so there's nothing else to submit it)
  *
  * A job is 'archived' if every attempted archiver succeeded, 'partial' if at
  * least one did, 'failed' if none did. The API and UI read the results back
@@ -57,7 +60,13 @@ async function processJob(job) {
     tool_version = autoarchiver.version();
   } else {
     await tryStep("archivebox", () => archivebox.archive(job.original_url), out);
-    await tryStep("wayback", () => wayback.save(job.original_url), out);
+    // ArchiveBox's own archive_org extractor already submitted to Wayback as
+    // part of the capture above (archivebox.archive() already read the
+    // result back into out.wayback_url) -- count it as its own step, same
+    // archived/partial distinction as before, without a second network call.
+    out.tried++;
+    if (out.wayback_url) out.ok++;
+    else console.warn("[worker]   wayback (via archivebox's own archive_org extractor) did not succeed");
     tool_version = await archivebox.version();
   }
 
