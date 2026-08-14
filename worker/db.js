@@ -76,20 +76,35 @@ async function hasWaybackFor(url) {
   return rows.length > 0;
 }
 
-// Record a Wayback link for a URL that was captured directly through
-// ArchiveBox's own admin (so it never went through POST /api/archive and has
-// no case_id). Kept as a standalone row -- case_id is nullable precisely for
+// Has this URL already got a row for this specific tool (regardless of
+// wayback status)? Used by the social-media sweep to avoid re-running
+// auto-archiver against the same URL every cycle. Note: a *failed* attempt
+// never inserts a row (see reconcile.js / social-sweep.js), so a
+// persistently-failing URL gets retried every cycle indefinitely -- same
+// trade-off reconcileWayback() already accepts, not worth extra complexity
+// to track failed-attempt state for what should be a rare case.
+async function hasBeenArchivedBy(url, tool) {
+  const { rows } = await pool.query(
+    `SELECT 1 FROM archives WHERE original_url = $1 AND tool = $2 LIMIT 1`,
+    [url, tool]
+  );
+  return rows.length > 0;
+}
+
+// Record a capture for a URL that was added directly through ArchiveBox's
+// own admin/extension (so it never went through POST /api/archive and has no
+// case_id). Kept as a standalone row -- case_id is nullable precisely for
 // materials that aren't tied to a specific case (see routes/archive.js).
-function insertBackfilled({ original_url, wayback_url, local_url }) {
+function insertBackfilled({ original_url, wayback_url, local_url, tool = "archive-box", media_type = "web", notes }) {
   const id = crypto.randomBytes(9).toString("base64url");
   const created_at = new Date().toISOString().slice(0, 10);
   return pool.query(
     `INSERT INTO archives (id, tool, media_type, original_url, wayback_url, local_url, status, notes, created_at, archived_at)
-     VALUES ($1, 'archive-box', 'web', $2, $3, $4, 'archived',
-             'Auto-backfilled by archive-worker: snapshot was added directly in ArchiveBox''s admin, not submitted through a case.',
-             $5, EXTRACT(EPOCH FROM NOW())::BIGINT)`,
-    [id, original_url, wayback_url || null, local_url || null, created_at]
+     VALUES ($1, $2, $3, $4, $5, $6, 'archived', $7, $8, EXTRACT(EPOCH FROM NOW())::BIGINT)`,
+    [id, tool, media_type, original_url, wayback_url || null, local_url || null,
+     notes || "Auto-backfilled by archive-worker: added directly in ArchiveBox's admin, not submitted through a case.",
+     created_at]
   );
 }
 
-module.exports = { claimNext, complete, fail, recoverStuck, hasWaybackFor, insertBackfilled };
+module.exports = { claimNext, complete, fail, recoverStuck, hasWaybackFor, hasBeenArchivedBy, insertBackfilled };

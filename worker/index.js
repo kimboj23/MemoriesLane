@@ -16,6 +16,15 @@
  * least one did, 'failed' if none did. The API and UI read the results back
  * from the same table.
  *
+ * Two sweeps run independently of the job queue above, on their own slower
+ * cadence (RECONCILE_INTERVAL_MS), for URLs added directly in ArchiveBox's
+ * own admin/browser-extension rather than through POST /api/archive:
+ *   reconcile.js     -- records whatever Wayback link ArchiveBox's own
+ *                        archive_org extractor already produced
+ *   social-sweep.js  -- runs auto-archiver against social-media URLs, since
+ *                        ArchiveBox's own media/yt-dlp extractor is much
+ *                        weaker for those platforms
+ *
  * Set DRY_RUN=1 to exercise the queue/state machine without external tools.
  */
 require("dotenv").config();
@@ -25,6 +34,7 @@ const archivebox = require("./archivers/archivebox");
 const autoarchiver = require("./archivers/autoarchiver");
 const integrity = require("./integrity");
 const { reconcileWayback } = require("./reconcile");
+const { socialSweep } = require("./social-sweep");
 
 const POLL_MS       = parseInt(process.env.POLL_INTERVAL_MS, 10) || 15000;
 const MAX_ATTEMPTS  = parseInt(process.env.MAX_ATTEMPTS, 10) || 3;
@@ -94,7 +104,9 @@ async function drainQueue() {
 
 // Runs on its own slower cadence, independent of the job queue poll, since it
 // lists ArchiveBox's whole index each pass. DRY_RUN also skips it (nothing to
-// reconcile against without real ArchiveBox/Wayback calls).
+// reconcile against without real ArchiveBox/Wayback calls). socialSweep runs
+// in the same cycle as reconcileWayback -- both need the same snapshot list,
+// and neither is time-sensitive enough to need its own faster cadence.
 async function reconcileLoop() {
   if (DRY_RUN) return;
   for (;;) {
@@ -103,6 +115,11 @@ async function reconcileLoop() {
       await reconcileWayback();
     } catch (e) {
       console.error("[worker] [reconcile] loop error:", e.message);
+    }
+    try {
+      await socialSweep();
+    } catch (e) {
+      console.error("[worker] [social-sweep] loop error:", e.message);
     }
   }
 }
