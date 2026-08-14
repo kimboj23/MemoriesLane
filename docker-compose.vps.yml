@@ -38,7 +38,14 @@ services:
       - PUBLIC_SNAPSHOTS=False
       - PUBLIC_ADD_VIEW=False
       - CHECK_SSL_VALIDITY=False
-      - ALLOWED_HOSTS=*
+      # Was "*" (Django Host-header validation disabled entirely). Scoped to
+      # the real hostnames traffic actually arrives with: the Cloudflare
+      # Tunnel preserves the client's original Host header
+      # (archivebox.heomay.xyz), and localhost/127.0.0.1 cover manual
+      # diagnostics on the VPS (same reasoning as CSRF_TRUSTED_ORIGINS
+      # keeping http://localhost:8000 below). No automated healthcheck
+      # depends on a different Host header -- checked.
+      - ALLOWED_HOSTS=archivebox.heomay.xyz,localhost,127.0.0.1
       - CSRF_TRUSTED_ORIGINS=https://*.heomay.xyz,http://localhost:8000
       # ArchiveBox makes its OWN archive.org submission for every capture, so
       # the app links to that one submission instead of archive-worker making
