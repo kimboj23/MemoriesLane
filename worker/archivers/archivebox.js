@@ -10,7 +10,7 @@
  *
  * Targets ArchiveBox >= 0.7.
  */
-const { execFile } = require("child_process");
+const { execFile, spawn } = require("child_process");
 
 const CONTAINER  = process.env.ARCHIVEBOX_CONTAINER  || "memorieslane-archivebox-1";
 const PUBLIC_URL = (process.env.ARCHIVEBOX_PUBLIC_URL || "http://localhost:8000").replace(/\/$/, "");
@@ -140,16 +140,23 @@ async function listCapturedUrls() {
   }));
 }
 
+// Resolve the (latest, if re-archived) snapshot for an exact URL already in
+// ArchiveBox's index, or null if it's never been added.
+async function findLatestSnapshot(url) {
+  const out = await run("list", "--json", "--filter-type=exact", url);
+  const list = parseJsonList(out).filter((s) => s && s.timestamp);
+  if (!list.length) return null;
+  return list.sort((a, b) => parseFloat(b.timestamp) - parseFloat(a.timestamp))[0];
+}
+
 async function archive(url) {
   // 1. Capture. ArchiveBox is idempotent — re-adding an existing URL re-snapshots.
   //    SAVE_ARCHIVE_DOT_ORG=True means this also submits to archive.org itself.
   await run("add", url);
 
   // 2. Resolve the snapshot for this exact URL (latest if re-archived).
-  const out = await run("list", "--json", "--filter-type=exact", url);
-  const list = parseJsonList(out).filter((s) => s && s.timestamp);
-  if (!list.length) throw new Error("ArchiveBox: no snapshot found after add");
-  const snap = list.sort((a, b) => parseFloat(b.timestamp) - parseFloat(a.timestamp))[0];
+  const snap = await findLatestSnapshot(url);
+  if (!snap) throw new Error("ArchiveBox: no snapshot found after add");
 
   // 3. Only report a local snapshot if real content was captured; otherwise let
   //    the worker mark the job partial/failed (no broken "Local ↗" link).
@@ -162,4 +169,54 @@ async function archive(url) {
   };
 }
 
-module.exports = { archive, version, listCapturedUrls };
+// Pipe raw bytes into a file inside the archivebox container. execFile can't
+// stream stdin, so this uses spawn directly (only place in this file that
+// needs to -- everything else is argv-only `archivebox` subcommands).
+function writeContainerFile(containerPath, buffer, timeoutMs = 1000 * 60) {
+  return new Promise((resolve, reject) => {
+    const proc = spawn("docker", ["exec", "-i", "--user=archivebox", CONTAINER, "sh", "-c", `cat > ${JSON.stringify(containerPath)}`]);
+    let stderr = "";
+    const timer = setTimeout(() => { proc.kill("SIGKILL"); reject(new Error("writeContainerFile timed out")); }, timeoutMs);
+    proc.stderr.on("data", (d) => { stderr += d; });
+    proc.on("error", (e) => { clearTimeout(timer); reject(e); });
+    proc.on("close", (code) => {
+      clearTimeout(timer);
+      code === 0 ? resolve() : reject(new Error(stderr.trim() || `docker exec exited ${code}`));
+    });
+    proc.stdin.end(buffer);
+  });
+}
+
+// Replace an existing snapshot's screenshot.png with a real capture (e.g.
+// from auto-archiver, for social platforms ArchiveBox's own screenshot/media
+// extractors are too weak for -- see social-sweep.js) and record it as a
+// genuinely-succeeded `screenshot` ArchiveResult, so ArchiveBox's own admin
+// shows/links it exactly like any screenshot it took itself. screenshot.png
+// is a hardcoded path convention ArchiveBox's own UI relies on (confirmed in
+// index/schema.py), not read dynamically from the ArchiveResult record --
+// only PNG bytes belong here, anything else would silently corrupt the
+// snapshot's screenshot for viewers.
+async function injectScreenshot(url, pngBuffer) {
+  const snap = await findLatestSnapshot(url);
+  if (!snap) throw new Error("ArchiveBox: no existing snapshot to inject a screenshot into for " + url);
+
+  await writeContainerFile(`/data/archive/${snap.timestamp}/screenshot.png`, pngBuffer);
+
+  const py = [
+    "from core.models import Snapshot, ArchiveResult",
+    "from django.utils import timezone",
+    `snap = Snapshot.objects.get(timestamp=${JSON.stringify(snap.timestamp)})`,
+    "ArchiveResult.objects.create(",
+    "    snapshot=snap, extractor='screenshot',",
+    "    cmd=['(social-sweep) copied from auto-archiver'],",
+    `    pwd=${JSON.stringify(`/data/archive/${snap.timestamp}`)}, cmd_version='auto-archiver (via social-sweep)',`,
+    "    output='screenshot.png', start_ts=timezone.now(), end_ts=timezone.now(), status='succeeded',",
+    ")",
+    "print('INJECT_OK')",
+  ].join("\n");
+  const out = await docker(["exec", "--user=archivebox", CONTAINER, "archivebox", "manage", "shell", "-c", py]);
+  if (!out.includes("INJECT_OK")) throw new Error("failed to record ArchiveResult: " + out.slice(-300));
+  return snap.timestamp;
+}
+
+module.exports = { archive, version, listCapturedUrls, injectScreenshot };

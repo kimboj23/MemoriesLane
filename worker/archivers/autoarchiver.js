@@ -21,6 +21,17 @@ const IMAGE      = process.env.AUTOARCHIVER_IMAGE  || "bellingcat/auto-archiver:
 const VOLUME     = process.env.AUTOARCHIVER_VOLUME || "memorylane-autoarchiver-data";
 const CONFIG_DIR = process.env.AUTOARCHIVER_CONFIG_DIR || "memorylane-autoarchiver-config";
 const PUBLIC_URL = (process.env.AUTOARCHIVER_PUBLIC_URL || "").replace(/\/$/, "");
+// Same real consent-cookie jar ArchiveBox itself uses (COOKIES_FILE, see
+// docker-compose.vps.yml / README "Cookie-consent banners in captures") --
+// without it, yt-dlp (which generic_extractor wraps) hits the same
+// cookie-consent wall on YouTube et al. that ArchiveBox's own extractor did,
+// producing a screenshot of the consent page instead of the actual content
+// (confirmed by testing 2026-08-14: a captured screenshot for a YouTube
+// Shorts URL was the "Before you continue to YouTube" page). This is a HOST
+// path -- archive-worker launches auto-archiver as a sibling container via
+// the Docker socket, so `docker run -v` bind-mount sources are resolved by
+// the host daemon, not by archive-worker's own container filesystem.
+const COOKIES_FILE = process.env.AUTOARCHIVER_COOKIES_FILE || "";
 
 function docker(args, timeoutMs = 1000 * 60 * 15) {
   return new Promise((resolve, reject) => {
@@ -73,13 +84,14 @@ function version() {
 async function archive(url) {
   // No local storage: artifacts upload straight to Supabase S3 (per the config).
   // Only the read-only config volume is mounted.
-  const out = await docker([
-    "run", "--rm",
-    "-v", `${CONFIG_DIR}:/config:ro`,
+  const args = ["run", "--rm", "-v", `${CONFIG_DIR}:/config:ro`];
+  if (COOKIES_FILE) args.push("-v", `${COOKIES_FILE}:/cookies/cookies.txt:ro`);
+  args.push(
     IMAGE,
     "--config", "/config/orchestration.yaml",
     url, // auto-archiver 1.2.7 takes the URL as a positional argument
-  ]);
+  );
+  const out = await docker(args);
 
   const { wayback_url, local_url } = parseResult(out);
   // The "success" log line is just corroborating text, not proof of an

@@ -128,6 +128,12 @@ services:
       - ARCHIVEBOX_PUBLIC_URL=${ARCHIVEBOX_PUBLIC_URL:-https://archivebox.heomay.xyz}
       - AUTOARCHIVER_CONFIG_DIR=memorylane-autoarchiver-config
       - AUTOARCHIVER_PUBLIC_URL=${AUTOARCHIVER_PUBLIC_URL:-https://xaztyzxdqgoowfrbnpkj.supabase.co/storage/v1/object/public/memory-archive}
+      # Same cookie jar ArchiveBox itself uses (COOKIES_FILE above) -- an
+      # absolute HOST path, not a path inside this container: archive-worker
+      # spawns auto-archiver as a sibling container via the Docker socket, so
+      # bind-mount sources are resolved by the host daemon. See
+      # autoarchiver.js and README "Cookie-consent banners in captures".
+      - AUTOARCHIVER_COOKIES_FILE=${AUTOARCHIVER_COOKIES_FILE:-/home/debian/MemoriesLane/archivebox/cookies.txt}
       - POLL_INTERVAL_MS=15000
       # Safety-net sweep (worker/reconcile.js): for any ArchiveBox snapshot
       # added directly in its own admin, bypassing the normal

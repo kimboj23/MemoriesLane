@@ -69,6 +69,25 @@ async function socialSweep() {
         notes: "Auto-archived by archive-worker's social sweep: social-media URL added directly in ArchiveBox's admin (whose own media extractor is too weak for this platform), not submitted through a case.",
       });
       console.log(`[worker] [social-sweep] captured ${url} -> ${result.local_url || wayback_url}`);
+
+      // Best-effort: also make this show up natively in ArchiveBox's own
+      // index/UI, not just this app's separate archives table -- overwrite
+      // the existing (weak/empty) snapshot's screenshot.png with the real
+      // capture. PNG only (see archivebox.js's injectScreenshot doc) --
+      // auto-archiver's priority order usually returns one, but skip
+      // anything else rather than write a mislabeled file. Never lets a
+      // failure here undo the db.insertBackfilled row above.
+      if (result.local_url && /\.png(\?|$)/i.test(result.local_url)) {
+        try {
+          const res = await fetch(result.local_url);
+          if (!res.ok) throw new Error(`fetch ${res.status}`);
+          const buf = Buffer.from(await res.arrayBuffer());
+          const timestamp = await archivebox.injectScreenshot(url, buf);
+          console.log(`[worker] [social-sweep] injected real screenshot into ArchiveBox snapshot ${timestamp}`);
+        } catch (e) {
+          console.warn(`[worker] [social-sweep] screenshot injection failed for ${url}: ${e.message}`);
+        }
+      }
     } catch (e) {
       console.warn(`[worker] [social-sweep] auto-archiver failed for ${url}: ${e.message}`);
     }
