@@ -34,8 +34,14 @@ services:
       # to this container and unused.
       - ./backend/.env
     environment:
-      - PUBLIC_INDEX=False
-      - PUBLIC_SNAPSHOTS=False
+      # Public read-only browsing enabled deliberately 2026-08-14 (was False)
+      # -- anyone can list/view archived snapshots without logging in now.
+      # PUBLIC_ADD_VIEW stays False: that's the one that actually matters for
+      # security, since it's what would let an anonymous visitor make
+      # ArchiveBox fetch an arbitrary URL (abuse + mild SSRF-adjacent risk).
+      # Admin (add/delete/tag/config) stays behind login regardless of these.
+      - PUBLIC_INDEX=True
+      - PUBLIC_SNAPSHOTS=True
       - PUBLIC_ADD_VIEW=False
       - CHECK_SSL_VALIDITY=False
       # Was "*" (Django Host-header validation disabled entirely). Scoped to
