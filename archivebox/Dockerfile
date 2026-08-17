@@ -75,6 +75,22 @@ RUN grep -q "from django.contrib.auth import get_user_model" /app/archivebox/cor
     && grep -q "admin.site.register(get_user_model(), UserAdmin)" /app/archivebox/core/admin.py \
     && grep -q "admin.site.register(Group, GroupAdmin)" /app/archivebox/core/admin.py
 
+# The Snapshot admin's "grid" view (`/admin/core/snapshot/grid/` -- the card
+# layout with thumbnails, `SnapshotAdmin.grid_view`) has its own hand-written
+# template (`templates/admin/snapshots_grid.html`) that renders `{{
+# obj.archive_size | file_size }}` for every card -- completely bypassing
+# `list_display` (it doesn't use Django's normal changelist columns at all),
+# so the `size`-column patch above never touched it. Same root cause as that
+# patch (`archive_size`'s recursive S3-mounted directory-size walk, ~800ms/
+# file over the Frankfurt<->Tokyo round trip -- see README "VPS region vs.
+# Supabase Storage region"), a third distinct code path hitting it, confirmed
+# live 2026-08-17 (`cloudflared` logs: "context canceled" on
+# .../admin/core/snapshot/grid/). Fails loudly if the exact line ever changes
+# upstream, rather than silently no-op'ing.
+RUN grep -qF '<span>🗄&nbsp; {{ obj.archive_size | file_size }}</span>' /app/archivebox/templates/admin/snapshots_grid.html \
+    && sed -i '/<span>🗄&nbsp; {{ obj.archive_size | file_size }}<\/span>/d' /app/archivebox/templates/admin/snapshots_grid.html \
+    && ! grep -qF 'obj.archive_size' /app/archivebox/templates/admin/snapshots_grid.html
+
 # Patched archive.org extractor — the stock ArchiveBox 0.7.4 extractor submits
 # via an unauthenticated legacy endpoint that started returning HTTP 498
 # (blocked) for this project regardless of credentials; this rewrite uses the
