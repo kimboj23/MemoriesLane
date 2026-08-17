@@ -260,6 +260,21 @@ Building this surfaced a real, unrelated, ~2-month-old bug: **`memorylane-autoar
 3. Start the stack — local dev: `docker compose up -d archivebox archive-worker`; on the VPS (production): `docker compose -f docker-compose.vps.yml up -d --build`.
 4. ArchiveBox is locked down (`PUBLIC_INDEX/SNAPSHOTS/ADD_VIEW=False`); a superuser is auto-created from the env above (or `docker compose exec archivebox archivebox manage createsuperuser`, using `-f docker-compose.vps.yml` on the VPS). Log in at http://localhost:8000 on whichever host is running the container, or https://archivebox.heomay.xyz via the named tunnel (production, VPS).
 
+**The `/admin/auth/user/` change form used to save passwords as plaintext, not a hash — patched, but check any account created before 2026-08-17.** Confirmed twice (`longtrinh`, then `sana`): typing a password directly into that field's raw text box and saving stored the literal string in the `password` column instead of running it through Django's hasher — `has_usable_password()` still returned `True` (it only checks for the empty/`!`-prefixed sentinel, not a real hash format), so nothing in the admin itself flagged it; the account just silently couldn't log in. Root cause, and the same root cause behind the next entry (no Groups UI): `core/admin.py` does `admin.site = ArchiveBoxAdmin()`, replacing Django's default admin site with a fresh, empty one — which drops every registration `django.contrib.auth`'s own admin.py would normally have made against the *old* default site, including the real `UserAdmin` (ArchiveBox re-registered `User` with a bare `admin.ModelAdmin` instead, which has no hashing awareness at all).
+
+**Fixed in `archivebox/Dockerfile`** by patching `core/admin.py` at build time (same guarded-`sed` pattern as the `size`-column patch above — fails the build loudly if either exact line ever changes upstream) to register `User` with Django's real `django.contrib.auth.admin.UserAdmin` instead. This is a backport, not an original fix — checked upstream first (`core/admin_users.py` on the unreleased 0.9.x branch, no stable release since 0.7.4 as of 2026-08-17) and it hit the same bug, fixed the same way, via a `CustomUserAdmin(UserAdmin)`. Verified live post-patch via the admin registry itself (`admin.site._registry[User]` → `UserAdmin` MRO, `.form` → `UserChangeForm`), not just "container didn't crash."
+
+**Also now registers `Group`** (`django.contrib.auth.admin.GroupAdmin`) — the `Groups:` field on the user form always existed (it's a real model relation), but there was no admin page to actually create/manage a `Group` object, for the same reason as above. This part is *not* an upstream backport — checked the same 0.9.x file and ArchiveBox has never registered `Group` in its admin, on any release; added here only so this deployment has a working Groups UI. Note groups only affect non-superuser staff accounts — both existing users (`longtrinh`, `sana`) are superusers, which bypasses permission/group checks entirely.
+
+**Any account created before this patch (2026-08-17) needs checking**, since the admin form wouldn't have flagged the plaintext-save either way:
+```bash
+docker exec --user=archivebox <archivebox-container> archivebox manage shell -c "from django.contrib.auth.models import User; [print(u.username, u.password[:20]) for u in User.objects.all()]"
+```
+A real hash starts with `pbkdf2_sha256$`; anything else (a plain word) means that account can't log in and needs a reset:
+```bash
+docker exec --user=archivebox <archivebox-container> archivebox manage changepassword <username>
+```
+
 **Queue a URL** (admin token):
 
 ```bash

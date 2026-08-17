@@ -47,6 +47,34 @@ RUN grep -q "list_display = ('added', 'title_str', 'files', 'size', 'url_str')" 
     && sed -i "s/list_display = ('added', 'title_str', 'files', 'size', 'url_str')/list_display = ('added', 'title_str', 'files', 'url_str')/" /app/archivebox/core/admin.py \
     && grep -q "list_display = ('added', 'title_str', 'files', 'url_str')" /app/archivebox/core/admin.py
 
+# User admin registered with bare `admin.ModelAdmin` (core/admin.py's
+# `admin.site.register(get_user_model())`, no admin class argument) instead
+# of Django's real `django.contrib.auth.admin.UserAdmin` -- every field,
+# including `password`, rendered as a plain form input with no hashing
+# awareness. Confirmed live TWICE (2026-08-17, `longtrinh` then `sana`):
+# typing a real password into that field saved it as a literal, unhashed
+# string, so the account then couldn't log in, with no error shown anywhere.
+# Root cause: `admin.site = ArchiveBoxAdmin()` further down in the same file
+# replaces Django's default admin site with a fresh, empty one -- dropping
+# every registration `django.contrib.auth`'s own admin.py would normally
+# have made against the *old* default site, including the real `UserAdmin`
+# and `Group`. Checked upstream before patching this ourselves: `core/
+# admin_users.py` on the unreleased 0.9.x branch (v0.9.35rc206, 2026-08-09 --
+# there has been no stable release since 0.7.4) fixes the User half the same
+# way, via a `CustomUserAdmin(UserAdmin)`; this backports that same fix
+# rather than inventing a different one. `Group` registration is NOT an
+# upstream backport, though -- checked the same 0.9.x file and ArchiveBox has
+# never registered Group in its admin, on any release; added here only so
+# this deployment has a Groups UI at all. Fails loudly if either exact line
+# ever changes upstream, rather than silently no-op'ing.
+RUN grep -q "from django.contrib.auth import get_user_model" /app/archivebox/core/admin.py \
+    && sed -i "s/from django.contrib.auth import get_user_model/from django.contrib.auth import get_user_model\nfrom django.contrib.auth.admin import UserAdmin, GroupAdmin\nfrom django.contrib.auth.models import Group/" /app/archivebox/core/admin.py \
+    && grep -q "from django.contrib.auth.admin import UserAdmin, GroupAdmin" /app/archivebox/core/admin.py \
+    && grep -q "admin.site.register(get_user_model())" /app/archivebox/core/admin.py \
+    && sed -i "s/admin.site.register(get_user_model())/admin.site.register(get_user_model(), UserAdmin)\nadmin.site.register(Group, GroupAdmin)/" /app/archivebox/core/admin.py \
+    && grep -q "admin.site.register(get_user_model(), UserAdmin)" /app/archivebox/core/admin.py \
+    && grep -q "admin.site.register(Group, GroupAdmin)" /app/archivebox/core/admin.py
+
 # Patched archive.org extractor — the stock ArchiveBox 0.7.4 extractor submits
 # via an unauthenticated legacy endpoint that started returning HTTP 498
 # (blocked) for this project regardless of credentials; this rewrite uses the
