@@ -21,12 +21,57 @@
 # Deliberate tradeoff: the page can no longer show the capture's stdout, since
 # the response is sent before the work starts. Progress goes to the container
 # log instead, and the Snapshots list shows the result when it lands.
+from datetime import datetime as _ml_datetime
+from datetime import timezone as _ml_timezone
+
 from core.ml_background import run_in_background as _ml_run_in_background
 from core.ml_background import QUEUED_MSG as _ML_QUEUED_MSG
 
 
+def _ml_resnapshot_existing(raw_urls):
+    """Let re-adding an already-archived URL save a NEW snapshot instead of
+    silently doing nothing.
+
+    ArchiveBox runs with ONLY_NEW=True, so `add()` skips any URL already in
+    the index -- which meant re-adding from the Add form or the browser
+    extension appeared to do nothing at all. The only way 0.7.4 keeps several
+    snapshots of one URL is to make the URL string itself distinct, which is
+    exactly what its own "Re-Snapshot" admin action does
+    (`url.split('#')[0] + f'#{timestamp}'`). This applies that same trick at
+    capture time so the plugin/Add form get the behaviour too -- see README
+    "Saving multiple snapshots of a single URL".
+
+    Only URLs ALREADY in the index get a fragment. A URL being archived for
+    the first time is left exactly as typed, so the common case still stores a
+    clean canonical URL -- which matters because archive-worker looks
+    snapshots up with `list --filter-type=exact <url>`
+    (worker/archivers/archivebox.js), and fragment-suffixing every capture
+    would break those exact matches.
+
+    Only bare http(s) lines are touched. The `url` field is a textarea that
+    may hold several URLs, or a pasted blob some other parser handles, so
+    anything that isn't plainly a URL is passed through untouched rather than
+    risk corrupting it.
+    """
+    stamp = _ml_datetime.now(_ml_timezone.utc).isoformat('T', 'seconds')
+    out = []
+    for line in raw_urls.splitlines():
+        candidate = line.strip()
+        if candidate.startswith('http://') or candidate.startswith('https://'):
+            base = candidate.split('#')[0]
+            already_archived = Snapshot.objects.filter(
+                Q(url=base) | Q(url__startswith=base + '#')
+            ).exists()
+            if already_archived:
+                print(f'[*] Already archived, saving as a NEW snapshot: {base}')
+                out.append(f'{base}#{stamp}')
+                continue
+        out.append(line)
+    return '\n'.join(out)
+
+
 def _ml_addview_form_valid(self, form):
-    url = form.cleaned_data["url"]
+    url = _ml_resnapshot_existing(form.cleaned_data["url"])
     print(f'[+] Adding URL: {url}')
     parser = form.cleaned_data["parser"]
     tag = form.cleaned_data["tag"]
