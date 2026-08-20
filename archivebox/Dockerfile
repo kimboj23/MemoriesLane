@@ -91,6 +91,42 @@ RUN grep -qF '<span>🗄&nbsp; {{ obj.archive_size | file_size }}</span>' /app/a
     && sed -i '/<span>🗄&nbsp; {{ obj.archive_size | file_size }}<\/span>/d' /app/archivebox/templates/admin/snapshots_grid.html \
     && ! grep -qF 'obj.archive_size' /app/archivebox/templates/admin/snapshots_grid.html
 
+# Make every slow write non-blocking, so no request can outlive Cloudflare's
+# ~100s edge timeout -- the root fix for this deployment's recurring 524s (see
+# ml_background.py's header, and README "Adding/re-crawling a URL directly in
+# ArchiveBox's own admin"). Two patch sites, both APPENDED rather than sed'd
+# into the middle of the vendored files: appending runs after the target
+# classes are fully defined, so each patch is a plain monkeypatch and doesn't
+# have to rewrite upstream internals.
+#   1. core/views.py's AddView.form_valid -- the main one. Backs /add/, which
+#      serves both the admin's Add form and the browser extension.
+#   2. core/admin.py's Snapshot bulk actions (Pull/Title/Re-Snapshot/Reset/
+#      Delete), plus ArchiveBoxAdmin.add_view for completeness.
+# Each is guarded on the exact upstream call sites it depends on and then
+# ast.parse'd, so an upstream change breaks the build loudly rather than
+# silently shipping a no-op or a syntactically broken module.
+COPY ml_background.py /app/archivebox/core/ml_background.py
+
+COPY views_nonblocking.py /tmp/views_nonblocking.py
+RUN grep -qF "class AddView(UserPassesTestMixin, FormView):" /app/archivebox/core/views.py \
+    && grep -qF "def form_valid(self, form):" /app/archivebox/core/views.py \
+    && grep -qF 'input_kwargs.update({"extractors": extractors})' /app/archivebox/core/views.py \
+    && cat /tmp/views_nonblocking.py >> /app/archivebox/core/views.py \
+    && rm /tmp/views_nonblocking.py \
+    && grep -qF "MEMORIESLANE_NONBLOCKING_ADDVIEW" /app/archivebox/core/views.py \
+    && python3 -c "import ast; ast.parse(open('/app/archivebox/core/views.py', encoding='utf-8').read())"
+
+COPY admin_nonblocking.py /tmp/admin_nonblocking.py
+RUN grep -qF "def add_view(self, request):" /app/archivebox/core/admin.py \
+    && grep -qF "'update_titles', 'update_snapshots', 'resnapshot_snapshot', 'overwrite_snapshots', 'delete_snapshots'" /app/archivebox/core/admin.py \
+    && grep -qF "admin.site.disable_action('delete_selected')" /app/archivebox/core/admin.py \
+    && cat /tmp/admin_nonblocking.py >> /app/archivebox/core/admin.py \
+    && rm /tmp/admin_nonblocking.py \
+    && grep -qF "MEMORIESLANE_NONBLOCKING_ADMIN" /app/archivebox/core/admin.py \
+    && python3 -c "import ast; ast.parse(open('/app/archivebox/core/admin.py', encoding='utf-8').read())"
+
+RUN rm -f /app/archivebox/core/__pycache__/admin.*.pyc /app/archivebox/core/__pycache__/views.*.pyc
+
 # Patched archive.org extractor — the stock ArchiveBox 0.7.4 extractor submits
 # via an unauthenticated legacy endpoint that started returning HTTP 498
 # (blocked) for this project regardless of credentials; this rewrite uses the
