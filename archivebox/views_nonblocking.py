@@ -99,3 +99,66 @@ def _ml_addview_form_valid(self, form):
 
 
 AddView.form_valid = _ml_addview_form_valid
+
+
+# ============================================================================
+# MEMORIESLANE_SELFHEAL_SNAPSHOT_INDEX
+# ============================================================================
+_ml_orig_snapshot_get = SnapshotView.get
+
+
+def _ml_snapshot_get(self, request, path):
+    """Rebuild a snapshot's own index.html on demand if it has gone missing.
+
+    A snapshot folder's `index.html` is NOT captured content -- ArchiveBox
+    generates it itself (`write_link_details`, index/__init__.py) at the end
+    of a capture, entirely from data already in the DB. So it can go missing
+    while every archived artifact is still intact, and the snapshot then 404s
+    with "exists in DB, but resource ... does not exist in snapshot dir yet".
+    Two ways that happens here: a capture interrupted before that final write
+    (captures run in the background now, so a redeploy mid-capture can do it),
+    and an index rebuilt from folder contents via `archivebox init --force`,
+    which restores the DB rows but not these pages -- that's what left 5
+    snapshots broken on 2026-08-24 after the 0.9.x rollback.
+
+    Regenerating is cheap and fully derived, so rather than scan every
+    snapshot folder on a timer -- that S3-mounted walk is precisely what
+    caused this project's 524 incidents (see README) -- rebuild lazily at the
+    only moment it matters: when someone actually asks for a missing one.
+    Costs nothing on the normal path, because it only runs after a 404.
+    """
+    response = _ml_orig_snapshot_get(self, request, path)
+    if getattr(response, 'status_code', 200) != 404:
+        return response
+
+    # Only ever regenerate ArchiveBox's OWN page. Never fabricate a missing
+    # capture artifact (screenshot.png, warc/, ...) -- that would misrepresent
+    # what was actually archived, which for this project is the whole point.
+    if not path.endswith('/index.html'):
+        return response
+
+    slug = path.split('/', 1)[0]
+    try:
+        snapshot = Snapshot.objects.get(Q(timestamp=slug) | Q(id__startswith=slug))
+    except (Snapshot.DoesNotExist, Snapshot.MultipleObjectsReturned):
+        return response
+
+    import os
+
+    from index import write_link_details
+
+    try:
+        if not os.path.isdir(snapshot.link_dir):
+            # No archived data at all -- the stock error is the honest answer.
+            return response
+        write_link_details(snapshot.as_link(), out_dir=snapshot.link_dir, skip_sql_index=True)
+        print(f'[+] regenerated missing index.html for snapshot {snapshot.timestamp}')
+    except Exception as e:
+        print(f'[!] could not regenerate index.html for {snapshot.timestamp}: {type(e).__name__}: {e}')
+        return response
+
+    # Retry exactly once; if it still 404s the stock error page is returned.
+    return _ml_orig_snapshot_get(self, request, path)
+
+
+SnapshotView.get = _ml_snapshot_get

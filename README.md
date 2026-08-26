@@ -399,6 +399,26 @@ Blocked on Chrome itself. Confirmed by direct reproduction, not guesswork: Chrom
 
 Revisit the branch once ArchiveBox cuts an actual stable release past this RC line, or a future RC's changelog specifically mentions a Chrome/crashpad fix — check `archivebox/archivedotorg_spn2.py`'s and `archivebox/Dockerfile`'s comments on that branch for exactly what to re-verify (plugin filename prefixes and `list --json`'s output shape both already drifted once between the two RCs tried).
 
+**"Snapshot exists in DB, but resource `<ts>/index.html` does not exist in snapshot dir yet" — now self-heals, 2026-08-24.** A snapshot folder's `index.html` is **not** captured content: ArchiveBox generates it itself (`write_link_details`, `index/__init__.py`) at the very end of a capture, entirely from data already in the DB. So it can go missing while every archived artifact is perfectly intact — the snapshot just 404s with that message and looks lost when nothing actually is. Two ways it happens here:
+- **An index rebuilt from folder contents.** `archivebox init --force` (the 0.9.x rollback recovery above) restores the DB rows by scanning `archive/`, but does *not* regenerate these per-snapshot pages. That silently broke 5 of 22 snapshots — exactly the ones its own output had flagged as `Skipped adding 23 invalid link data directories`.
+- **A capture interrupted before that final write.** Captures now run on a background thread (see "Captures no longer block the HTTP request"), so redeploying the container mid-capture can leave a snapshot without one.
+
+`archivebox/views_nonblocking.py` now patches `SnapshotView.get` to rebuild the page on demand: on a 404 for a path ending in `/index.html`, it regenerates via `write_link_details` and retries once. Deliberately lazy rather than a scheduled scan of every snapshot folder — that S3-mounted walk is exactly what caused this project's 524 incidents — so it costs nothing on the normal path, only running after a 404 that would otherwise have been a dead end. It only ever regenerates ArchiveBox's *own* page: a genuinely missing capture artifact (`screenshot.png`, `warc/`, …) still returns the honest error rather than being fabricated, and a snapshot with no directory at all is left alone. Verified by deleting a live `index.html` and re-requesting it: HTTP 200 with the real page, file restored on disk, `[+] regenerated missing index.html for snapshot …` in the log.
+
+To repair in bulk without waiting for someone to hit each one (e.g. straight after an `init --force`), call the same function directly for every affected snapshot:
+```bash
+docker exec -i --user=archivebox <archivebox-container> archivebox manage shell <<'EOF'
+import os
+from core.models import Snapshot
+from index import write_link_details
+for s in Snapshot.objects.all():
+    d = "/data/archive/" + s.timestamp
+    if os.path.isdir(d) and not os.path.exists(d + "/index.html"):
+        write_link_details(s.as_link(), out_dir=d, skip_sql_index=True)
+        print("regenerated", s.timestamp)
+EOF
+```
+
 ## Deploy
 
 **Frontend (Cloudflare Pages)** — static, no build. Connect the repo: build command empty, output dir `/`. Set env var `BACKEND_URL` to `https://archivebox-api.heomay.xyz`. `functions/api/[[route]].js` proxies `/api/*` there automatically.

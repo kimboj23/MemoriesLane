@@ -111,6 +111,8 @@ COPY views_nonblocking.py /tmp/views_nonblocking.py
 RUN grep -qF "class AddView(UserPassesTestMixin, FormView):" /app/archivebox/core/views.py \
     && grep -qF "def form_valid(self, form):" /app/archivebox/core/views.py \
     && grep -qF 'input_kwargs.update({"extractors": extractors})' /app/archivebox/core/views.py \
+    && grep -qF "class SnapshotView(View):" /app/archivebox/core/views.py \
+    && grep -qF "does not exist in" /app/archivebox/core/views.py \
     && cat /tmp/views_nonblocking.py >> /app/archivebox/core/views.py \
     && rm /tmp/views_nonblocking.py \
     && grep -qF "MEMORIESLANE_NONBLOCKING_ADDVIEW" /app/archivebox/core/views.py \

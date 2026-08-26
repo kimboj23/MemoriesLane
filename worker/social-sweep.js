@@ -17,6 +17,8 @@
  * Runs on its own cadence alongside reconcile.js's Wayback sweep, since it
  * also has to list ArchiveBox's whole index each pass.
  */
+const sharp = require("sharp");
+
 const db = require("./db");
 const wayback = require("./archivers/wayback");
 const autoarchiver = require("./archivers/autoarchiver");
@@ -73,15 +75,27 @@ async function socialSweep() {
       // Best-effort: also make this show up natively in ArchiveBox's own
       // index/UI, not just this app's separate archives table -- overwrite
       // the existing (weak/empty) snapshot's screenshot.png with the real
-      // capture. PNG only (see archivebox.js's injectScreenshot doc) --
-      // auto-archiver's priority order usually returns one, but skip
-      // anything else rather than write a mislabeled file. Never lets a
-      // failure here undo the db.insertBackfilled row above.
-      if (result.local_url && /\.png(\?|$)/i.test(result.local_url)) {
+      // capture. Never lets a failure here undo the db.insertBackfilled row
+      // above.
+      //
+      // auto-archiver returns whichever image format the platform handed it
+      // (Threads -> .png, Facebook -> .jpg, both confirmed live 2026-08-21),
+      // so anything image-shaped is accepted and converted below rather than
+      // skipped. This used to be a PNG-only test, which silently dropped the
+      // .jpg captures and left those snapshots showing ArchiveBox's own
+      // weaker screenshot with no indication anything had been passed over.
+      if (result.local_url && /\.(png|jpe?g|webp)(\?|$)/i.test(result.local_url)) {
         try {
           const res = await fetch(result.local_url);
           if (!res.ok) throw new Error(`fetch ${res.status}`);
-          const buf = Buffer.from(await res.arrayBuffer());
+          let buf = Buffer.from(await res.arrayBuffer());
+          if (!/\.png(\?|$)/i.test(result.local_url)) {
+            // The bytes have to actually BE a PNG, not just land at a .png
+            // path: ArchiveBox hardcodes `screenshot.png` in
+            // index/schema.py's canonical_outputs() for the snapshot's 📷
+            // link, so writing JPEG bytes under that name renders broken.
+            buf = await sharp(buf).png().toBuffer();
+          }
           const timestamp = await archivebox.injectScreenshot(url, buf);
           console.log(`[worker] [social-sweep] injected real screenshot into ArchiveBox snapshot ${timestamp}`);
         } catch (e) {
