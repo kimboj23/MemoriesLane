@@ -298,6 +298,16 @@ S3 credentials live in `archivebox/rclone.env` (gitignored, `RCLONE_CONFIG_SB_*`
 
 > `archive-worker` mounts the Docker socket to run the tools as sibling containers — it must run on the same Docker host as ArchiveBox (the VPS), never bundled into a serverless/edge API host.
 
+**A stale Chrome profile lock silently kills every Chrome-backed extractor — cleared at startup since 2026-08-26.** Chromium writes `SingletonLock -> <hostname>-<pid>` into `CHROME_USER_DATA_DIR` while running and deletes it on a clean exit. Killing the container never gives it that chance, and the replacement container has a **different hostname**, so Chromium decides the profile is open "on another computer" and refuses to start — permanently, because nothing ever cleans it up.
+
+The failure is nasty because it's silent and partial: `singlefile`/`pdf`/`screenshot`/`dom` all fail (and `title`/`readability`/`htmltotext` fail downstream of them), while `wget`/`mercury`/`media`/`favicon`/`headers` keep succeeding. Captures therefore look like they're working, and only show up as snapshots with **no title ("Pending…"), no screenshot, and a missing `singlefile.html`**. Diagnosed 2026-08-26 from a lock six days stale — `The profile appears to be in use by another Chromium process (13194) on another computer (196f2995ae14)` — which had broken 8 snapshots in the meantime. Note the generic per-extractor errors ("Failed to save screenshot", "SingleFile was not able to archive the page") say nothing useful; run the browser by hand against the real profile to see the actual reason:
+```bash
+docker exec --user=archivebox <archivebox-container> /usr/bin/chromium-browser \
+  --headless=new --no-sandbox --disable-dev-shm-usage --disable-gpu \
+  --user-data-dir=/data/chrome_profile --dump-dom https://example.com 2>&1 | head
+```
+`archivebox/archivebox-entrypoint.sh` now removes `SingletonLock`/`SingletonSocket`/`SingletonCookie` before ArchiveBox starts, logging what it cleared. Safe unconditionally: a brand-new container can't legitimately hold the profile yet. **Backgrounded captures make this much likelier** (see "Captures no longer block the HTTP request") — a capture now outlives its HTTP request, so any redeploy can land mid-Chrome; this project caused exactly that with a run of rapid rebuilds.
+
 **Cookie-consent banners in captures — solved via `COOKIES_FILE` + `CHROME_USER_DATA_DIR`.** ArchiveBox used to capture every site with a fresh, cookie-less session, so consent banners on Vietnamese news sites got baked directly into screenshots/SingleFile/PDF snapshots. Fixed and verified working (2026-08-12) against a real capture — see "Regenerating the cookies/profile" below for the exact commands.
 
 **How it works:** a script (`archivebox/generate-profile.js`, run with Playwright in a disposable container, not part of the deployed image) does what a human doing this by hand would — launches a real headless browser, visits each site this project archives from, and clicks the real "Accept" button on whatever consent banner appears. That real, genuinely-issued browser state becomes two things:

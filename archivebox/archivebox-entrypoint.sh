@@ -28,4 +28,37 @@ for i in $(seq 1 30); do
 done
 mountpoint -q /data/archive 2>/dev/null || echo "[entrypoint] WARNING: archive mount not ready — continuing"
 
+# Clear Chrome's profile lock left over from a previous container.
+#
+# Chromium writes SingletonLock -> "<hostname>-<pid>" into the profile while
+# running and removes it on a clean exit. Killing the container (any redeploy)
+# never gives it that chance, and the replacement container has a DIFFERENT
+# hostname, so Chromium sees a lock it can't attribute to itself, assumes the
+# profile is open "on another computer", and refuses to start -- permanently,
+# since nothing ever cleans it up.
+#
+# That silently broke EVERY Chrome-backed extractor (singlefile/pdf/screenshot/
+# dom, and title+readability+htmltotext downstream of them) while the
+# non-Chrome ones (wget/mercury/media/favicon/headers) kept succeeding, so
+# captures looked like they were working and just produced no title, no
+# screenshot and no singlefile.html. Diagnosed 2026-08-26 from a lock dated
+# six days earlier: "The profile appears to be in use by another Chromium
+# process (13194) on another computer (196f2995ae14)".
+#
+# Backgrounded captures (see README "Captures no longer block the HTTP
+# request") widen the window a lot -- a capture now outlives its HTTP request,
+# so any deploy can land mid-Chrome.
+#
+# Safe unconditionally here: this runs before ArchiveBox starts in a brand-new
+# container, so no Chromium of ours can legitimately hold the profile yet.
+CHROME_PROFILE="${CHROME_USER_DATA_DIR:-/data/chrome_profile}"
+if [ -d "$CHROME_PROFILE" ]; then
+  for lock in SingletonLock SingletonSocket SingletonCookie; do
+    if [ -e "$CHROME_PROFILE/$lock" ] || [ -L "$CHROME_PROFILE/$lock" ]; then
+      echo "[entrypoint] clearing stale Chrome $lock ($(readlink "$CHROME_PROFILE/$lock" 2>/dev/null || echo '?'))"
+      rm -f "$CHROME_PROFILE/$lock"
+    fi
+  done
+fi
+
 exec /app/bin/docker_entrypoint.sh "$@"
