@@ -105,6 +105,39 @@ RUN grep -qF '<span>🗄&nbsp; {{ obj.archive_size | file_size }}</span>' /app/a
 # Each is guarded on the exact upstream call sites it depends on and then
 # ast.parse'd, so an upstream change breaks the build loudly rather than
 # silently shipping a no-op or a syntactically broken module.
+# Chrome profile-lock handling (see util_chromelock.py's header). Upstream's
+# chrome_cleanup() only ever clears the lock from its hardcoded default
+# profile dir, so it became a silent no-op the moment CHROME_USER_DATA_DIR was
+# set -- which is why every `pdf` capture failed from 2026-08-12 onward and
+# why one killed container could disable all Chrome extractors indefinitely.
+# Appended so it rebinds chrome_args/chrome_cleanup after util.py defines
+# them; the extractors import from util later, so they pick up these.
+COPY util_chromelock.py /tmp/util_chromelock.py
+RUN grep -qF "def chrome_cleanup():" /app/archivebox/util.py \
+    && grep -qF "def chrome_args(**options)" /app/archivebox/util.py \
+    && grep -qF '/home/archivebox/.config/chromium/SingletonLock' /app/archivebox/util.py \
+    && cat /tmp/util_chromelock.py >> /app/archivebox/util.py \
+    && rm /tmp/util_chromelock.py \
+    && grep -qF "MEMORIESLANE_CHROME_PROFILE_LOCK" /app/archivebox/util.py \
+    && python3 -c "import ast; ast.parse(open('/app/archivebox/util.py', encoding='utf-8').read())" \
+    && rm -f /app/archivebox/__pycache__/util.*.pyc
+
+# Point SingleFile at its OWN Chrome profile. It launches chromium itself via
+# its node CLI, and sharing one profile with the other extractors left that
+# profile in a state that hangs the next chromium launch -- `pdf` runs right
+# after singlefile and so failed on EVERY capture from 2026-08-12 (when
+# CHROME_USER_DATA_DIR was introduced) to 2026-08-26, while screenshot/dom,
+# which run later, were fine. Confirmed by disabling singlefile for one
+# capture: pdf then succeeded in 1.1s. chrome_args() merges its kwargs over
+# CHROME_OPTIONS, so overriding the profile here is enough; the entrypoint
+# seeds that profile from the real one so singlefile keeps its consent
+# cookies. See archivebox-entrypoint.sh and README "PDF captures".
+RUN grep -qF "browser_args = chrome_args(CHROME_TIMEOUT=0)" /app/archivebox/extractors/singlefile.py \
+    && sed -i "s|browser_args = chrome_args(CHROME_TIMEOUT=0)|browser_args = chrome_args(CHROME_TIMEOUT=0, CHROME_USER_DATA_DIR=__import__('os').environ.get('SINGLEFILE_CHROME_USER_DATA_DIR', '/data/chrome_profile_singlefile'))|" /app/archivebox/extractors/singlefile.py \
+    && grep -qF "SINGLEFILE_CHROME_USER_DATA_DIR" /app/archivebox/extractors/singlefile.py \
+    && python3 -c "import ast; ast.parse(open('/app/archivebox/extractors/singlefile.py', encoding='utf-8').read())" \
+    && rm -f /app/archivebox/extractors/__pycache__/singlefile.*.pyc
+
 COPY ml_background.py /app/archivebox/core/ml_background.py
 
 COPY views_nonblocking.py /tmp/views_nonblocking.py

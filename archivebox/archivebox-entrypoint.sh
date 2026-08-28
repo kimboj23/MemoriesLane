@@ -52,13 +52,33 @@ mountpoint -q /data/archive 2>/dev/null || echo "[entrypoint] WARNING: archive m
 # Safe unconditionally here: this runs before ArchiveBox starts in a brand-new
 # container, so no Chromium of ours can legitimately hold the profile yet.
 CHROME_PROFILE="${CHROME_USER_DATA_DIR:-/data/chrome_profile}"
-if [ -d "$CHROME_PROFILE" ]; then
+SINGLEFILE_PROFILE="${SINGLEFILE_CHROME_USER_DATA_DIR:-/data/chrome_profile_singlefile}"
+
+# SingleFile drives its OWN Chrome (via its node CLI) and, when pointed at the
+# same profile as the other extractors, leaves it in a state that hangs the
+# NEXT chromium launch. `pdf` runs immediately after singlefile, so it always
+# took the hit -- every pdf capture failed from 2026-08-12 (when
+# CHROME_USER_DATA_DIR was first set, putting them on one profile) until
+# 2026-08-26. screenshot/dom run later and were unaffected, which is what made
+# it look pdf-specific. Proven by disabling singlefile for one capture: pdf
+# then succeeded in 1.1s.
+#
+# Giving singlefile its own copy fixes the collision while keeping the
+# consent-banner cookies it needs. Seeded once from the real profile, ~100MB
+# on the local volume (never on the S3 mount).
+if [ -d "$CHROME_PROFILE" ] && [ ! -d "$SINGLEFILE_PROFILE" ]; then
+  echo "[entrypoint] seeding singlefile Chrome profile -> $SINGLEFILE_PROFILE"
+  cp -a "$CHROME_PROFILE" "$SINGLEFILE_PROFILE" 2>/dev/null || true
+fi
+
+for profile in "$CHROME_PROFILE" "$SINGLEFILE_PROFILE"; do
+  [ -d "$profile" ] || continue
   for lock in SingletonLock SingletonSocket SingletonCookie; do
-    if [ -e "$CHROME_PROFILE/$lock" ] || [ -L "$CHROME_PROFILE/$lock" ]; then
-      echo "[entrypoint] clearing stale Chrome $lock ($(readlink "$CHROME_PROFILE/$lock" 2>/dev/null || echo '?'))"
-      rm -f "$CHROME_PROFILE/$lock"
+    if [ -e "$profile/$lock" ] || [ -L "$profile/$lock" ]; then
+      echo "[entrypoint] clearing stale Chrome $lock in $profile ($(readlink "$profile/$lock" 2>/dev/null || echo '?'))"
+      rm -f "$profile/$lock"
     fi
   done
-fi
+done
 
 exec /app/bin/docker_entrypoint.sh "$@"
