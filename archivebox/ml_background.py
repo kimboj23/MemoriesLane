@@ -32,10 +32,9 @@ import threading
 from django.db import connections
 
 QUEUED_MSG = (
-    'Started in the background. This page returned immediately instead of '
-    'holding the connection open past Cloudflare’s ~100s limit (error 524). '
-    'Refresh the Snapshots list in a minute or two to see the result, or watch '
-    'progress with: docker logs -f memorieslane-archivebox-1'
+    'Started in the background. Refresh the Snapshots list in a minute or two '
+    'to see the result, or watch progress with: '
+    'docker logs -f memorieslane-archivebox-1'
 )
 
 
