@@ -35,6 +35,7 @@ const autoarchiver = require("./archivers/autoarchiver");
 const integrity = require("./integrity");
 const { reconcileWayback } = require("./reconcile");
 const { socialSweep } = require("./social-sweep");
+const { botWallSweep } = require("./botwall");
 
 const POLL_MS       = parseInt(process.env.POLL_INTERVAL_MS, 10) || 15000;
 const MAX_ATTEMPTS  = parseInt(process.env.MAX_ATTEMPTS, 10) || 3;
@@ -120,6 +121,14 @@ async function reconcileLoop() {
       await socialSweep();
     } catch (e) {
       console.error("[worker] [social-sweep] loop error:", e.message);
+    }
+    // Runs last: it only reads what the other two may just have produced, and
+    // a snapshot that captured a CAPTCHA instead of the page still counts as
+    // "archived" everywhere else in the system (see botwall.js).
+    try {
+      await botWallSweep();
+    } catch (e) {
+      console.error("[worker] [bot-wall] loop error:", e.message);
     }
   }
 }
