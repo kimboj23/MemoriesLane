@@ -138,6 +138,31 @@ RUN grep -qF "browser_args = chrome_args(CHROME_TIMEOUT=0)" /app/archivebox/extr
     && python3 -c "import ast; ast.parse(open('/app/archivebox/extractors/singlefile.py', encoding='utf-8').read())" \
     && rm -f /app/archivebox/extractors/__pycache__/singlefile.*.pyc
 
+# Serialise SingleFile across concurrent captures (see singlefile_lock.py).
+# Backgrounded captures can overlap; the other Chrome extractors are covered
+# by chrome_args()'s profile wait, but singlefile's node CLI launches chromium
+# outside that window and loses the race. Measured: 11/12 extractors on the
+# second of two simultaneous captures, the one failure being singlefile.
+COPY singlefile_lock.py /tmp/singlefile_lock.py
+RUN grep -qF "def save_singlefile(" /app/archivebox/extractors/singlefile.py \
+    && cat /tmp/singlefile_lock.py >> /app/archivebox/extractors/singlefile.py \
+    && rm /tmp/singlefile_lock.py \
+    && grep -qF "MEMORIESLANE_SINGLEFILE_SERIALIZE" /app/archivebox/extractors/singlefile.py \
+    && python3 -c "import ast; ast.parse(open('/app/archivebox/extractors/singlefile.py', encoding='utf-8').read())" \
+    && rm -f /app/archivebox/extractors/__pycache__/singlefile.*.pyc
+
+# Apply "re-adding an archived URL saves a NEW snapshot" to every entry point
+# by wrapping main.add(), which the CLI, /add/ and the admin's Re-Snapshot
+# action all funnel through -- previously only /add/ had it, so the CLI
+# silently no-op'd on an existing URL (see main_resnapshot.py).
+COPY main_resnapshot.py /tmp/main_resnapshot.py
+RUN grep -qE "^def add\(" /app/archivebox/main.py \
+    && cat /tmp/main_resnapshot.py >> /app/archivebox/main.py \
+    && rm /tmp/main_resnapshot.py \
+    && grep -qF "MEMORIESLANE_CLI_RESNAPSHOT" /app/archivebox/main.py \
+    && python3 -c "import ast; ast.parse(open('/app/archivebox/main.py', encoding='utf-8').read())" \
+    && rm -f /app/archivebox/__pycache__/main.*.pyc
+
 COPY ml_background.py /app/archivebox/core/ml_background.py
 
 COPY views_nonblocking.py /tmp/views_nonblocking.py
