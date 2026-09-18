@@ -202,17 +202,25 @@ const HANOI_CENTER = [21.0305, 105.8520];
 // ---------------------------------------------------------------------------
 // BASEMAPS
 // ---------------------------------------------------------------------------
+// CARTO Basemaps API key (added 2026-09-18). CARTO's docs now ask for a key on
+// the raster tile endpoints; keyless requests still returned 200 when this
+// was added, so this is ahead of enforcement rather than a fix for an outage.
+// It is a browser-side key by design (it goes in every tile URL) and is scoped
+// by allowed domains in the CARTO dashboard, not by secrecy -- fine in the
+// public repo. Rotate it there if tiles ever start 403ing.
+const CARTO_KEY = "cb1_3p9w_1_326cd93d5a3325332cb778de";
+const carto = (path) => `https://{s}.basemaps.cartocdn.com/${path}/{z}/{x}/{y}{r}.png?key=${CARTO_KEY}`;
 const BASEMAPS = [
   { key: "streets", vi: "Phố", en: "Streets",
-    url: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", sub: "abcd", maxZoom: 20,
+    url: carto("rastertiles/voyager"), sub: "abcd", maxZoom: 20,
     attr: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · © <a href="https://carto.com/attributions">CARTO</a>',
     swatch: "linear-gradient(135deg,#eee8dc,#dfe6ea 55%,#cdd8c6)" },
   { key: "light", vi: "Tối giản", en: "Minimal",
-    url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", sub: "abcd", maxZoom: 20,
+    url: carto("light_all"), sub: "abcd", maxZoom: 20,
     attr: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · © <a href="https://carto.com/attributions">CARTO</a>',
     swatch: "linear-gradient(135deg,#f7f5f1,#e8e6e1)" },
   { key: "dark", vi: "Ban đêm", en: "Night",
-    url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", sub: "abcd", maxZoom: 20,
+    url: carto("dark_all"), sub: "abcd", maxZoom: 20,
     attr: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · © <a href="https://carto.com/attributions">CARTO</a>',
     swatch: "linear-gradient(135deg,#27302d,#11201b)" },
   { key: "satellite", vi: "Vệ tinh", en: "Satellite",

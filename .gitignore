@@ -33,3 +33,13 @@ cloudflared.exe
 # out of the public repo (README documents how to recreate it).
 cloudflared-config.yml
 # .cloudflared/
+# security plan — names live weaknesses, host paths and accounts; this repo is public
+SECURITY-PLAN.md
+# B2 backup credentials (template: backup/b2.env.example)
+backup/b2.env
+# NocoDB session secret + bootstrap admin (template: nocodb/nocodb.env.example)
+nocodb/nocodb.env
+# passphrase for the encrypted secrets bundle (backup/archivebox-backup.sh); copy lives in the password manager
+backup/secrets.passphrase
+# laptop copies of the ArchiveBox index snapshots (password hashes inside) -- never commit
+backup/archivebox/

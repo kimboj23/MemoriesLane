@@ -1,0 +1,10 @@
+[Unit]
+Description=Run archivebox-backup nightly at 03:00 UTC
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+RandomizedDelaySec=10m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

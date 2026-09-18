@@ -1,0 +1,11 @@
+[Unit]
+Description=MemoriesLane ArchiveBox nightly backup (local index snapshot + Backblaze B2 copy)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=debian
+ExecStart=/home/debian/MemoriesLane/backup/archivebox-backup.sh
+StandardOutput=append:/home/debian/backups/archivebox-backup.log
+StandardError=append:/home/debian/backups/archivebox-backup.log

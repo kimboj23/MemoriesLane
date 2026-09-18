@@ -1,9 +1,10 @@
-# VPS deployment — archivebox + archive-worker + backend, the whole always-on
-# half of the stack (everything except the static frontend, which stays on
-# Cloudflare Pages, and Postgres/Storage, which stay on Supabase).
+# VPS deployment — archivebox + archive-worker + backend + nocodb, the whole
+# always-on half of the stack (everything except the static frontend, which
+# stays on Cloudflare Pages, and Postgres/Storage, which stay on Supabase).
 #
-# Usage on the VPS (after copying archivebox/, worker/, backend/, backend/.env,
-# archivebox/rclone.env to this same relative layout):
+# Usage on the VPS (after copying archivebox/, worker/, backend/, nocodb/,
+# backend/.env, nocodb/nocodb.env, archivebox/rclone.env to this same
+# relative layout):
 #   docker compose -f docker-compose.vps.yml up -d --build
 #
 # Differences from the laptop docker-compose.yml:
@@ -21,19 +22,23 @@ services:
     command: server --quick-init 0.0.0.0:8000
     ports:
       - "127.0.0.1:8000:8000"
-    cap_add:
-      - SYS_ADMIN
-    devices:
-      - /dev/fuse
-    security_opt:
-      - apparmor:unconfined
+    # No cap_add/devices/security_opt here any more (removed 2026-09-18, after
+    # the Supabase copy of the archive was purged). The FUSE mount needed
+    # SYS_ADMIN + /dev/fuse + apparmor:unconfined -- near-root inside the one
+    # container that faces the internet. Local storage needs none of it, and
+    # this container no longer holds any S3 credential either (rclone.env is
+    # not loaded). If ARCHIVE_STORAGE=s3 is ever needed again, all four lines
+    # have to come back.
     env_file:
-      - ./archivebox/rclone.env
       # IA_ACCESS_KEY/IA_SECRET_KEY only, pulled in for the patched archive_org.py
       # extractor (see below) -- everything else in backend/.env is irrelevant
       # to this container and unused.
       - ./backend/.env
     environment:
+      # Archive lives on the archivebox-data volume (VPS disk) since 2026-09-17.
+      # `s3` mounts Supabase S3 over /data/archive instead (legacy; see the
+      # entrypoint for why local won, and the note above for what it needs).
+      - ARCHIVE_STORAGE=local
       # Public read-only browsing enabled deliberately 2026-08-14 (was False)
       # -- anyone can list/view archived snapshots without logging in now.
       # PUBLIC_ADD_VIEW stays False: that's the one that actually matters for
@@ -152,9 +157,59 @@ services:
       - archivebox
     restart: unless-stopped
 
+  # Airtable-style grid over the app's own Supabase tables for the content
+  # manager (README "Content manager UI — NocoDB"). Reached at
+  # memorylanedb.heomay.xyz through the tunnel, behind Cloudflare Access, and it
+  # connects to Postgres as the column-level-restricted `content_manager`
+  # role (backend/scripts/content-manager-role.sql), NOT the backend's
+  # DATABASE_URL -- that credential is deliberately not mounted here, which
+  # is why this service does not share backend/.env. The data source is
+  # added from inside NocoDB's UI after first login (stored encrypted in
+  # nocodb-data), so nothing DB-related lives in nocodb.env either.
+  #
+  # This is for the MemoryLane DB only. ArchiveBox's index.sqlite3 stays
+  # managed through ArchiveBox's own admin; nothing here mounts it.
+  nocodb:
+    image: nocodb/nocodb:2026.09.0
+    container_name: memorieslane-nocodb-1
+    ports:
+      - "127.0.0.1:8090:8080"
+    env_file:
+      - ./nocodb/nocodb.env   # NC_AUTH_JWT_SECRET, NC_ADMIN_EMAIL/PASSWORD, NC_SITE_URL
+    environment:
+      # Metadata (users, views, saved filters, the encrypted data-source
+      # connection) lives in NocoDB's default SQLite on the VPS volume --
+      # kept OFF Supabase on purpose: the org is already over its free-tier
+      # storage quota, and NocoDB's metadata has no business next to the
+      # evidentiary tables.
+      - NC_DISABLE_TELE=true
+      # Nobody self-registers. The maintainer's super-admin comes from
+      # NC_ADMIN_EMAIL/PASSWORD; every other account is an invite from the UI.
+      # NOTE: this env var is IGNORED by 2026.09.0 -- verified 2026-09-17 by
+      # booting the image with it set and POSTing to /api/v1/auth/user/signup,
+      # which happily created an account; /api/v1/app-settings still reported
+      # invite_only_signup:false. The setting lives in NocoDB's metadata store
+      # and is only honoured from there, so deploy-vps.sh sets it through the
+      # settings API after the container is up (and fails loudly if it can't).
+      # Kept here in case a later version reads it again; costs nothing.
+      - NC_INVITE_ONLY_SIGNUP=true
+      # Webhooks may not call private addresses (NocoDB's default, pinned
+      # here so it's visible): this container shares the host's loopback
+      # neighbourhood with the backend (:3001) and ArchiveBox (:8000), and a
+      # NocoDB Editor must not be able to aim a webhook at either.
+      - NC_WEBHOOK_ALLOW_PRIVATE_NETWORK=false
+      # Attachment fields (if any get added) serve via pre-signed URLs
+      # instead of a guessable public path.
+      - NC_ATTACHMENT_ACCESS_CONTROL_ENABLED=true
+    volumes:
+      - nocodb-data:/usr/app/data
+    restart: unless-stopped
+
 volumes:
   archivebox-data:
     name: memorylane-archivebox-data
   autoarchiver-config:
     name: memorylane-autoarchiver-config
   memorylane-uploads:
+  nocodb-data:
+    name: memorylane-nocodb-data
