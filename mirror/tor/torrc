@@ -1,0 +1,8 @@
+# v3 onion service for the mirror. No SOCKS proxy, no exit, no relay --
+# this container only publishes the hidden service.
+SocksPort 0
+Log notice stdout
+DataDirectory /var/lib/tor
+HiddenServiceDir /var/lib/tor/hidden_service/
+HiddenServiceVersion 3
+HiddenServicePort 80 web:80

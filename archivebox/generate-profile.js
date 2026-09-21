@@ -42,6 +42,70 @@ const TARGETS = [
 const PROFILE_DIR = process.env.PROFILE_DIR || "/output/chrome_profile";
 const SHOTS_DIR = process.env.SHOTS_DIR || "/output/shots";
 
+// Optional: a directory of Netscape cookies.txt files exported from THROWAWAY
+// accounts (one file per platform, e.g. threads.cookies.txt), to be loaded
+// into the profile before the consent-banner pass. This is the 0.7.4
+// equivalent of 0.9.x's `archivebox persona create --import=...`: login state
+// lands in the Chrome profile (so singlefile/pdf/screenshot/dom capture as a
+// logged-in user) AND in the exported cookies.txt (wget, auto-archiver).
+// Content managers export these on their own machines from a dedicated
+// browser profile that holds nothing but the throwaway login -- see
+// archivebox/THROWAWAY-ACCOUNTS.md. Never a personal profile: the 2026-08
+// incident was a full-browser export that included bank and Cloudflare
+// sessions.
+const IMPORT_DIR = process.env.IMPORT_DIR || "/import";
+
+// Netscape cookies.txt -> Playwright cookie objects. Handles the "#HttpOnly_"
+// domain prefix that the common browser exporters write for httpOnly
+// cookies (it is a comment to older parsers, deliberately).
+function parseNetscape(text, file) {
+  const out = [];
+  for (let raw of text.split(/\r?\n/)) {
+    let httpOnly = false;
+    if (raw.startsWith("#HttpOnly_")) { httpOnly = true; raw = raw.slice("#HttpOnly_".length); }
+    else if (!raw.trim() || raw.startsWith("#")) continue;
+    const f = raw.split("\t");
+    if (f.length < 7) continue;
+    const [domain, , cpath, secure, expiry, name, ...rest] = f;
+    const value = rest.join("\t");
+    const exp = parseInt(expiry, 10);
+    out.push({
+      name, value, domain, path: cpath || "/",
+      expires: exp > 0 ? exp : -1,
+      httpOnly, secure: secure === "TRUE",
+      sameSite: "Lax",
+    });
+  }
+  if (!out.length) console.warn(`[import] ${file}: no cookies parsed`);
+  return out;
+}
+
+// Refuse imports that look like a whole-browser dump rather than one
+// throwaway account. A single platform's export is a few dozen cookies over
+// a handful of related domains; 4,061 cookies over 1,793 domains was the
+// incident. The maintainer can raise the ceiling knowingly.
+const MAX_DOMAINS_PER_FILE = parseInt(process.env.IMPORT_MAX_DOMAINS || "12", 10);
+
+function loadImports() {
+  if (!fs.existsSync(IMPORT_DIR)) return { cookies: [], files: [] };
+  const files = fs.readdirSync(IMPORT_DIR).filter((f) => f.endsWith(".txt")).sort();
+  const cookies = [];
+  for (const f of files) {
+    const parsed = parseNetscape(fs.readFileSync(path.join(IMPORT_DIR, f), "utf8"), f);
+    const domains = new Set(parsed.map((c) => c.domain.replace(/^\./, "")));
+    if (domains.size > MAX_DOMAINS_PER_FILE) {
+      throw new Error(
+        `[import] ${f} spans ${domains.size} domains (limit ${MAX_DOMAINS_PER_FILE}). ` +
+        `That looks like a whole-browser export, not one throwaway account -- refusing. ` +
+        `Re-export for the single site only (see THROWAWAY-ACCOUNTS.md), or set IMPORT_MAX_DOMAINS if this is intended.`
+      );
+    }
+    console.log(`[import] ${f}: ${parsed.length} cookies, domains: ${[...domains].join(", ")}`);
+    cookies.push(...parsed);
+  }
+  return { cookies, files };
+}
+
 const SELECTORS = [
   "#onetrust-accept-btn-handler",
   "#didomi-notice-agree-button",
@@ -95,8 +159,24 @@ async function main() {
     args: ["--no-sandbox"],
   });
 
+  // Throwaway-account logins first, so the sites below see them on the visit.
+  const imports = loadImports();
+  if (imports.cookies.length) {
+    await context.addCookies(imports.cookies);
+    console.log(`[import] loaded ${imports.cookies.length} cookies from ${imports.files.length} file(s) into the profile`);
+  }
+  // Visit each imported platform's front page too: (a) sites store part of
+  // the session in localStorage/IndexedDB on first load, which only a real
+  // visit creates; (b) the "<host>-after.png" screenshot is how the
+  // maintainer checks the login actually took (a logged-in home page vs a
+  // "log in or sign up" wall) before deploying the profile.
+  const importedHosts = [...new Set(imports.cookies.map((c) => c.domain.replace(/^\./, "")))]
+    .filter((d) => d.split(".").length === 2)           // registrable roots only: threads.com, not www.threads.com
+    .map((d) => `https://www.${d}/`);
+  const visits = [...importedHosts.map((url) => ({ url, imported: true })), ...TARGETS.map((url) => ({ url }))];
+
   const results = [];
-  for (const url of TARGETS) {
+  for (const { url, imported } of visits) {
     const host = new URL(url).hostname;
     const page = await context.newPage();
     try {
@@ -106,9 +186,17 @@ async function main() {
       const r = await dismissBanner(page);
       await page.waitForTimeout(1500);
       await page.screenshot({ path: path.join(SHOTS_DIR, `${host}-after.png`) }).catch(() => {});
-      results.push({ url, host, ok: true, ...r });
+      // Cheap login heuristic for imported platforms: a wall page says so in
+      // its title/body. Not authoritative -- the maintainer looks at the
+      // screenshot -- but it makes an obviously-failed import loud in results.json.
+      let loginWall = null;
+      if (imported) {
+        const text = ((await page.title().catch(() => "")) + " " + (await page.locator("body").innerText().catch(() => ""))).toLowerCase();
+        loginWall = /log in or sign up|sign up to see|you must log in|sign in to confirm/.test(text);
+      }
+      results.push({ url, host, ok: true, imported: !!imported, ...(imported ? { loginWall } : {}), ...r });
     } catch (e) {
-      results.push({ url, host, ok: false, error: e.message });
+      results.push({ url, host, ok: false, imported: !!imported, error: e.message });
     } finally {
       await page.close();
     }

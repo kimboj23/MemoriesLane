@@ -1,0 +1,7 @@
+# Optional clearnet TLS (docker compose --profile tls). Caddy fetches and
+# renews a Let's Encrypt certificate for MIRROR_DOMAIN automatically; DNS for
+# that name must already point at this host.
+{$MIRROR_DOMAIN} {
+    reverse_proxy web:80
+    encode gzip
+}

@@ -121,6 +121,18 @@ for s in Snapshot.objects.all():
         tag, _ = Tag.objects.get_or_create(name=TAG_NAME)
         s.tags.add(tag)
         s.save()
+        # Push the tag through to the snapshot's on-disk index.json/index.html
+        # too. ArchiveBox only regenerates those during a capture, so a tag
+        # added here lived in the SQLite index alone -- invisible to anything
+        # that serves the archive directory without Django, i.e. every static
+        # mirror (mirror/). A mirror showing a CAPTCHA capture with no
+        # "bot-wall" marker is exactly the failure this sweep exists to
+        # prevent. Same call the index.html self-heal patch uses.
+        try:
+            from index import write_link_details
+            write_link_details(s.as_link_with_details(), out_dir=s.link_dir, skip_sql_index=True)
+        except Exception as e:
+            print("BOTWALL_INDEXERR %s: %s" % (s.timestamp, e))
         tagged.append((s.timestamp, hit, s.url))
 
 print("BOTWALL_TAGGED %d" % len(tagged))

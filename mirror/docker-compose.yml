@@ -1,0 +1,71 @@
+# MemoriesLane static mirror -- "Mirror B" in the security plan.
+#
+# A read-only copy of the ArchiveBox archive, pulled from the Backblaze B2
+# backup with a READ-ONLY key scoped to the archive/ prefix, served by nginx,
+# and reachable as a Tor onion service. No Django, no Chrome, no capture, no
+# credential that can delete or write anything. Compromising this host leaks
+# nothing that isn't already public and destroys nothing.
+#
+# Runs anywhere with docker: a $5 VPS in another jurisdiction, a volunteer's
+# machine, a Raspberry Pi. See README.md in this directory -- ~20 minutes.
+#
+#   cp b2.env.example b2.env      # fill in the read-only key + bucket
+#   docker compose up -d          # sync + web (127.0.0.1:8080) + tor
+#   docker compose --profile tls up -d   # additionally: Caddy with automatic
+#                                        # Let's Encrypt on MIRROR_DOMAIN (80/443)
+
+services:
+  # Pulls archive/ from B2 every SYNC_INTERVAL_SECONDS and regenerates the
+  # front page from each snapshot's index.json. rclone copy only -- never
+  # sync -- so a snapshot that disappears upstream stays on the mirror.
+  sync:
+    build: ./sync
+    env_file: ./b2.env
+    volumes:
+      - mirror-data:/srv/data
+      # read-only view of the onion hostname so the front page can print it
+      - tor-keys:/var/lib/tor:ro
+    restart: unless-stopped
+
+  web:
+    image: nginx:1.27-alpine
+    ports:
+      - "127.0.0.1:8080:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./headers.conf:/etc/nginx/snippets/headers.conf:ro
+      - ./static:/srv/static:ro
+      - mirror-data:/srv/data:ro
+    depends_on:
+      - sync
+    restart: unless-stopped
+
+  # v3 onion service pointing at nginx. The key pair lives in tor-keys; back
+  # it up if you want the same .onion address to survive a rebuild.
+  tor:
+    build: ./tor
+    volumes:
+      - tor-keys:/var/lib/tor
+    depends_on:
+      - web
+    restart: unless-stopped
+
+  # Optional clearnet TLS. Skip if you put Deflect/another proxy in front.
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["tls"]
+    env_file: ./b2.env          # only for MIRROR_DOMAIN
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on:
+      - web
+    restart: unless-stopped
+
+volumes:
+  mirror-data:
+  tor-keys:
+  caddy-data:

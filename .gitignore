@@ -43,3 +43,5 @@ nocodb/nocodb.env
 backup/secrets.passphrase
 # laptop copies of the ArchiveBox index snapshots (password hashes inside) -- never commit
 backup/archivebox/
+# mirror: read-only B2 key for a mirror host
+mirror/b2.env
