@@ -20,6 +20,7 @@ from playwright.async_api import Error as PWError
 from playwright.async_api import TimeoutError as PWTimeout
 
 from ..config import settings
+from ..gate import RESTRICTED_PHRASES
 from ..models import ArtifactDraft, WitnessResult
 from ..urls import canonicalize, is_login_url
 
@@ -260,6 +261,47 @@ async def _capture_embed(context: BrowserContext, url: str, work_dir: str, res: 
     return info
 
 
+_SEE_WHY = re.compile(r"^\s*(xem lý do|see why|learn more|tìm hiểu thêm)\s*$", re.IGNORECASE)
+
+
+async def _capture_restriction_notice(page: Page, served_text: str, work_dir: str, res: WitnessResult) -> str | None:
+    """If the platform withholds the content ("This content isn't available to everyone"), open its
+    "See why" explanation and keep it: for this archive the reason, e.g. "after a legal request",
+    is evidence in its own right."""
+    if not _has_any(served_text, RESTRICTED_PHRASES):
+        return None
+    res.signals["restricted_notice"] = True
+    try:
+        btn = page.get_by_text(_SEE_WHY).first
+        if not await btn.count():
+            btn = page.get_by_role("button", name=_SEE_WHY).first
+        if not await btn.count():
+            return served_text.strip()[:2000]
+        await btn.click(timeout=5000)
+        await page.wait_for_timeout(2500)
+        text = (await page.evaluate(
+            "() => { const d = document.querySelector('[role=\"dialog\"]'); return (d || document.body).innerText; }")) or ""
+        shot = os.path.join(work_dir, "restriction-notice.png")
+        await page.screenshot(path=shot)
+        res.artifacts.append(ArtifactDraft("screenshot", "context", "restriction-notice", shot, mime="image/png",
+                                           source_url=page.url))
+        path = os.path.join(work_dir, "restriction-notice.txt")
+        _write(path, text)
+        res.artifacts.append(ArtifactDraft("text", "context", "restriction-notice-text", path,
+                                           mime="text/plain; charset=utf-8"))
+        await page.keyboard.press("Escape")
+        await page.wait_for_timeout(500)
+        return text.strip()[:4000]
+    except (PWError, PWTimeout) as e:
+        res.signals["restricted_notice_error"] = str(e).split("\n")[0][:200]
+        return served_text.strip()[:2000]
+
+
+def _has_any(text: str, phrases: list[str]) -> bool:
+    t = (text or "").lower()
+    return any(p in t for p in phrases)
+
+
 async def run(browser: Browser, url: str, platform: str, kind: str, work_dir: str) -> WitnessResult:
     res = WitnessResult(name="view", tool_version=f"chromium {browser.version}")
     os.makedirs(work_dir, exist_ok=True)
@@ -294,6 +336,8 @@ async def run(browser: Browser, url: str, platform: str, kind: str, work_dir: st
         served_text = (await page.evaluate("() => document.body ? document.body.innerText : ''")) or ""
         meta = await page.evaluate(_META_JS)
         og = meta.get("og") or {}
+
+        notice = await _capture_restriction_notice(page, served_text, work_dir, res)
 
         removed = await page.evaluate(_STRIP_OVERLAYS_JS)
         await page.wait_for_timeout(500)
@@ -334,6 +378,7 @@ async def run(browser: Browser, url: str, platform: str, kind: str, work_dir: st
             "image": og.get("og:image"),
             "canonical": meta.get("canonical") or og.get("og:url"),
             "site_name": og.get("og:site_name"),
+            "restriction_notice": notice,
             "page_text_chars": len(cleaned_text.strip()),
             # underscore keys are for the gate only and are not persisted
             "_served_text": served_text[:20000],

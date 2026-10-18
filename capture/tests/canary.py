@@ -33,7 +33,7 @@ def load_canary() -> list[tuple[str, str, str]]:
     return [(c["url"], c["min"], c.get("note", "")) for c in json.loads(path.read_text(encoding="utf-8"))]
 
 
-RANK = {"failed": 0, "walled": 1, "unavailable": 1, "partial": 2, "complete": 3}
+RANK = {"failed": 0, "walled": 1, "restricted": 1, "unavailable": 1, "partial": 2, "complete": 3}
 
 
 def call(method: str, path: str, body: dict | None = None) -> dict:

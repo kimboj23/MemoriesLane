@@ -7,7 +7,9 @@ Here every capture gets one verdict, with reasons:
   complete     the primary content is there (author + full text, and the media for media posts)
   partial      some primary content (e.g. text cut at "Xem thêm", or a video without its caption)
   walled       no primary content; a login/consent/bot wall was served instead
-  unavailable  no primary content; the platform says it is gone/restricted (itself evidence)
+  restricted   no primary content; the platform withholds it from this viewer or region, e.g. Meta's
+               "restricted ... after a legal request". The notice itself is captured: evidence of censorship
+  unavailable  no primary content; the platform says it is gone (itself evidence)
   failed       nothing usable, no clear reason (retried)
 
 A Wayback link never upgrades a verdict (it is context only).
@@ -50,10 +52,20 @@ UNAVAILABLE_PHRASES = [
     "rất tiếc, trang này hiện không khả dụng", "video unavailable", "video không có sẵn", "this video has been removed",
     "this post is unavailable", "bài viết này không có sẵn", "thread không hiển thị", "post unavailable",
     "this account doesn’t exist", "this account doesn't exist", "page not found", "không tìm thấy trang",
-    "not available in your country", "không có sẵn ở quốc gia",
+    "không có thread", "thread unavailable",
 ]
-RESTRICTED_PHRASES = ["không hiển thị tại việt nam", "not available in vietnam", "restricted in your country",
-                      "do chúng tôi đáp ứng yêu cầu"]
+# Withheld from this viewer/region rather than gone. Meta's wording (verified on a Threads post,
+# 2026-10-18): "This content isn't available to everyone / It can't be seen by certain audiences",
+# and behind "See why": "We received a legal request to restrict this content".
+RESTRICTED_PHRASES = [
+    "this content isn't available to everyone", "it can't be seen by certain audiences",
+    "nội dung này không hiển thị với tất cả mọi người", "một số đối tượng không thể xem nội dung này",
+    "we received a legal request to restrict", "chúng tôi nhận được yêu cầu pháp lý",
+    "restricted access to the content", "đã hạn chế khả năng tiếp cận",
+    "không hiển thị tại việt nam", "not available in vietnam", "restricted in your country",
+    "not available in your country", "không có sẵn ở quốc gia", "do chúng tôi đáp ứng yêu cầu",
+]
+LEGAL_PHRASES = ["legal request", "yêu cầu pháp lý", "local law", "luật sở tại", "đáp ứng yêu cầu", "ministry"]
 
 # Cut-off text: a "Xem thêm"/"See more" line anywhere (Facebook puts the like/comment
 # counts after it), or a line ending in an ellipsis, optionally followed by "Xem thêm".
@@ -67,7 +79,9 @@ def _has(text: str, phrases: list[str]) -> list[str]:
 
 
 def _text_ok(text: str | None) -> bool:
-    return bool(text) and len(text.strip()) >= 15 and not _has(text, WALL_PHRASES)
+    """Real post text: not a platform notice ("Không có thread", a login prompt, a restriction message)."""
+    return (bool(text) and len(text.strip()) >= 15 and not _has(text, WALL_PHRASES)
+            and not _has(text, UNAVAILABLE_PHRASES) and not _has(text, RESTRICTED_PHRASES))
 
 
 def merge_extracted(results: dict[str, WitnessResult]) -> dict:
@@ -110,9 +124,12 @@ def judge(platform: str, kind: str, results: dict[str, WitnessResult]) -> Verdic
     truncated = bool(merged.get("text_truncated"))
 
     served = " ".join([vx.get("_served_text", ""), vx.get("_page_title", "")])
+    notice = vx.get("restriction_notice") or ""
     walls = _has(served, BOT_WALL_PHRASES if platform in ("web", "document") else WALL_PHRASES)
-    unavailable = _has(served + " " + embed_text, UNAVAILABLE_PHRASES)
-    restricted = _has(served + " " + embed_text, RESTRICTED_PHRASES)
+    restricted = _has(" ".join([served, embed_text, notice]), RESTRICTED_PHRASES)
+    # "This content isn't available to everyone" also contains "this content isn't available":
+    # when it is a restriction, it is not also a removal.
+    unavailable = [] if restricted else _has(served + " " + embed_text, UNAVAILABLE_PHRASES)
     final_urls = " ".join(r.final_url or "" for r in results.values())
     if "error=invalid_post" in final_urls:
         unavailable.append("threads invalid_post")
@@ -171,7 +188,13 @@ def judge(platform: str, kind: str, results: dict[str, WitnessResult]) -> Verdic
         return Verdict(content, ["primary content captured"] + reasons if content == "complete" else reasons, merged)
 
     if restricted:
-        return Verdict("unavailable", reasons + ["restricted: " + ", ".join(restricted[:2])], merged)
+        legal = _has(notice + " " + served, LEGAL_PHRASES)
+        why = ("restricted after a legal request (platform notice captured)" if legal
+               else "restricted: not shown to this viewer/region")
+        out = [why, "re-capture from another egress country or with a logged-in session may reach it"]
+        if notice:
+            merged["restriction_notice"] = notice[:2000]
+        return Verdict("restricted", [r for r in reasons if not r.startswith("wall served")] + out, merged)
     if unavailable:
         return Verdict("unavailable", reasons + ["unavailable: " + ", ".join(unavailable[:3])], merged)
     if walls or login:

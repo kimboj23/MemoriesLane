@@ -123,3 +123,32 @@ def test_facebook_embed_truncation_detected_despite_trailing_counts():
                                                 embed_shot=True, images=1)})
     assert v.verdict == "partial"
     assert v.extracted["text_truncated"] is True
+
+
+THREADS_RESTRICTED = ("Đăng nhập Nội dung này không hiển thị với tất cả mọi người "
+                      "Một số đối tượng không thể xem nội dung này. Xem lý do")
+META_LEGAL_NOTICE = ("Cách chúng tôi ra quyết định này. Chúng tôi nhận được yêu cầu pháp lý đề nghị hạn chế nội dung "
+                     "này ... đã hạn chế khả năng tiếp cận nội dung này ở quốc gia và vùng lãnh thổ nào xác định "
+                     "nội dung này vi phạm luật sở tại.")
+
+
+def test_threads_legal_restriction_is_restricted_not_complete():
+    # Real case 2026-10-18: the embed said "Không có thread" (15 chars) and was mistaken for post text.
+    r = view(served=THREADS_RESTRICTED, embed_text="Không có thread", author="@user.d", embed_shot=True)
+    r.extracted["restriction_notice"] = META_LEGAL_NOTICE
+    v = judge("threads", "post", {"media": media(error="skipped", skipped=True), "view": r})
+    assert v.verdict == "restricted"
+    assert any("legal request" in x for x in v.reasons)
+    assert "yêu cầu pháp lý" in v.extracted["restriction_notice"]
+
+
+def test_restriction_without_notice_is_still_restricted():
+    v = judge("threads", "post", {"view": view(served="This content isn't available to everyone. "
+                                                     "It can't be seen by certain audiences. See why")})
+    assert v.verdict == "restricted"
+
+
+def test_platform_notice_is_never_post_text():
+    v = judge("threads", "post", {"view": view(served="", text="Không có thread", embed_text="Không có thread",
+                                                author="@user.d", embed_shot=True)})
+    assert v.verdict != "complete"
