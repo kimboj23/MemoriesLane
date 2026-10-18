@@ -87,6 +87,8 @@ export async function itemPage(view, id) {
             w.error ? el("span", { class: "muted small" }, w.error) : "")
         : el("p", { class: "muted" }, t("waybackNone")),
       item.can_edit && !busy ? el("button", { type: "button", id: "send-wayback", onclick: async () => {
+        // Public and permanent: always ask first.
+        if (!confirm(t("confirmWayback"))) return;
         try { item.wayback = await post(`/v1/items/${id}/wayback`); await render(); } catch (e) { toast(e.message, true); }
       } }, t("sendWayback")) : "");
   }

@@ -28,7 +28,8 @@ async function baseMap(node, opts = {}) {
   const L = await loadLeaflet();
   config = config || await api("/v1/config");
   const map = L.map(node, { scrollWheelZoom: opts.scrollWheelZoom ?? false, ...opts });
-  L.tileLayer(config.tile_url, { maxZoom: 19, attribution: config.tile_attribution }).addTo(map);
+  L.tileLayer(config.tile_url, { maxZoom: 20, subdomains: config.tile_subdomains || "abc", detectRetina: false,
+                                 attribution: config.tile_attribution, referrerPolicy: "strict-origin" }).addTo(map);
   return { L, map };
 }
 

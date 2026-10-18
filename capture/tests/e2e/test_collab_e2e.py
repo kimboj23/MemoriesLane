@@ -143,9 +143,14 @@ def test_import_map_admin_and_wayback(browser):
     page.locator(".modal").get_by_role("button", name="Lưu").click()
     page.locator(".material").first.get_by_role("link", name="Xem →").click()
     expect(page.locator("#wayback")).to_be_visible()
-    page.get_by_role("button", name="Gửi lên Internet Archive").click()
-    expect(page.locator("#wayback")).to_contain_text("Bỏ qua")
-    expect(page.locator("#wayback")).to_contain_text("IA_ACCESS_KEY")
+    expect(page.get_by_role("button", name="Gửi lên Internet Archive")).to_be_visible()
+    # Never submit for real from a test: Wayback submissions are public and permanent.
+    configured = page.evaluate("() => fetch('/v1/config').then((r) => r.json()).then((c) => c.wayback_configured)")
+    if not configured:
+        page.once("dialog", lambda d: d.accept())   # the "public and permanent" confirmation
+        page.get_by_role("button", name="Gửi lên Internet Archive").click()
+        expect(page.locator("#wayback")).to_contain_text("Bỏ qua")
+        expect(page.locator("#wayback")).to_contain_text("IA_ACCESS_KEY")
 
     # Admin: add a person; their token is shown once.
     page.goto(BASE + "/app/#/admin")

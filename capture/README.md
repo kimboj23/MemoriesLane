@@ -166,8 +166,8 @@ tests/                      unit tests; e2e/ (Playwright, needs the stack); cana
   rather than linking it twice (Atlos allows the same URL in several incidents; that needs a join table).
 - Import error messages, like verdict reasons, are English only.
 - Notifications are in-app only (no email/Telegram push yet).
-- **Map tiles reveal the viewed area to the tile server** (default: OpenStreetMap's public servers, also subject
-  to their usage policy). For sensitive work set `TILE_URL` to a self-hosted or trusted tile server.
+- **Map tiles reveal the viewed area to the tile server** (default: CARTO basemaps, like the public map; OpenStreetMap's
+  own tile servers refuse apps outside their usage policy with HTTP 403). For sensitive work, self-host tiles via `TILE_URL`.
 - Saved HTML renders without its external CSS/images (deliberately: nothing external may load), so it looks unstyled; the screenshots are the visual record.
 - Set `ARTIFACT_URL_SECRET` when running more than one API process (signed URLs otherwise only verify on the process that issued them).
 - Threads (and other sites that scroll inside their own container) get a one-screen "full page" shot; the embed

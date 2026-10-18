@@ -55,10 +55,14 @@ class Settings:
 
     # Map tiles for the map view. Every tile request tells the tile server which area is being looked
     # at; point this at a self-hosted or trusted tile server for sensitive investigations.
+    # Default: CARTO Voyager, the public MemoryLane map's style. OpenStreetMap's own tile servers refuse apps
+    # that don't meet their tile usage policy (HTTP 403 "Access blocked", seen 2026-10-18). A CARTO key, if
+    # any, goes in the URL: TILE_URL=https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=...
     tile_url: str = field(default_factory=lambda: os.environ.get(
-        "TILE_URL", "https://tile.openstreetmap.org/{z}/{x}/{y}.png"))
+        "TILE_URL", "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"))
+    tile_subdomains: str = field(default_factory=lambda: os.environ.get("TILE_SUBDOMAINS", "abcd"))
     tile_attribution: str = field(default_factory=lambda: os.environ.get(
-        "TILE_ATTRIBUTION", "© OpenStreetMap contributors"))
+        "TILE_ATTRIBUTION", "© OpenStreetMap contributors · © CARTO"))
 
     # API
     cors_origins: list[str] = field(default_factory=lambda: _list("CORS_ORIGINS"))

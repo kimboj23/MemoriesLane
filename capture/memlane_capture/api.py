@@ -46,7 +46,8 @@ app.include_router(people.router)
 WEB_DIR = pathlib.Path(__file__).resolve().parent / "web"
 app.mount("/app", StaticFiles(directory=WEB_DIR, html=True), name="app")
 # Map tiles come from the configured tile server (config.tile_url); nothing else external is allowed.
-_TILE_ORIGIN = "{0.scheme}://{0.netloc}".format(urlsplit(settings.tile_url.replace("{s}", "a")))
+# A "{s}" subdomain placeholder (a/b/c/d.basemaps.cartocdn.com) becomes a wildcard for that host only.
+_TILE_ORIGIN = "{0.scheme}://{0.netloc}".format(urlsplit(settings.tile_url)).replace("{s}", "*")
 _APP_CSP = (f"default-src 'self'; img-src 'self' blob: data: {_TILE_ORIGIN}; media-src 'self' blob:; script-src 'self'; "
             "style-src 'self'; connect-src 'self'; frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; "
             "form-action 'self'")
@@ -64,7 +65,8 @@ async def app_security_headers(request: Request, call_next):
     if request.url.path.startswith("/app"):
         response.headers["Content-Security-Policy"] = _APP_CSP
         response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["Referrer-Policy"] = "no-referrer"
+        # Origin only (never paths): tile servers require a referrer under their usage policies.
+        response.headers["Referrer-Policy"] = "strict-origin"
     return response
 
 
@@ -141,7 +143,10 @@ async def me(p: Principal = Depends(current_principal)):
 
 @app.get("/v1/config")
 async def public_config():
-    return {"tile_url": settings.tile_url, "tile_attribution": settings.tile_attribution}
+    return {"tile_url": settings.tile_url, "tile_subdomains": settings.tile_subdomains,
+            "tile_attribution": settings.tile_attribution,
+            # lets tests (and the UI) know whether a Wayback request would really be submitted (publicly)
+            "wayback_configured": bool(settings.ia_access_key and settings.ia_secret_key)}
 
 
 @app.post("/v1/inbox", status_code=201)
