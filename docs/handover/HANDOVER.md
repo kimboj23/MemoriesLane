@@ -2,6 +2,26 @@
 
 Newest first. One entry per session that commits: who, which assistant, what changed and why, status, how it was tested, follow-ups with an owner, commit hashes. Details belong in the commit messages. This repo is public; see CLAUDE.md for what must never go here.
 
+## 2026-10-18 (later) · kimboj23 with Claude Code (Opus 5.5)
+
+**What:**
+- Fixed a Threads post that showed only a wall. Meta had restricted it after a legal request; it now gets the new `restricted` verdict, with Meta's "See why" notice saved as evidence.
+- Built the Atlos-style workspace: projects configured on a Manage page; incidents picked from dropdowns, with attributes, a feed and comments; source material.
+- Added in-browser viewers and a full viewer for every artifact.
+- Fixed a migration race that crashed the worker.
+
+**Why:** the user's requests: the broken Threads archive, in-browser viewing, configurable cases/incidents/projects, and an Atlos-like contributor UI.
+
+**Status:** done for this scope. Not yet: per-project membership and invites, notifications, map view, bulk import (Atlos features still to copy); WACZ; logged-in sessions; deployment.
+
+**Tested:** capture/ Docker stack. 61 unit tests and 4 e2e tests pass; API smoke test (permissions, signed URLs, ranges, CSV); canary 8/8, and the restricted post is now in the private canary list; fresh-DB migration check; screenshots reviewed at desktop and phone width.
+
+**Follow-ups:**
+- the per-project permissions decision and `ARTIFACT_URL_SECRET` (CLAUDE.md "Pending ops");
+- next build steps: share-sheet PWA + iOS Shortcut + extension, WACZ witness (next assistant session).
+
+**Commits** (branch `feat/capture-platform`, not pushed): `599b173` restricted verdict, `08b4dd7` migration lock, `968dccf` workspace + viewers, and the commit adding this entry.
+
 ## 2026-10-18 · kimboj23 with Claude Code (Opus 5.5)
 
 **What:** audited the archiving platform and started the rebuild.

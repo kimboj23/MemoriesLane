@@ -24,6 +24,8 @@ Several people work on this repo through AI coding assistants, and each needs to
 | Decide on capture egress (residential/VN proxy, or move the VPS region) | maintainers | proposal §10.2; datacenter IPs get worse results from Meta/YouTube |
 | Decide who reviews `walled` / `unavailable` captures, and where | maintainers | proposal §10.4 |
 | Create a B2 bucket + key for `capture/` artifacts (S3 backend) before any deployment | maintainers | `capture/.env.example`; keep it separate from the backup bucket |
+| Decide whether permissions should become per-project (Atlos memberships and invites) before more contributors join | maintainers | currently global roles |
+| Set `ARTIFACT_URL_SECRET` in any deployment with more than one API process | whoever deploys `capture/` | see capture/README "Known limitations" |
 | Add Internet Archive keys to `capture/.env` for the wayback witness | maintainers | the existing `IA_ACCESS_KEY`/`IA_SECRET_KEY` work (SPN2 quota checked 2026-10-18) |
 
 ## Commands
@@ -48,9 +50,13 @@ See README "Run locally" (root `docker-compose.yml`) and "Deploy" (`docker-compo
 ## Invariants: capture/
 
 - **A wall is never `complete`.** Verdicts come only from `gate.py`. A Wayback link never upgrades a verdict. Wall and unavailable phrases are lowercase English and Vietnamese. Social login-wall phrases are not applied to ordinary web pages, since VN news sites carry their own login boxes.
+- **Platform notices are never content.** "Không có thread", login prompts and restriction messages are excluded from post text (`gate._text_ok`). Content withheld by the platform ("This content isn't available to everyone", Meta's "legal request" notice) is `restricted`, and the notice behind "See why" is captured as evidence.
 - **Captures are versions.** Re-capturing adds a `captures` row; nothing is overwritten. Artifacts are content-addressed by SHA-256 and never modified or deleted in place.
 - **Never store yt-dlp's `.info.json`.** With cookies it can contain the session. Write the sanitised subset instead (`witnesses/media.py`). The output template stays `%(id).80B.%(ext)s`: title-based names broke on long Vietnamese captions.
 - **Captured content is hostile.** The UI inserts it only via `textContent` or as `blob:` media, never as HTML. Artifact downloads are served with `Content-Security-Policy: sandbox`, and the UI with a strict CSP. Chromium and yt-dlp run as the non-root `pwuser`. No `docker.sock` anywhere.
+- **Artifacts are only ever served sandboxed.** Every `/v1/artifacts` response carries `CSP: sandbox; default-src 'none'` (no scripts, nothing external loads), and the UI embeds HTML in `<iframe sandbox>`. Signed artifact URLs (`signing.py`) are issued only inside responses to users who may read the item. Don't relax either.
+- **Migrations:** add a new numbered file in `capture/migrations/`; never edit one that has been applied. The runner holds an advisory lock, because the API and worker start together.
+- **Workspace UI:** copy Atlos's *design*, not its code (Atlos is GPLv3). Render pages with `mount()`/`el()` from `web/js/core.js`. They flatten arrays and insert captured text only as text.
 - **Pin everything** (base image, Python deps, yt-dlp, Playwright). Bump deliberately, and run the canary before and after.
 - **Unit tests stay offline.** Anything needing the network goes in `tests/e2e/` or `tests/canary.py`.
 - **Throwaway accounts only** for any cookies or profiles, per [archivebox/THROWAWAY-ACCOUNTS.md](archivebox/THROWAWAY-ACCOUNTS.md), and never committed (`capture/secrets/` and `capture/.env` are gitignored).
