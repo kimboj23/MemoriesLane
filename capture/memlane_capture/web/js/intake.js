@@ -1,43 +1,36 @@
-// "Hộp tiếp nhận": submissions forwarded by the community sites (intake.py), and the admin's Sources panel.
+// Community submissions forwarded by the public sites (intake.py): their rows in the inbox, the detail page
+// (triage), and the admin's Sources panel.
 // Everything a submitter wrote is hostile text: it is inserted only with el() (textContent), never as HTML.
 import { ago, api, atLeast, copyText, el, fmtDate, isAdmin, loadProjects, modal, mount, patch, post, projectDot, sec, t, toast,
          verdictChip } from "./core.js";
 import { artifactGrid } from "./viewer.js";
 
-const STATES = ["new", "attached", "created", "published", "rejected", "all"];
 const KINDS = ["memory", "case_report", "document", "link"];
 
 function kindChip(k) { return el("span", { class: "badge" }, t("intakeKinds")[k.kind] || k.kind); }
 
-export async function intakePage(view, params) {
-  const projects = (await loadProjects()).filter((p) => !p.archived);
-  const project = params.get("project") || "";
-  const st = params.get("state") || "new";
-  const q = new URLSearchParams({ state: st, ...(project ? { project_id: project } : {}) });
-  const { intake, new_by_project: counts } = await api(`/v1/intake?${q}`);
-  const link = (o) => "#/intake?" + new URLSearchParams({ state: st, ...(project ? { project } : {}), ...o });
-  mount(view,
-    el("h1", {}, t("intakeTitle")),
-    el("p", { class: "muted" }, t("intakeHelp")),
-    el("div", { class: "row filters" },
-      el("select", { "aria-label": t("project"), onchange: (e) => { location.hash = link({ project: e.target.value }); } },
-        el("option", { value: "" }, t("allProjects")),
-        projects.filter((p) => atLeast(p.my_role, "viewer")).map((p) => el("option", { value: p.id, selected: p.id === project },
-          `${p.code} · ${p.name}${counts[p.id] ? ` (${counts[p.id]})` : ""}`)),
-        isAdmin() ? el("option", { value: "none", selected: project === "none" }, `${t("unrouted")}${counts.none ? ` (${counts.none})` : ""}`) : "")),
-    el("nav", { class: "tabs" }, STATES.map((s) => el("a", { href: link({ state: s }), "aria-current": String(s === st) }, t("intakeStates")[s]))),
-    intake.length ? el("div", { class: "table-wrap" }, el("table", { class: "inc-table" },
-      el("thead", {}, el("tr", {}, [t("submission"), t("source"), t("project"), t("received"), ""].map((h) => el("th", {}, h)))),
-      el("tbody", {}, intake.map((k) => el("tr", {},
-        el("td", {}, el("div", { class: "row" }, kindChip(k), k.legacy_public ? el("span", { class: "chip" }, t("legacyPublic")) : "",
-            k.state !== "new" ? el("span", { class: "chip" }, t("intakeStates")[k.state]) : ""),
-          el("a", { href: `#/intake/${k.id}` }, k.summary || "—"),
-          el("div", { class: "meta" }, [k.item_count ? `🔗 ${k.item_count}` : "", k.file_count ? `📎 ${k.file_count}` : "",
-            k.has_contact ? "✉" : "", k.incident ? `→ ${k.incident.slug}` : ""].filter(Boolean).join("  "))),
-        el("td", { class: "small" }, k.source.name),
-        el("td", { class: "small" }, k.project ? [projectDot(k.project), " ", k.project.code] : el("span", { class: "muted" }, t("unrouted"))),
-        el("td", { class: "nowrap small" }, ago(k.received_at)),
-        el("td", {}, el("a", { href: `#/intake/${k.id}` }, t("view") + " →"))))))) : el("p", { class: "muted" }, t("empty")));
+// One community submission in the inbox list (same look as a saved link, with its source).
+export function intakeRow(k) {
+  const open = () => { location.hash = `#/intake/${k.id}`; };
+  return el("li", { class: "item community", tabindex: "0", "data-intake": k.id, onclick: open,
+                    onkeydown: (e) => { if (e.key === "Enter") open(); } },
+    el("div", { class: "row" }, el("span", { class: "chip src-community" }, t("srcCommunity")), kindChip(k),
+      el("span", { class: "chip" }, t("intakeStates")[k.state]), k.legacy_public ? el("span", { class: "chip" }, t("legacyPublic")) : "",
+      k.project ? el("span", { class: "badge inc" }, projectDot(k.project), k.project.code) : el("span", { class: "badge" }, t("unrouted")),
+      k.incident ? el("span", { class: "badge inc" }, "→ ", k.incident.slug) : "",
+      el("span", { class: "spacer" }), el("span", { class: "meta" }, ago(k.received_at))),
+    el("div", { class: "title" }, k.summary || t("submission")),
+    el("div", { class: "snippet" }, [k.source.name, k.item_count ? `🔗 ${k.item_count}` : "", k.file_count ? `📎 ${k.file_count}` : "",
+      k.has_contact ? "✉" : ""].filter(Boolean).join(" · ")));
+}
+
+export const INTAKE_STATES = ["new", "attached", "created", "published", "rejected", "all"];
+
+// Old links (#/intake?…) land on the merged inbox, filtered to the community.
+export function intakeRedirect(params) {
+  const q = new URLSearchParams(params);
+  q.set("source", "community");
+  location.replace("#/inbox?" + q);
 }
 
 // Every payload field, as text. Nested objects (date, location, fields) are flattened to "key: value" lines.
@@ -80,7 +73,7 @@ export async function intakeDetailPage(view, id) {
       try { k = await fn(e); await render(); } catch (err) { toast(err.message, true); }
     };
     mount(view,
-      el("p", {}, el("a", { href: "#/intake" }, t("back"))),
+      el("p", {}, el("a", { href: "#/inbox?source=community" }, t("back"))),
       el("header", { class: "inc-head" },
         el("div", { class: "row" }, kindChip(k), el("span", { class: "chip" }, t("intakeStates")[k.state]),
           k.legacy_public ? el("span", { class: "chip" }, t("legacyPublic")) : "",

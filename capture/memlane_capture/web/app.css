@@ -267,3 +267,15 @@ label.btn input[type=file] { display: none; }
 pre.json { white-space: pre-wrap; overflow-wrap: anywhere; font: .75rem/1.4 ui-monospace, Menlo, Consolas, monospace; max-height: 360px; overflow: auto;
   background: var(--soft); border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
 .pick input[type=checkbox] { width: auto; align-self: flex-start; }
+
+/* inbox: the source filter */
+.source-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 16px 0 4px; }
+.source-bar .label { font-size: .8rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.seg.big { background: var(--soft); border: 1px solid var(--line); border-radius: 999px; padding: 3px; }
+.seg.big button { font-size: .92rem; padding: 6px 16px; border: 0; background: transparent; display: inline-flex; gap: 6px; align-items: center; }
+.seg.big button[aria-pressed=true] { background: var(--ink); color: var(--bg); }
+.seg.big .count { background: var(--red, #dc2626); color: #fff; border-radius: 999px; font-size: .72rem; padding: 0 6px; font-weight: 700; }
+.source-bar .todo { font-size: .85rem; padding: 5px 12px; border-radius: 999px; }
+.source-bar .todo[aria-pressed=true] { background: var(--orange-bg); border-color: var(--orange); color: var(--ink); font-weight: 600; }
+.chip.src-internal { background: var(--soft); color: var(--muted); }
+.chip.src-community { background: var(--orange-bg); color: var(--ink); }

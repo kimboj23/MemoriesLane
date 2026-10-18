@@ -81,8 +81,9 @@ Then open **http://127.0.0.1:8700/** and paste the token (Vietnamese first, `EN`
   file viewable in the browser: images, video, saved HTML (sandboxed, nothing external loads), text, JSON,
   manifest. Click any preview for the full viewer (← → between files, fit/actual size, new tab, download, SHA-256).
   The Internet Archive block shows the public Wayback copy (or why there is none) and **Gửi lên Internet Archive**.
-- **Tiếp nhận / Intake**: submissions forwarded by the community sites (MemoryLane map, Hồ sơ Nhân quyền), per
-  project. Their links were captured on arrival. Attach one to an incident, create an incident from it (fields and the
+- **Hộp thư / Inbox**, filtered by **Nguồn / Source**: *Nội bộ* (links the team saved), *Cộng đồng* (submissions
+  forwarded by the community sites: MemoryLane map, Hồ sơ Nhân quyền), or *Tất cả*; *Cần xử lý* shows only unfiled links
+  and new submissions. A submission's links were captured on arrival. Attach one to an incident, create an incident from it (fields and the
   "Nhóm hồ sơ" group prefilled), reject it, or (managers) reroute, reopen, open a sealed contact (logged).
 - **Bản công khai / Public version** (incident page, a memory in the intake, a project's "Bản công khai" tab): the
   separate public record. Wording, kind of place → public precision (policy §12.4 enforced), date detail, which

@@ -142,7 +142,18 @@ def test_intake_to_feed():
         page.goto(BASE + "/app/")
         page.fill("#token", TOKEN)
         page.click("#connect-btn")
-        page.goto(BASE + f"/app/#/intake?project={proj['id']}")
+        # One inbox, filtered by source: the submission is under "Cộng đồng" and "Tất cả", not "Nội bộ".
+        page.goto(BASE + "/app/#/inbox")
+        item = page.get_by_text(f"Tài khoản bị hạn chế {tag}")
+        expect(item).to_be_visible()
+        page.locator(".source-bar [data-source=internal]").click()
+        expect(page.locator(".source-bar [data-source=internal]")).to_have_attribute("aria-pressed", "true")
+        expect(item).to_have_count(0)
+        page.locator(".source-bar [data-source=community]").click()
+        expect(page.locator("#save-form")).to_have_count(0)            # the save sheet is for the team's own links
+        expect(item).to_be_visible()
+        page.goto(BASE + f"/app/#/intake?project={proj['id']}")      # old links redirect to the community view
+        expect(page.locator(".source-bar [data-source=community]")).to_have_attribute("aria-pressed", "true")
         expect(page.get_by_text(f"Tài khoản bị hạn chế {tag}")).to_be_visible()
         page.get_by_text(f"Tài khoản bị hạn chế {tag}").click()
         page.get_by_role("button", name="Tạo vụ việc mới từ bài gửi").click()
