@@ -12,7 +12,7 @@ Newest first. One entry per session that commits: who, which assistant, what cha
 
 **Why:** the user reported the broken map, asked that a link can belong to several incidents, and asked for an integration design.
 
-**Status:** done. The user decided integration questions 1, 2, 4, 5 (B2), 6 and 7 (recorded in §11). Still open: location precision (background added in §12) and signing-key custody (options in §13); both are in CLAUDE.md "Pending ops".
+**Status:** done. The user decided integration questions 1, 2, 4, 5 (B2), 6 and 7 (recorded in §11). Then accepted the §12.4 location policy and signing option C (offline root + online key). Still open: who holds the root key, and two optional precision details; both in CLAUDE.md "Pending ops".
 
 **Incident:** after the user added IA keys locally, an e2e test and a smoke script submitted two example.com test URLs to the Wayback Machine for real (public, permanent). No sensitive data was involved. The guard and a CLAUDE.md rule now prevent this, and every project's Internet Archive sharing is off in the dev DB.
 

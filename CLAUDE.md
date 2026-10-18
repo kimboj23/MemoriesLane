@@ -24,8 +24,8 @@ Several people work on this repo through AI coding assistants, and each needs to
 | Decide on capture egress (residential/VN proxy, or move the VPS region) | maintainers | proposal §10.2; datacenter IPs get worse results from Meta/YouTube |
 | Decide who reviews `walled` / `unavailable` captures, and where | maintainers | proposal §10.4 |
 | Create a B2 bucket + key for `capture/` artifacts (S3 backend) before any deployment | maintainers | `capture/.env.example`; keep it separate from the backup bucket |
-| Decide the public location-precision policy for the publication feed | maintainers | docs/integration-design.md §12 (starting table in §12.4) |
-| Choose signing-key custody for the publication feed (who holds the offline root) | maintainers | docs/integration-design.md §13; option C recommended |
+| Name the holders of the feed's offline root signing key (option C, decided) and write the revocation runbook, before anything is published | maintainers | docs/integration-design.md §13; 2 of 3 maintainers recommended |
+| Optional: population threshold for rural locations; whether sensitive projects skip exact internal locations | maintainers | docs/integration-design.md §12; the §12.4 table is the accepted policy |
 | Create a separate public B2 bucket for the publication feed, behind Cloudflare | maintainers | docs/integration-design.md §6.2; not the backup or artifacts bucket |
 | Set `ARTIFACT_URL_SECRET` in any deployment with more than one API process | whoever deploys `capture/` | see capture/README "Known limitations" |
 | Choose the map tile server for real use (`TILE_URL`): public OSM tiles reveal viewed areas and have a usage policy | maintainers | capture/.env.example |

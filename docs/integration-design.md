@@ -1,6 +1,6 @@
 # Integrating the capture platform with the public platforms
 
-**Status:** proposal; decisions of 2026-10-18 recorded in §11, two still open (location precision §12, signing-key custody §13) · **Date:** 2026-10-18 · **Related:** [archiving-platform-proposal.md](archiving-platform-proposal.md), [capture/README.md](../capture/README.md)
+**Status:** accepted 2026-10-18 (decisions in §11). Still open: details listed in §11 "Remaining" · **Date:** 2026-10-18 · **Related:** [archiving-platform-proposal.md](archiving-platform-proposal.md), [capture/README.md](../capture/README.md)
 
 ## 1. The question
 
@@ -234,11 +234,16 @@ The witness type `upload` (contributor files) joins `media`/`view` in the existi
 |---|---|---|---|
 | 1 | Where moderation lives | **In the hub only** | The spokes' moderation screens retire (§5.4.6) |
 | 2 | Publication approval | **A manager plus any member entrusted with publication access**, two different people | New per-project grant `can_publish` (§6.1, §7) |
-| 3 | Location precision policy | **Open**: background in §12 | Precision levels and snapping built either way; defaults set by the decision |
+| 3 | Location precision policy | **The starting policy in §12.4, accepted** | Defaults and override rules as in the table; snapping, never jitter (§12.3) |
 | 4 | Original URLs shown publicly by default | **Yes** | Shown unless the reviewer withholds it for a record (§6.1) |
-| 5 | Feed hosting | **B2** (behind Cloudflare) | §6.2. Signing-key custody is **open**: options in §13 |
+| 5 | Feed hosting and signing key | **B2** (behind Cloudflare); **option C**: offline root key + short-lived online key | §6.2, §13 |
 | 6 | Hồ sơ Nhân quyền's four groups | **One project, with a "Nhóm hồ sơ" attribute** | §6.3 |
 | 7 | Accounts on Hồ sơ Nhân quyền | **Skipped for now** | Receipt codes only (§5.2, §6.3) |
+
+**Remaining** (details; none block phases 1–2):
+- Who holds the offline root key (§13; recommended: 2 of 3 maintainers), how long an online key is valid (3–6 months), and the revocation runbook. Needed before phase 3 publishes anything.
+- Whether to add the population rule for rural private locations (a threshold N, §12.2). Until then the §12.4 table applies as written (rural private locations default to `province`).
+- Whether the most sensitive projects should skip recording an exact location internally (§12.4).
 
 ## 12. Location precision: background for decision 3
 
@@ -296,7 +301,7 @@ Notes specific to Vietnam:
 
 Anyone drafting a public version can always choose **coarser** without approval. **Finer** than the default needs both approvers and a recorded reason. Since publication already needs two people, this adds no extra step, only a visible justification.
 
-**What to decide:** accept or amend the table; pick N for the population rule if you want one; decide whether the exact internal location should be optional (e.g. "ward only, exact not recorded") for the most sensitive projects, so a breach of the hub can't reveal it either.
+**Decided 2026-10-18:** this table is the policy. **Still open:** pick N for the population rule if you want one; decide whether the exact internal location should be optional (e.g. "ward only, exact not recorded") for the most sensitive projects, so a breach of the hub can't reveal it either.
 
 ## 13. Signing-key custody: options for decision 5
 
@@ -319,5 +324,7 @@ Considerations whatever you pick:
 - **Where holders live matters.** A key holder who can be detained or pressured can be forced to sign. At least two of the root holders should be somewhere that pressure is unlikely, so a quorum can always revoke.
 - **Write down a revocation and rotation runbook** before launch: who signs, how spokes learn of it, and what is announced publicly.
 - **The public key is not a secret.** Its fingerprint goes on both sites, the mirror's index and this repo. Only the private parts stay out of the repo, per CLAUDE.md.
+
+**Decided 2026-10-18: option C.** Holders of the root are still to be named.
 
 Options C and D can be combined later. Start with C, and add approver signatures for the most sensitive records if the threat model calls for it.
