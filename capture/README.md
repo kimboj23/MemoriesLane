@@ -12,9 +12,16 @@ worker ── claims a capture (FOR UPDATE SKIP LOCKED) ──▶ resolve share 
             view     Chromium: as-served screenshot, cleaned full page, HTML, text, og/ld+json,
                      and for Facebook/Threads/Instagram the public embed page + the post's images
             wayback  Internet Archive SPN2 (context only; skipped for Meta platforms)
-          ─▶ gate: complete | partial | walled | unavailable | failed (+ reasons)
+          ─▶ gate: complete | partial | walled | restricted | unavailable | failed (+ reasons)
           ─▶ seal: SHA-256 of every file, content-addressed store, manifest.json (hashed)
 ```
+
+On top sits a **workspace modelled on Atlos** (projects → incidents → source material, with a feed):
+projects are configured on their own Manage page (code, colour, suggested tags, custom attributes, archive);
+incidents (`CODE-12`) carry Atlos's attributes (status workflow, sensitivity, tags, date, location with
+precision, assignees, custom attributes), a feed of every change with an optional reason plus comments, and
+their source material, i.e. saved links with all capture versions. The design is Atlos's; the code is not
+(Atlos is GPLv3).
 
 ## Why it is built this way
 
@@ -31,6 +38,7 @@ Each design choice answers a finding from the 2026-10-18 audit:
 | Shared admin token | personal, revocable, per-device tokens with roles |
 | Unpinned `:latest` images | base image, Python deps and yt-dlp pinned |
 | `docker.sock` in the worker | none; everything runs in-process as a non-root user |
+| Meta's legal-request restrictions recorded as "archived" (a login wall) | `restricted` verdict; the view witness opens "See why" and keeps Meta's notice (screenshot + text) as evidence |
 
 ## Run locally
 
@@ -41,10 +49,19 @@ docker compose exec api python -m memlane_capture.admin add-contributor "Me" --e
 docker compose exec api python -m memlane_capture.admin add-token me@example.org "laptop"   # prints mlc_... once
 ```
 
-Then open **http://127.0.0.1:8700/** and paste the token. The test UI (Vietnamese first, `EN` switch) is the
-same save sheet the phone share button and browser extension will open: paste a link or a whole share text,
-save, watch the status chip change, open an item to see screenshots, video, extracted text, versions and hashes.
-`/app/?url=...` or `?text=...` prefills the sheet (that is how the share target will call it).
+Then open **http://127.0.0.1:8700/** and paste the token (Vietnamese first, `EN` switch):
+
+- **Dự án / Projects**: create a project and configure it (editors): name, code, colour, suggested tags, custom attributes.
+- **Vụ việc / Incidents**: cards or table, filter by project/status, search. **+ Vụ việc mới** creates one, with
+  source links. The incident page has Attributes (each with **Cập nhật** + an optional reason), the Feed with
+  comments, Source material with inline previews, Location and Metadata.
+- **Hộp thư / Inbox** and **+ Lưu liên kết** (any page): the save sheet the share button and extension will open.
+  Paste a link or a whole share text, optionally pick Project → Incident from the dropdowns, save.
+- **An item** (a saved link): verdict and reasons, the platform's restriction notice if any, versions, and every
+  file viewable in the browser: images, video, saved HTML (sandboxed, nothing external loads), text, JSON,
+  manifest. Click any preview for the full viewer (← → between files, fit/actual size, new tab, download, SHA-256).
+
+`/app/?url=...` or `?text=...` prefills the save sheet (that is how the share target will call it).
 
 Other ways in: interactive API docs at http://127.0.0.1:8700/docs ("Authorize" with the token), or curl:
 
@@ -60,7 +77,7 @@ Stop with `docker compose down` (`down -v` also wipes the local DB and stored fi
 | What | Command | Needs |
 |---|---|---|
 | Unit (URLs, gate, embeds): offline, fast | `docker compose run --rm --no-deps api python -m pytest` | nothing |
-| End-to-end: the UI in Chromium, desktop + 375 px phone | `docker compose exec -e E2E_BASE_URL=http://api:8700 -e E2E_TOKEN=mlc_... worker python -m pytest tests/e2e` | running stack, network |
+| End-to-end: project → incident → capture → update → comment → viewers → inbox filing, desktop + 375 px phone (editor/admin token) | `docker compose exec -e E2E_BASE_URL=http://api:8700 -e E2E_TOKEN=mlc_... worker python -m pytest tests/e2e` | running stack, network |
 | Canary: real links per platform still reach their expected verdict | `CAPTURE_TOKEN=mlc_... python tests/canary.py` (from the host) | running stack, network |
 
 Run the canary before and after any dependency bump (yt-dlp, Playwright, base image).
@@ -69,18 +86,24 @@ Run the canary before and after any dependency bump (yt-dlp, Playwright, base im
 
 | Method | Path | Who | What |
 |---|---|---|---|
-| POST | `/v1/inbox` | contributor+ | Save a link: `{url}` or share-sheet `{text}`, optional `title, note, case_ref, tags, sensitive, client, new_version`. Replies at once. Already-saved links (double taps included) return `duplicate: true` with the existing item (HTTP 200); `new_version: true` captures it again, unless a capture of it is already queued or running. |
-| GET | `/v1/items?mine=&status=&limit=&before=` | contributor+ | Own saves (reviewers can pass `mine=false`) |
-| GET | `/v1/items/{id}` | owner / reviewer+ | Item, every capture (versions), verdicts, reasons, artifacts |
-| PATCH | `/v1/items/{id}` | owner / editor+ | Edit title, note, case, tags, sensitive |
-| POST | `/v1/items/{id}/recapture` | owner / reviewer+ | Capture again (new version) |
-| GET | `/v1/artifacts/{id}` | owner / reviewer+ | The file, with `X-Content-SHA256`; captured HTML is served with `CSP: sandbox` |
-| GET | `/v1/me`, `/healthz` | | |
+| POST | `/v1/inbox` | contributor+ | Save a link: `{url}` or share-sheet `{text}`, optional `incident_id, title, note, tags, sensitive, client, new_version`. Replies at once. Already-saved links (double taps included) return `duplicate: true` with the existing item (HTTP 200); `new_version: true` captures it again, unless a capture is already queued or running. |
+| GET | `/v1/items?mine=&status=&unfiled=&limit=&before=` | contributor+ | Own saves (reviewers can pass `mine=false`) |
+| GET | `/v1/items/{id}` | owner, reviewer+, or anyone once it is filed under an incident | Item, every capture (versions), verdicts, reasons, artifacts with signed URLs |
+| PATCH | `/v1/items/{id}` | owner / editor+ (filing via `incident_id`: anyone who can see it) | Edit note, tags, sensitive; file under / remove from an incident (both logged in the feed) |
+| POST | `/v1/items/{id}/recapture` | as GET | Capture again (new version) |
+| GET | `/v1/artifacts/{id}` | Bearer token, or the signed URL from an item response | The file, with `X-Content-SHA256` and byte ranges; always `CSP: sandbox; default-src 'none'` |
+| GET/POST | `/v1/projects`, GET/PATCH `/v1/projects/{id}` | read: all; write: editor+ | Projects: code, name, description, colour, `tag_options`, custom `attributes`, `archived` |
+| GET/POST | `/v1/incidents`, GET/PATCH `/v1/incidents/{id}` | contributor+ (Completed/Cancelled: reviewer+) | Incidents; PATCH takes any attribute plus an optional `reason`; GET includes material and the feed |
+| POST | `/v1/incidents/{id}/comments`, `/v1/incidents/{id}/material` | contributor+ | Comment; add source material (same as the inbox, filed) |
+| GET | `/v1/incidents.csv?project_id=` | contributor+ | Export (Atlos-style) |
+| GET | `/v1/contributors`, `/v1/me`, `/healthz` | | |
 
 ## Layout
 
 ```
 migrations/001_init.sql     capture.{contributors,tokens,items,captures,artifacts}
+migrations/002_restricted.sql the `restricted` verdict
+migrations/003_workspace.sql capture.{projects,incidents,updates}, items.incident_id
 memlane_capture/
   urls.py                   extract link from shared text, canonicalise (dedupe key), classify, login-URL detection
   resolve.py                follow share links / shorteners
@@ -91,13 +114,20 @@ memlane_capture/
   seal.py, storage.py       hashing, manifest, content-addressed local/S3 storage
   pipeline.py, worker.py    one capture end to end; the queue loop
   api.py, auth.py, admin.py HTTP API, tokens/roles, admin CLI
-  web/                      test UI (static, no build): save sheet, list, detail; served at /app
+  workspace.py              projects, incidents, feed, comments, CSV export (Atlos model)
+  inbox_core.py             saving a link (shared by the inbox and incidents)
+  signing.py                short-lived signed artifact URLs for <img>/<video>/<iframe>
+  web/                      the workspace UI (static ES modules, no build), served at /app:
+                              js/core.js (API, i18n, helpers), inbox.js, incidents.js, item.js, viewer.js, projects.js, main.js
 tests/                      unit tests; e2e/ (Playwright, needs the stack); canary.py
 ```
 
 ## Known limitations
 
 - Reasons in verdicts are English strings from `gate.py`; the UI translates statuses but not reasons yet.
+- Permissions are global roles; Atlos's per-project membership and invite links are not built yet.
+- Saved HTML renders without its external CSS/images (deliberately: nothing external may load), so it looks unstyled; the screenshots are the visual record.
+- Set `ARTIFACT_URL_SECRET` when running more than one API process (signed URLs otherwise only verify on the process that issued them).
 - Threads (and other sites that scroll inside their own container) get a one-screen "full page" shot; the embed
   card and extracted text hold the whole post, but long reply threads are cut off.
 - YouTube sometimes returns HTTP 403 on the video stream (its PO-token experiment); the capture retries with
@@ -109,5 +139,6 @@ tests/                      unit tests; e2e/ (Playwright, needs the stack); cana
 - browsertrix-crawler WACZ witness (replayable archive) and a replay viewer
 - logged-in sessions per platform (throwaway-account profiles), carousel walk, OCR guard, circuit breaker
 - RFC 3161 / OpenTimestamps on the manifest hash
-- scheduled canary; PWA share target + iOS Shortcut + browser extension on top of this UI; review workflow
+- per-project membership, invites, notifications/subscriptions, map view, bulk CSV import (Atlos features still to copy)
+- scheduled canary; PWA share target + iOS Shortcut + browser extension on top of the save sheet
 - deployment (B2 storage, VPS) and migration of the old `archives` rows

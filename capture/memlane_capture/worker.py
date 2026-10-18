@@ -85,6 +85,14 @@ async def _finish(pool, cap: dict, item: dict, outcome) -> None:
                 " platform = %s, kind = %s, title = COALESCE(title, %s), updated_at = now() WHERE id = %s",
                 ("queued" if retry else v.verdict, cap["id"], outcome.resolved_url, outcome.platform, outcome.kind,
                  (extracted.get("title") or "")[:300] or None, item["id"]))
+            if not retry:
+                # Source material of an incident: the result goes into that incident's feed (as "the system").
+                await conn.execute(
+                    "INSERT INTO capture.updates (incident_id, item_id, kind, new_value, body)"
+                    " SELECT incident_id, id, 'capture', %s, %s FROM capture.items"
+                    " WHERE id = %s AND incident_id IS NOT NULL",
+                    (Jsonb({"verdict": v.verdict, "capture_id": str(cap["id"])}), "; ".join(v.reasons)[:1000],
+                     item["id"]))
     log.info("capture %s %s -> %s%s (%s)", cap["id"], item["canonical_url"], v.verdict,
              " (will retry)" if retry else "", "; ".join(v.reasons)[:200])
 

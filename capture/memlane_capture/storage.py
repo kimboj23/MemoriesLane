@@ -49,8 +49,11 @@ class LocalStorage:
         shutil.copyfile(path, tmp)
         os.replace(tmp, dest)
 
-    def open(self, key: str) -> BinaryIO:
-        return open(self.root / key, "rb")
+    def open(self, key: str, start: int | None = None, end: int | None = None) -> BinaryIO:
+        f = open(self.root / key, "rb")
+        if start:
+            f.seek(start)
+        return f
 
     def size(self, key: str) -> int:
         return (self.root / key).stat().st_size
@@ -78,16 +81,24 @@ class S3Storage:
             pass
         self.client.upload_file(path, self.bucket, full, ExtraArgs={"ContentType": mime})
 
-    def open(self, key: str) -> BinaryIO:
-        return self.client.get_object(Bucket=self.bucket, Key=self.prefix + key)["Body"]
+    def open(self, key: str, start: int | None = None, end: int | None = None) -> BinaryIO:
+        extra = {"Range": f"bytes={start or 0}-{'' if end is None else end}"} if start is not None else {}
+        return self.client.get_object(Bucket=self.bucket, Key=self.prefix + key, **extra)["Body"]
 
     def size(self, key: str) -> int:
         return self.client.head_object(Bucket=self.bucket, Key=self.prefix + key)["ContentLength"]
 
 
-def iter_chunks(f: BinaryIO) -> Iterator[bytes]:
+def iter_chunks(f: BinaryIO, limit: int | None = None) -> Iterator[bytes]:
+    """Stream a file in chunks, stopping after `limit` bytes if given (for range requests)."""
+    remaining = limit
     try:
-        while chunk := f.read(CHUNK):
+        while remaining is None or remaining > 0:
+            chunk = f.read(CHUNK if remaining is None else min(CHUNK, remaining))
+            if not chunk:
+                break
+            if remaining is not None:
+                remaining -= len(chunk)
             yield chunk
     finally:
         f.close()
