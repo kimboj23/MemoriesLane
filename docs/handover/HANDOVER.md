@@ -2,6 +2,37 @@
 
 Newest first. One entry per session that commits: who, which assistant, what changed and why, status, how it was tested, follow-ups with an owner, commit hashes. Details belong in the commit messages. This repo is public; see CLAUDE.md for what must never go here.
 
+## 2026-10-19 · kimboj23 with Claude Code (Opus 5.5)
+
+**What:** built the whole integration design (docs/integration-design.md §14):
+- **Hub (capture/):**
+  - signed Intake API for community sites, with sources and receipts;
+  - file quarantine and cleaning;
+  - public versions under the §12.4 location policy, with two-person approval, withdrawal and legacy batches;
+  - a feed signed with an offline root key and a delegated online key, served from a local dir or B2.
+- **Inbox:** "Hộp thư" and the intake are merged into one inbox with a source filter (Tất cả / Nội bộ / Cộng đồng, plus "Cần xử lý"), as the user asked.
+- **Community map (backend, app):** a transactional outbox and relay to the hub, the purging of forwarded copies, a verified feed reader, generalised locations drawn as areas, receipts, and a legacy export script. All of it is off unless `HUB_*` is set.
+- **Hồ sơ Nhân quyền:** docs/spoke-integration.md plus `backend/lib/hub-client.js`. Its code isn't in this repo.
+
+**Why:** the user accepted the design and asked to build all of it. Decisions recorded in §11/§13:
+- the root key is held by one designated maintainer with a sealed backup ("2 of 3" to be reconsidered later);
+- the optional population threshold and "no exact internal location" option were skipped.
+
+**Status:** built and tested locally. Not deployed: needs production keys, the B2 bucket and the switch-on steps (CLAUDE.md "Pending ops").
+
+**Tested:**
+- capture/ Docker stack: 104 unit tests (32 new) and 7 e2e tests (new: test_intake_e2e).
+- A 74-check hub smoke test driven through the Node client.
+- The community backend on Node 22 against a throwaway Postgres and the local hub: 24 checks. It ran without the production `backend/.env`; no Supabase or Internet Archive calls were made.
+- Chromium screenshots at 1280 and 390 px.
+
+**Follow-ups:**
+- the designated maintainer: generate the production root key offline, make the sealed backup, delegate an online key, write the revocation runbook;
+- maintainers: the B2 feed bucket and the switch-on steps;
+- Hồ sơ Nhân quyền developers: implement the spoke from the guide.
+
+**Commits** (branch `feat/capture-platform`, not pushed): `d4f71e9` hub intake/publication/feed, `b2f38d2` one inbox with a source filter, `dce1d09` community map as a spoke, and the commit adding this entry.
+
 ## 2026-10-18 (night) · kimboj23 with Claude Code (Opus 5.5)
 
 **What:**

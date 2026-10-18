@@ -24,8 +24,10 @@ Several people work on this repo through AI coding assistants, and each needs to
 | Decide on capture egress (residential/VN proxy, or move the VPS region) | maintainers | proposal §10.2; datacenter IPs get worse results from Meta/YouTube |
 | Decide who reviews `walled` / `unavailable` captures, and where | maintainers | proposal §10.4 |
 | Create a B2 bucket + key for `capture/` artifacts (S3 backend) before any deployment | maintainers | `capture/.env.example`; keep it separate from the backup bucket |
-| Name the holders of the feed's offline root signing key (option C, decided) and write the revocation runbook, before anything is published | maintainers | docs/integration-design.md §13; 2 of 3 maintainers recommended |
-| Optional: population threshold for rural locations; whether sensitive projects skip exact internal locations | maintainers | docs/integration-design.md §12; the §12.4 table is the accepted policy |
+| Generate the production feed root key offline, make the sealed backup, delegate an online key (`feedkeys.py`), write the revocation runbook, before anything is published | the designated maintainer | docs/integration-design.md §13 (one holder + sealed backup for now; "2 of 3" to be reconsidered) |
+| Deploy the hub's intake + feed: `INTAKE_KEY_SECRET`, `CONTACT_SECRET_KEY`, feed keys, `FEED_*` for the B2 bucket; register the sources | whoever deploys `capture/` | capture/README "Community intake and the public feed" |
+| Switch the community map to the hub: `HUB_*`, `PUBLIC_SOURCE=both`, run `scripts/export-to-hub.js --commit`, approve the legacy batch, later `PUBLIC_SOURCE=feed` | maintainers | backend/README "Connecting to the MemoryLane hub" |
+| Hồ sơ Nhân quyền: implement the spoke on its own codebase | its developers | docs/spoke-integration.md |
 | Create a separate public B2 bucket for the publication feed, behind Cloudflare | maintainers | docs/integration-design.md §6.2; not the backup or artifacts bucket |
 | Set `ARTIFACT_URL_SECRET` in any deployment with more than one API process | whoever deploys `capture/` | see capture/README "Known limitations" |
 | Choose the map tile server for real use (`TILE_URL`): public OSM tiles reveal viewed areas and have a usage policy | maintainers | capture/.env.example |

@@ -1,6 +1,6 @@
 # Integrating the capture platform with the public platforms
 
-**Status:** accepted 2026-10-18 (decisions in §11). Still open: details listed in §11 "Remaining" · **Date:** 2026-10-18 · **Related:** [archiving-platform-proposal.md](archiving-platform-proposal.md), [capture/README.md](../capture/README.md)
+**Status:** accepted 2026-10-18 (decisions in §11) and **built** 2026-10-19 (§14) · **Date:** 2026-10-18 · **Related:** [archiving-platform-proposal.md](archiving-platform-proposal.md), [capture/README.md](../capture/README.md)
 
 ## 1. The question
 
@@ -61,7 +61,7 @@ Publication is a **signed static feed** (JSON plus files on a public bucket and 
 Each spoke is registered in the hub as a **source**, such as `memorylane-map` or `ho-so-nhan-quyen`, with:
 
 - a **service key** that may only call `/intake/v1/*`, held only by the spoke's backend and never sent to the browser;
-- request signing: `X-Source`, `X-Timestamp` and `X-Signature = HMAC-SHA256(key, timestamp + method + path + sha256(body))`, rejected if older than 5 minutes or replayed (nonce cache);
+- request signing: `X-ML-Source`, `X-ML-Timestamp`, `X-ML-Nonce` and `X-ML-Signature = HMAC-SHA256(key, timestamp, nonce, method, path, sha256(body))`, rejected if older than 5 minutes or if the nonce was seen before (exact format: [spoke-integration.md](spoke-integration.md) §2.1);
 - a per-source rate limit and size quota; optionally an IP allowlist for the spoke's backend.
 
 ### 5.2 Endpoints
@@ -105,7 +105,7 @@ Contact details are encrypted in the browser to the hub's public key (libsodium 
 
 1. **Store** it in `capture.intake`, pending, together with its source and external id. Attachments go to quarantine storage: type sniffing, size limits, image re-encoding with EXIF and GPS stripped (the original kept, sealed, for evidence), optional ClamAV scan for documents.
 2. **Capture every link immediately.** Each URL becomes an item and is captured as usual, even before review, because posts get deleted fast. It stays unfiled and private until triage.
-3. **Seal attachments as evidence.** A contributor-provided file becomes an artifact of a new witness type `upload`, hashed and in the manifest, and labelled *provided by a contributor*. It is never presented as our own capture.
+3. **Seal attachments as evidence.** A contributor-provided file is stored content-addressed and hashed exactly as received (`capture.intake_files`), labelled *provided by a contributor*. It is never presented as our own capture.
 4. **Route** it to the right project's **Hộp tiếp nhận** (intake inbox) using source rules, e.g. MemoryLane memories → project "Bản đồ ký ức"; Hồ sơ Nhân quyền case reports by group → the matching project; a `case_ref` that maps to a published incident → straight to that incident's intake.
 5. **Triage** (viewer+ can comment, editor+ can act), in an Atlos-style queue:
    - **attach** to an existing incident (the items are filed via `item_incidents`), **create** a new incident from it, or **reject** with a reason;
@@ -144,7 +144,6 @@ A static tree on a dedicated public **Backblaze B2** bucket served through Cloud
 /feed/v1/index.json.sig        Ed25519 signature of index.json; the public key is published on both sites
 /feed/v1/records/{public_id}.json
 /feed/v1/files/{sha256}.{ext}  content-addressed public files (cleaned derivatives)
-/feed/v1/changes/{yyyy-mm-dd}.json   incremental changes, so spokes don't re-read everything
 ```
 
 ```json
@@ -163,7 +162,7 @@ A static tree on a dedicated public **Backblaze B2** bucket served through Cloud
 }
 ```
 
-Spokes read `index.json` and `changes/` (polling every few minutes, or nudged by a webhook the publisher sends) and verify the signature before trusting anything. Mirrors copy the whole tree; the signature lets readers check that a mirror hasn't altered it.
+Spokes read `index.json` (polling every few minutes, or nudged by a webhook the publisher sends; records whose hash is unchanged are not re-fetched) and verify the signature before trusting anything. Mirrors copy the whole tree; the signature lets readers check that a mirror hasn't altered it.
 
 ### 6.3 What each spoke shows
 
@@ -195,7 +194,7 @@ capture.publication_files(publication_id, artifact_id, derivative_sha256, kind, 
 capture.public_refs      (public_id, source_id, external_ref)   -- e.g. a spoke's old case id -> public_id
 ```
 
-The witness type `upload` (contributor files) joins `media`/`view` in the existing artifact model. The feed publisher is a third worker loop, next to captures and Internet Archive copies.
+Contributor files live in `intake_files`, not as capture artifacts, and cleaned public copies in `public_files`. The feed publisher is a third worker loop, next to captures and Internet Archive copies. (As built: see `capture/migrations/006_intake_publication.sql`.)
 
 ## 8. Security and safety
 
@@ -240,10 +239,12 @@ The witness type `upload` (contributor files) joins `media`/`view` in the existi
 | 6 | Hồ sơ Nhân quyền's four groups | **One project, with a "Nhóm hồ sơ" attribute** | §6.3 |
 | 7 | Accounts on Hồ sơ Nhân quyền | **Skipped for now** | Receipt codes only (§5.2, §6.3) |
 
-**Remaining** (details; none block phases 1–2):
-- Who holds the offline root key (§13; recommended: 2 of 3 maintainers), how long an online key is valid (3–6 months), and the revocation runbook. Needed before phase 3 publishes anything.
-- Whether to add the population rule for rural private locations (a threshold N, §12.2). Until then the §12.4 table applies as written (rural private locations default to `province`).
-- Whether the most sensitive projects should skip recording an exact location internally (§12.4).
+**Later decisions (2026-10-18):**
+- Root key custody (§13): **one designated maintainer with a sealed backup** for this stage. Revisit "2 of 3
+  maintainers" later.
+- The population threshold for rural locations and the "no exact internal location" option: **skipped**. The §12.4
+  table applies as written.
+- Build everything as proposed (§14 records what was built).
 
 ## 12. Location precision: background for decision 3
 
@@ -301,7 +302,7 @@ Notes specific to Vietnam:
 
 Anyone drafting a public version can always choose **coarser** without approval. **Finer** than the default needs both approvers and a recorded reason. Since publication already needs two people, this adds no extra step, only a visible justification.
 
-**Decided 2026-10-18:** this table is the policy. **Still open:** pick N for the population rule if you want one; decide whether the exact internal location should be optional (e.g. "ward only, exact not recorded") for the most sensitive projects, so a breach of the hub can't reveal it either.
+**Decided 2026-10-18:** this table is the policy. The population rule and the "exact not recorded" option were skipped.
 
 ## 13. Signing-key custody: options for decision 5
 
@@ -325,6 +326,35 @@ Considerations whatever you pick:
 - **Write down a revocation and rotation runbook** before launch: who signs, how spokes learn of it, and what is announced publicly.
 - **The public key is not a secret.** Its fingerprint goes on both sites, the mirror's index and this repo. Only the private parts stay out of the repo, per CLAUDE.md.
 
-**Decided 2026-10-18: option C.** Holders of the root are still to be named.
+**Decided 2026-10-18: option C, with the root held by one designated maintainer and a sealed backup** (holder option
+2) for this stage. "2 of 3 maintainers" is to be reconsidered later; moving to it only means re-splitting the same
+root, not re-pinning it on the sites.
 
 Options C and D can be combined later. Start with C, and add approver signatures for the most sensitive records if the threat model calls for it.
+
+## 14. As built (2026-10-19)
+
+All five phases of §10, on branch `feat/capture-platform`.
+
+| Part | Where | Notes |
+|---|---|---|
+| Intake API, sources, triage | `capture/memlane_capture/intake.py`, UI Hộp thư → **Cộng đồng** | The team's saved links and community submissions share one inbox, filtered by source (Tất cả / Nội bộ / Cộng đồng, plus "Cần xử lý") |
+| Uploads | `intake.py` (sniffing, storage), `derive.py` (clean copies) | No ClamAV yet; PDFs and text are reviewed internally, never published |
+| Public versions, two approvals, batches | `publish.py`, UI "Bản công khai" | Policy enforced by `geo.py`; the preview is the exact record |
+| Feed and keys | `feed.py`, `feedkeys.py` | Local dir (dev) or B2 (`FEED_STORE=s3`). Index-only (no `changes/` files: records are fetched only when their hash changes) |
+| Community map | `backend/hub.js`, `backend/routes/hub.js`, `app/*.jsx` | Off unless `HUB_*` is set; `PUBLIC_SOURCE` = db / both / feed |
+| Migration | `backend/scripts/export-to-hub.js` | Legacy memories published as one batch; cases and archives for review |
+| Hồ sơ Nhân quyền | [spoke-integration.md](spoke-integration.md) + `backend/lib/hub-client.js` | The site's code isn't in this repo; the guide maps its forms and pages |
+
+**Differences from the text above:**
+- Locations snap to grid cells sized like the units (ward ≈ 2.8 km, province ≈ 55 km), not to real ward or
+  province boundaries. A boundary dataset can replace the grid later.
+- Contributor files are stored in their own table, not as capture artifacts.
+- The signature carries an explicit nonce, so a quick identical retry is not mistaken for a replay.
+
+**Before real use** (CLAUDE.md "Pending ops"):
+- The designated maintainer generates the production root key offline, makes the sealed backup, and delegates an
+  online key to the server.
+- Create the public B2 bucket for the feed.
+- Set `INTAKE_KEY_SECRET` and `CONTACT_SECRET_KEY`.
+- Register the sources.
