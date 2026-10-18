@@ -46,7 +46,7 @@ const VI = {
   updated: "Cập nhật lúc", search: "Tìm mô tả, mã, địa điểm, liên kết…", cards: "Thẻ", table: "Bảng", allStatuses: "Mọi trạng thái",
   allProjects: "Mọi dự án", materialCount: (n) => `${n} tư liệu`, openMap: "Xem bản đồ ↗", noProjects: "Chưa có dự án nào.",
   createProjectFirst: "Hãy tạo một dự án trước (trang Dự án).", sourceUrlsPh: "Mỗi dòng một liên kết…", create: "Tạo",
-  exportCsv: "Xuất CSV", privilegedHint: "Chỉ người duyệt mới đặt được “Hoàn tất” / “Đã huỷ”.",
+  exportCsv: "Xuất CSV", privilegedHint: "Chỉ người quản lý dự án mới đặt được “Hoàn tất” / “Đã huỷ”.",
   // projects (Atlos-style)
   projects: "Dự án", newProject: "Dự án mới", manage: "Quản lý", overview: "Tổng quan", general: "Thông tin chung",
   name: "Tên", code: "Mã (2–6 ký tự, dùng trong mã vụ việc)", color: "Màu", tagVocab: "Bộ chủ đề gợi ý", tagsOnePerLine: "Mỗi dòng một chủ đề",
@@ -58,6 +58,41 @@ const VI = {
   feedCreated: "đã tạo vụ việc", feedComment: "đã bình luận", feedMaterialAdded: "đã thêm tư liệu",
   feedMaterialRemoved: "đã bỏ tư liệu", feedCapture: "Hệ thống lưu trữ", feedCaptureVerb: "đã chụp tư liệu",
   feedChanged: (f) => `đã đổi ${f}`, system: "Hệ thống",
+  // access, invites, notifications, admin, map, import, Internet Archive
+  roles: { data_only_viewer: "Chỉ xem dữ liệu", viewer: "Người xem", editor: "Biên tập", manager: "Quản lý", owner: "Chủ sở hữu" },
+  roleHelp: { data_only_viewer: "Chỉ xem vụ việc và tư liệu; không thấy bảng tin, bình luận hay tên thành viên.",
+              viewer: "Xem và bình luận, xem thành viên, xuất CSV.", editor: "Tạo và sửa vụ việc (trừ vụ đã hoàn tất), thêm tư liệu.",
+              manager: "Hoàn tất/huỷ vụ việc, xoá vụ việc, chỉnh dự án, nhập hàng loạt.", owner: "Quản lý thành viên, vai trò và liên kết mời." },
+  globalRoles: { contributor: "Cộng tác viên", reviewer: "Người duyệt", editor: "Biên tập (tạo dự án)", admin: "Quản trị" },
+  members: "Thành viên", access: "Quyền truy cập", roleCol: "Vai trò", since: "Tham gia", whatRoles: "Các vai trò làm được gì?", addMember: "Thêm người đã có tài khoản", add: "Thêm",
+  choosePerson: "— Chọn người —", invites: "Liên kết mời", newInvite: "Tạo liên kết mời", inviteRole: "Vai trò khi tham gia",
+  expiresDays: "Hết hạn sau (ngày)", maxUses: "Số lần dùng tối đa (để trống = không giới hạn)", note: "Ghi chú",
+  inviteCreated: "Liên kết mời (chỉ hiện một lần, hãy sao chép ngay):", copy: "Sao chép", copied: "Đã sao chép",
+  revoke: "Thu hồi", revoked: "Đã thu hồi", expired: "Hết hạn / hết lượt", uses: (u, m) => `${u}${m ? "/" + m : ""} lượt`,
+  expires: "Hết hạn", leave: "Rời dự án", lastOwner: "Dự án cần ít nhất một chủ sở hữu.",
+  inviteTitle: "Lời mời tham gia", invitedAs: (p, r) => `Bạn được mời tham gia dự án ${p} với vai trò ${r}.`,
+  yourName: "Tên hiển thị (có thể là bí danh)", joinNew: "Tạo tài khoản và tham gia", joinAs: (n) => `Tham gia với tài khoản ${n}`,
+  inviteInvalid: "Liên kết mời không hợp lệ, đã hết hạn hoặc đã dùng hết.",
+  yourToken: "Mã cá nhân của bạn. Lưu nó ở nơi an toàn (trình quản lý mật khẩu) để đăng nhập trên thiết bị khác; mã sẽ không hiện lại.",
+  continueBtn: "Tiếp tục",
+  notifications: "Thông báo", markAllRead: "Đánh dấu đã đọc tất cả", markUnread: "Đánh dấu chưa đọc", noNotifications: "Không có thông báo.",
+  unreadOnly: "Chỉ chưa đọc", subscriptions: "Vụ việc đang theo dõi", follow: "Theo dõi", following: "Đang theo dõi ✓",
+  why: { subscribed: "bạn theo dõi", mentioned: "bạn được nhắc đến", assigned: "bạn được giao" },
+  admin: "Quản trị", people: "Người dùng", newPerson: "Thêm người dùng", email: "Email (không bắt buộc)",
+  globalRole: "Vai trò toàn hệ thống", disabled: "Vô hiệu hoá", enable: "Kích hoạt lại", disable: "Vô hiệu hoá",
+  newToken: "Cấp mã mới", revokeTokens: "Thu hồi mọi mã", lastSeen: "Lần cuối", tokens: "Mã", projectsCol: "Dự án",
+  tokenFor: (n) => `Mã mới cho ${n} (chỉ hiện một lần):`, confirmRevoke: "Thu hồi mọi mã của người này? Họ sẽ bị đăng xuất trên mọi thiết bị.",
+  map: "Bản đồ", noLocation: "Chưa có vụ việc nào có toạ độ.", pickOnMap: "Bấm vào bản đồ để đặt vị trí.",
+  bulkImport: "Nhập hàng loạt (CSV)", importHelp: "Một dòng một vụ việc. Cột bắt buộc: mô tả (description). Các cột khác: trạng thái, nhạy cảm, chủ đề, ngày (YYYY-MM-DD), địa điểm, vĩ độ, kinh độ, độ chính xác, liên kết, và tên các thuộc tính tuỳ chỉnh. Nhiều giá trị: phân cách bằng |.",
+  chooseFile: "Chọn tệp CSV", preview: "Kiểm tra", doImport: (n) => `Nhập ${n} vụ việc`, imported: (n) => `Đã nhập ${n} vụ việc.`,
+  rowsValid: (v, i) => `${v} dòng hợp lệ, ${i} dòng lỗi`, line: "Dòng", errors: "Lỗi", fixErrors: "Hãy sửa các lỗi rồi kiểm tra lại.",
+  downloadTemplate: "Tải tệp mẫu", exportCsvHint: "Tệp xuất CSV dùng cùng tên cột, nên có thể sửa rồi nhập lại.",
+  wayback: "Internet Archive", waybackShare: "Chia sẻ với Internet Archive",
+  waybackHelp: "Tự động gửi các liên kết của dự án lên Wayback Machine (bản sao công khai, độc lập). Tắt cho các dự án nhạy cảm: bản gửi là công khai.",
+  sendWayback: "Gửi lên Internet Archive", waybackOpen: "Bản sao Internet Archive ↗",
+  waybackState: { queued: "Đang chờ gửi", running: "Đang gửi…", done: "Đã có bản sao", error: "Lỗi", skipped: "Bỏ qua" },
+  waybackNone: "Chưa gửi lên Internet Archive.",
+  alreadyIn: "đã là tư liệu của", alreadySavedPrivate: "đã được người khác lưu (trong hộp thư riêng của họ).",
   status_: { queued: "Đang chờ", capturing: "Đang lưu…", complete: "Đã lưu đầy đủ", partial: "Lưu được một phần",
              walled: "Bị chặn đăng nhập", restricted: "Bị hạn chế truy cập", unavailable: "Đã bị gỡ / không khả dụng",
              failed: "Lỗi" },
@@ -103,7 +138,7 @@ const EN = {
   allProjects: "All projects", materialCount: (n) => `${n} source${n === 1 ? "" : "s"}`, openMap: "Open map ↗",
   noProjects: "No projects yet.", createProjectFirst: "Create a project first (Projects page).",
   sourceUrlsPh: "One link per line…", create: "Create", exportCsv: "Export CSV",
-  privilegedHint: "Only reviewers can set Completed / Cancelled.",
+  privilegedHint: "Only project managers can set Completed / Cancelled.",
   projects: "Projects", newProject: "New project", manage: "Manage", overview: "Overview", general: "General",
   name: "Name", code: "Code (2–6 characters, used in incident IDs)", color: "Color", tagVocab: "Suggested tags", tagsOnePerLine: "One tag per line",
   customAttrs: "Custom attributes", addAttr: "+ Add attribute", attrName: "Attribute name", attrType: "Type",
@@ -114,6 +149,40 @@ const EN = {
   feedCreated: "created the incident", feedComment: "commented", feedMaterialAdded: "added source material",
   feedMaterialRemoved: "removed source material", feedCapture: "Archive", feedCaptureVerb: "captured source material",
   feedChanged: (f) => `changed ${f}`, system: "System",
+  roles: { data_only_viewer: "Data-only viewer", viewer: "Viewer", editor: "Editor", manager: "Manager", owner: "Owner" },
+  roleHelp: { data_only_viewer: "Incidents and material only; no feed, comments or member names.",
+              viewer: "View and comment, see members, export CSV.", editor: "Create and edit incidents (not completed ones), add material.",
+              manager: "Complete/cancel and delete incidents, project settings, bulk import.", owner: "Members, roles and invite links." },
+  globalRoles: { contributor: "Contributor", reviewer: "Reviewer", editor: "Editor (creates projects)", admin: "Admin" },
+  members: "Members", access: "Access", roleCol: "Role", since: "Joined", whatRoles: "What can each role do?", addMember: "Add someone who has an account", add: "Add",
+  choosePerson: "— Choose a person —", invites: "Invite links", newInvite: "Create invite link", inviteRole: "Role on joining",
+  expiresDays: "Expires after (days)", maxUses: "Maximum uses (empty = unlimited)", note: "Note",
+  inviteCreated: "Invite link (shown once, copy it now):", copy: "Copy", copied: "Copied", revoke: "Revoke",
+  revoked: "Revoked", expired: "Expired / used up", uses: (u, m) => `${u}${m ? "/" + m : ""} uses`, expires: "Expires",
+  leave: "Leave project", lastOwner: "A project needs at least one owner.",
+  inviteTitle: "Invitation", invitedAs: (p, r) => `You're invited to join ${p} as ${r}.`,
+  yourName: "Display name (a pseudonym is fine)", joinNew: "Create account and join", joinAs: (n) => `Join as ${n}`,
+  inviteInvalid: "This invite link is invalid, expired or used up.",
+  yourToken: "Your personal token. Keep it somewhere safe (a password manager) to sign in on other devices; it won't be shown again.",
+  continueBtn: "Continue",
+  notifications: "Notifications", markAllRead: "Mark all read", markUnread: "Mark unread", noNotifications: "No notifications.",
+  unreadOnly: "Unread only", subscriptions: "Incidents you follow", follow: "Follow", following: "Following ✓",
+  why: { subscribed: "you follow it", mentioned: "you were mentioned", assigned: "you were assigned" },
+  admin: "Admin", people: "People", newPerson: "Add person", email: "Email (optional)", globalRole: "Instance role",
+  disabled: "Disabled", enable: "Re-enable", disable: "Disable", newToken: "Issue token", revokeTokens: "Revoke all tokens",
+  lastSeen: "Last seen", tokens: "Tokens", projectsCol: "Projects", tokenFor: (n) => `New token for ${n} (shown once):`,
+  confirmRevoke: "Revoke all of this person's tokens? They will be signed out everywhere.",
+  map: "Map", noLocation: "No incident has coordinates yet.", pickOnMap: "Click the map to set the location.",
+  bulkImport: "Bulk import (CSV)", importHelp: "One row per incident. Required column: description. Others: status, sensitive, tags, date (YYYY-MM-DD), place, lat, lng, precision, urls, and the names of custom attributes. Several values: separate with |.",
+  chooseFile: "Choose a CSV file", preview: "Check", doImport: (n) => `Import ${n} incidents`, imported: (n) => `Imported ${n} incidents.`,
+  rowsValid: (v, i) => `${v} valid rows, ${i} with errors`, line: "Line", errors: "Errors", fixErrors: "Fix the errors and check again.",
+  downloadTemplate: "Download template", exportCsvHint: "The CSV export uses the same columns, so it can be edited and imported again.",
+  wayback: "Internet Archive", waybackShare: "Share with the Internet Archive",
+  waybackHelp: "Automatically send this project's links to the Wayback Machine (an independent public copy). Leave off for sensitive projects: submissions are public.",
+  sendWayback: "Send to the Internet Archive", waybackOpen: "Internet Archive copy ↗",
+  waybackState: { queued: "Queued", running: "Submitting…", done: "Copy available", error: "Error", skipped: "Skipped" },
+  waybackNone: "Not sent to the Internet Archive.",
+  alreadyIn: "is already source material of", alreadySavedPrivate: "was already saved by someone else (in their private inbox).",
   status_: { queued: "Queued", capturing: "Capturing…", complete: "Fully saved", partial: "Partly saved",
              walled: "Blocked by login wall", restricted: "Restricted", unavailable: "Removed / unavailable", failed: "Failed" },
   incStatus: { to_do: "To Do", in_progress: "In Progress", help_needed: "Help Needed", ready_for_review: "Ready for Review",
@@ -225,11 +294,17 @@ export async function loadProjects(force = false) {
   if (force || !state.projects.length) state.projects = (await api("/v1/projects?include_archived=true")).projects;
   return state.projects;
 }
-export async function loadContributors() {
-  if (!state.contributors.length) state.contributors = (await api("/v1/contributors")).contributors;
-  return state.contributors;
+export async function loadContributors(projectId) {
+  return (await api("/v1/contributors" + (projectId ? `?project_id=${projectId}` : ""))).contributors;
 }
-export const canEdit = () => ["editor", "admin"].includes(state.me?.role);
+export function copyText(text) {
+  return navigator.clipboard?.writeText(text).then(() => toast(t("copied"))).catch(() => {});
+}
+export const canEdit = () => ["editor", "admin"].includes(state.me?.role);   // may create projects
+export const isAdmin = () => state.me?.role === "admin";
+const RANK = { data_only_viewer: 0, viewer: 1, editor: 2, manager: 3, owner: 4 };
+// Project role checks, mirroring access.py (the server enforces them; this only hides buttons).
+export const atLeast = (role, min) => role != null && RANK[role] >= RANK[min];
 export const canReview = () => ["reviewer", "editor", "admin"].includes(state.me?.role);
 
 // Pages register cleanups (timers) here; the router runs them on navigation.

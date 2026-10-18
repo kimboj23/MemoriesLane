@@ -7,6 +7,7 @@ import logging
 import pathlib
 import re
 from contextlib import asynccontextmanager
+from urllib.parse import urlsplit
 from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
@@ -15,11 +16,13 @@ from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import __version__, workspace
+from . import __version__, people, workspace
 from .auth import Principal, current_principal, require
 from .config import settings
 from .db import make_pool, migrate
-from .inbox_core import ITEM_SELECT, add_update, item_json, new_capture, save_link
+from .access import project_role, require_project
+from .external import queue_wayback
+from .inbox_core import ITEM_SELECT, add_update, can_see_item, item_json, new_capture, save_link
 from .signing import artifact_url, verify
 from .storage import get_storage, iter_chunks
 
@@ -37,11 +40,14 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="MemoryLane capture", version=__version__, lifespan=lifespan)
 app.include_router(workspace.router)
+app.include_router(people.router)
 
 # The workspace UI: static files, no build step (memlane_capture/web).
 WEB_DIR = pathlib.Path(__file__).resolve().parent / "web"
 app.mount("/app", StaticFiles(directory=WEB_DIR, html=True), name="app")
-_APP_CSP = ("default-src 'self'; img-src 'self' blob: data:; media-src 'self' blob:; script-src 'self'; "
+# Map tiles come from the configured tile server (config.tile_url); nothing else external is allowed.
+_TILE_ORIGIN = "{0.scheme}://{0.netloc}".format(urlsplit(settings.tile_url.replace("{s}", "a")))
+_APP_CSP = (f"default-src 'self'; img-src 'self' blob: data: {_TILE_ORIGIN}; media-src 'self' blob:; script-src 'self'; "
             "style-src 'self'; connect-src 'self'; frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; "
             "form-action 'self'")
 
@@ -95,12 +101,28 @@ class ItemPatch(BaseModel):
 
 
 async def _get_item(conn, item_id: str, p: Principal) -> dict:
-    """Visible to its submitter, to reviewers, and to everyone once it is source material of an incident."""
+    """Visible to its submitter, global reviewers, and members of the project it is filed under."""
     r = await (await conn.execute(ITEM_SELECT + " WHERE i.id = %s", (item_id,))).fetchone()
-    if not r or (not p.at_least("reviewer") and str(r["submitted_by"]) != p.contributor_id
-                 and not r["incident_id"]):
+    if not r or not await can_see_item(conn, p, r):
         raise HTTPException(404, "item not found")
     return r
+
+
+async def _can_edit_material(conn, p: Principal, r: dict) -> bool:
+    """Re-capture / send to the Internet Archive: the submitter, editors of its project, global reviewers."""
+    if p.at_least("reviewer") or str(r["submitted_by"]) == p.contributor_id:
+        return True
+    role = await project_role(conn, p, r["project_id"]) if r.get("project_id") else None
+    return role in ("editor", "manager", "owner")
+
+
+async def _wayback(conn, item_id) -> dict | None:
+    e = await (await conn.execute("SELECT state, copy_url, error, submitted_url, created_at, finished_at FROM"
+                                  " capture.external_copies WHERE item_id = %s AND service = 'wayback'"
+                                  " ORDER BY created_at DESC LIMIT 1", (item_id,))).fetchone()
+    return None if not e else {"state": e["state"], "url": e["copy_url"], "error": e["error"],
+                               "submitted_url": e["submitted_url"], "requested_at": e["created_at"],
+                               "finished_at": e["finished_at"]}
 
 
 @app.get("/healthz")
@@ -115,6 +137,11 @@ async def healthz(request: Request):
 @app.get("/v1/me")
 async def me(p: Principal = Depends(current_principal)):
     return {"id": p.contributor_id, "name": p.display_name, "role": p.role, "token": p.token_label}
+
+
+@app.get("/v1/config")
+async def public_config():
+    return {"tile_url": settings.tile_url, "tile_attribution": settings.tile_attribution}
 
 
 @app.post("/v1/inbox", status_code=201)
@@ -176,7 +203,21 @@ async def get_item(item_id: str, request: Request, p: Principal = Depends(curren
              "url": a["source_url"] if a["kind"] == "link" else artifact_url(a["id"])}
         by_cap.setdefault(a["capture_id"], []).append(a)
     item["captures"] = [{**c, "id": str(c["id"]), "artifacts": by_cap.get(str(c["id"]), [])} for c in caps]
+    async with request.app.state.pool.connection() as conn:
+        item["wayback"] = await _wayback(conn, item_id)
+        item["can_edit"] = await _can_edit_material(conn, p, await _get_item(conn, item_id, p))
     return item
+
+
+@app.post("/v1/items/{item_id}/wayback", status_code=202)
+async def request_wayback(item_id: str, request: Request, p: Principal = Depends(current_principal)):
+    """Ask the Internet Archive for a public copy now, whatever the project's setting."""
+    async with request.app.state.pool.connection() as conn:
+        r = await _get_item(conn, item_id, p)
+        if not await _can_edit_material(conn, p, r):
+            raise HTTPException(403, "only the submitter or the project's editors can request this")
+        await queue_wayback(conn, item_id, requested_by=p.contributor_id, force=True)
+        return await _wayback(conn, item_id)
 
 
 @app.patch("/v1/items/{item_id}")
@@ -187,16 +228,18 @@ async def patch_item(item_id: str, body: ItemPatch, request: Request, p: Princip
             r = await _get_item(conn, item_id, p)
             own = str(r["submitted_by"]) == p.contributor_id
             moving = "incident_id" in changes and str(changes["incident_id"] or "") != str(r["incident_id"] or "")
-            # Filing material under an incident is open to every contributor (Atlos "add material");
-            # editing someone else's notes is not.
+            # Notes/tags: the submitter or a global editor. Filing: editor in both the old and the new project.
             if (set(changes) - {"incident_id"}) and not own and not p.at_least("editor"):
                 raise HTTPException(403, "only the submitter or an editor can edit this item")
+            if moving and r["incident_id"]:
+                await require_project(conn, p, r["project_id"], "editor")
             if moving and changes["incident_id"]:
                 inc = await (await conn.execute(
-                    "SELECT 1 FROM capture.incidents i JOIN capture.projects pr ON pr.id = i.project_id"
+                    "SELECT i.project_id FROM capture.incidents i JOIN capture.projects pr ON pr.id = i.project_id"
                     " WHERE i.id = %s AND NOT i.deleted AND NOT pr.archived", (changes["incident_id"],))).fetchone()
                 if not inc:
                     raise HTTPException(404, "incident not found or its project is archived")
+                await require_project(conn, p, inc["project_id"], "editor")
             if changes:
                 cols = ", ".join(f"{k} = %s" for k in changes)
                 await conn.execute(f"UPDATE capture.items SET {cols}, updated_at = now() WHERE id = %s",
@@ -207,6 +250,7 @@ async def patch_item(item_id: str, body: ItemPatch, request: Request, p: Princip
                 if changes["incident_id"]:
                     await add_update(conn, incident_id=changes["incident_id"], kind="material_added", p=p,
                                      item_id=item_id)
+                    await queue_wayback(conn, item_id)
         return item_json(await _get_item(conn, item_id, p))
 
 
@@ -214,6 +258,8 @@ async def patch_item(item_id: str, body: ItemPatch, request: Request, p: Princip
 async def recapture(item_id: str, request: Request, p: Principal = Depends(current_principal)):
     async with request.app.state.pool.connection() as conn:
         r = await _get_item(conn, item_id, p)
+        if not await _can_edit_material(conn, p, r):
+            raise HTTPException(403, "only the submitter or the project's editors can re-capture this")
         if r["capture_state"] in ("queued", "running"):
             raise HTTPException(409, "a capture of this item is already in progress")
         cap_id = await new_capture(conn, item_id, p)

@@ -11,9 +11,9 @@ worker ── claims a capture (FOR UPDATE SKIP LOCKED) ──▶ resolve share 
             media    yt-dlp: the video/images + sanitised metadata
             view     Chromium: as-served screenshot, cleaned full page, HTML, text, og/ld+json,
                      and for Facebook/Threads/Instagram the public embed page + the post's images
-            wayback  Internet Archive SPN2 (context only; skipped for Meta platforms)
           ─▶ gate: complete | partial | walled | restricted | unavailable | failed (+ reasons)
           ─▶ seal: SHA-256 of every file, content-addressed store, manifest.json (hashed)
+          ─▶ Internet Archive copy (separate job, external.py): if the project shares with IA, or on request
 ```
 
 On top sits a **workspace modelled on Atlos** (projects → incidents → source material, with a feed):
@@ -22,6 +22,24 @@ incidents (`CODE-12`) carry Atlos's attributes (status workflow, sensitivity, ta
 precision, assignees, custom attributes), a feed of every change with an optional reason plus comments, and
 their source material, i.e. saved links with all capture versions. The design is Atlos's; the code is not
 (Atlos is GPLv3).
+
+**Access is per project, with Atlos's five roles** (access.py):
+
+| Role | Can |
+|---|---|
+| Data-only viewer | see incidents and source material only: no feed, comments, member or assignee names |
+| Viewer | + comment, see the feed and members, export CSV |
+| Editor | + create/edit incidents (not completed/cancelled ones), add and file source material |
+| Manager | + complete/cancel, edit those, delete incidents, project settings and attributes, bulk import |
+| Owner | + members, roles, invite links, archive the project |
+
+A project you're not a member of doesn't exist for you (404). Instance roles sit above: `admin` acts as owner
+everywhere and manages people (Admin page); `editor` may create projects; `reviewer` sees every inbox item.
+New people join through **invite links** (owner creates one per role, with expiry and a use limit; the link is
+shown once; opening it without an account asks only for a display name and hands out a personal token once).
+
+**Notifications** (Atlos): you follow an incident automatically when you create, change or comment on it, or are
+assigned; "@Display Name" in a comment notifies that person. In-app only (bell + Notifications page); no email.
 
 ## Why it is built this way
 
@@ -51,8 +69,10 @@ docker compose exec api python -m memlane_capture.admin add-token me@example.org
 
 Then open **http://127.0.0.1:8700/** and paste the token (Vietnamese first, `EN` switch):
 
-- **Dự án / Projects**: create a project and configure it (editors): name, code, colour, suggested tags, custom attributes.
-- **Vụ việc / Incidents**: cards or table, filter by project/status, search. **+ Vụ việc mới** creates one, with
+- **Dự án / Projects**: tabs Tổng quan / Quyền truy cập (members, roles, invite links) / Quản lý (name, colour,
+  suggested tags, custom attributes, "Share with the Internet Archive", archive) / Nhập hàng loạt (CSV, with a
+  validated preview and a template; the CSV export uses the same columns).
+- **Vụ việc / Incidents**: cards, table or **map** (Leaflet; dots by status, precision halos), filter by project/status, search. **+ Vụ việc mới** creates one, with
   source links. The incident page has Attributes (each with **Cập nhật** + an optional reason), the Feed with
   comments, Source material with inline previews, Location and Metadata.
 - **Hộp thư / Inbox** and **+ Lưu liên kết** (any page): the save sheet the share button and extension will open.
@@ -60,6 +80,9 @@ Then open **http://127.0.0.1:8700/** and paste the token (Vietnamese first, `EN`
 - **An item** (a saved link): verdict and reasons, the platform's restriction notice if any, versions, and every
   file viewable in the browser: images, video, saved HTML (sandboxed, nothing external loads), text, JSON,
   manifest. Click any preview for the full viewer (← → between files, fit/actual size, new tab, download, SHA-256).
+  The Internet Archive block shows the public Wayback copy (or why there is none) and **Gửi lên Internet Archive**.
+- **🔔 / Thông báo**: notifications, mark read/unread, incidents you follow. **Quản trị / Admin** (admins): people,
+  instance roles, issue/revoke tokens, disable accounts.
 
 `/app/?url=...` or `?text=...` prefills the save sheet (that is how the share target will call it).
 
@@ -77,7 +100,7 @@ Stop with `docker compose down` (`down -v` also wipes the local DB and stored fi
 | What | Command | Needs |
 |---|---|---|
 | Unit (URLs, gate, embeds): offline, fast | `docker compose run --rm --no-deps api python -m pytest` | nothing |
-| End-to-end: project → incident → capture → update → comment → viewers → inbox filing, desktop + 375 px phone (editor/admin token) | `docker compose exec -e E2E_BASE_URL=http://api:8700 -e E2E_TOKEN=mlc_... worker python -m pytest tests/e2e` | running stack, network |
+| End-to-end: project → incident → capture → update → comment → viewers → inbox filing; invite link → new account → roles → @mention notification; CSV import → map → Internet Archive → admin; desktop + phone (admin token) | `docker compose exec -e E2E_BASE_URL=http://api:8700 -e E2E_TOKEN=mlc_... worker python -m pytest tests/e2e` | running stack, network |
 | Canary: real links per platform still reach their expected verdict | `CAPTURE_TOKEN=mlc_... python tests/canary.py` (from the host) | running stack, network |
 
 Run the canary before and after any dependency bump (yt-dlp, Playwright, base image).
@@ -96,7 +119,15 @@ Run the canary before and after any dependency bump (yt-dlp, Playwright, base im
 | GET/POST | `/v1/incidents`, GET/PATCH `/v1/incidents/{id}` | contributor+ (Completed/Cancelled: reviewer+) | Incidents; PATCH takes any attribute plus an optional `reason`; GET includes material and the feed |
 | POST | `/v1/incidents/{id}/comments`, `/v1/incidents/{id}/material` | contributor+ | Comment; add source material (same as the inbox, filed) |
 | GET | `/v1/incidents.csv?project_id=` | contributor+ | Export (Atlos-style) |
-| GET | `/v1/contributors`, `/v1/me`, `/healthz` | | |
+| GET/POST/PATCH/DELETE | `/v1/projects/{id}/members[/{cid}]` | read: viewer+; write: owner | Members and roles (a project keeps at least one owner) |
+| GET/POST/DELETE | `/v1/projects/{id}/invites[/{iid}]` | owner | Invite links (role up to manager, expiry, max uses); the code is returned once |
+| GET / POST | `/v1/invites/{code}`, `/v1/invites/{code}/accept` | public | What a link grants; join with your token, or `{name}` to create an account (token returned once) |
+| POST | `/v1/projects/{id}/import` | manager+ | `{csv, commit}`: validate and preview, or create every row (all or nothing) |
+| POST/DELETE | `/v1/incidents/{id}/subscription` | viewer+ | Follow / unfollow |
+| GET/POST | `/v1/notifications`, `/v1/notifications/unread_count`, `/v1/notifications/read`, `/v1/me/subscriptions` | everyone | Notifications |
+| POST | `/v1/items/{id}/wayback` | submitter / project editor+ | Request an Internet Archive copy now |
+| GET/POST/PATCH | `/v1/admin/contributors[/{id}[/token, /revoke-tokens]]` | admin | People, instance roles, tokens |
+| GET | `/v1/contributors?project_id=`, `/v1/config`, `/v1/me`, `/healthz` | | Assignable members; tile settings |
 
 ## Layout
 
@@ -104,28 +135,39 @@ Run the canary before and after any dependency bump (yt-dlp, Playwright, base im
 migrations/001_init.sql     capture.{contributors,tokens,items,captures,artifacts}
 migrations/002_restricted.sql the `restricted` verdict
 migrations/003_workspace.sql capture.{projects,incidents,updates}, items.incident_id
+migrations/004_access_notifications.sql project_members, project_invites, subscriptions, notifications, external_copies
 memlane_capture/
   urls.py                   extract link from shared text, canonicalise (dedupe key), classify, login-URL detection
   resolve.py                follow share links / shorteners
   witnesses/media.py        yt-dlp
   witnesses/view.py         Playwright/Chromium + platform embeds
-  witnesses/wayback.py      SPN2
   gate.py                   verdicts (wall / unavailable phrase lists, EN + VI)
   seal.py, storage.py       hashing, manifest, content-addressed local/S3 storage
   pipeline.py, worker.py    one capture end to end; the queue loop
   api.py, auth.py, admin.py HTTP API, tokens/roles, admin CLI
-  workspace.py              projects, incidents, feed, comments, CSV export (Atlos model)
+  workspace.py              projects, incidents, feed, comments, subscriptions, CSV export/import (Atlos model)
+  access.py                 project roles and checks
+  people.py                 members, invite links, admin, notifications endpoints
+  notify.py                 who gets notified (followers, @mentions, assignees)
+  importer.py               CSV parsing/validation for bulk import
+  external.py               Internet Archive copies: policy, SPN2 client, job queue
   inbox_core.py             saving a link (shared by the inbox and incidents)
   signing.py                short-lived signed artifact URLs for <img>/<video>/<iframe>
   web/                      the workspace UI (static ES modules, no build), served at /app:
-                              js/core.js (API, i18n, helpers), inbox.js, incidents.js, item.js, viewer.js, projects.js, main.js
+                              js/core.js (API, i18n, helpers), inbox.js, incidents.js, item.js, viewer.js, projects.js,
+                              people.js, notifications.js, map.js, main.js; vendor/leaflet (1.9.4, BSD-2)
 tests/                      unit tests; e2e/ (Playwright, needs the stack); canary.py
 ```
 
 ## Known limitations
 
 - Reasons in verdicts are English strings from `gate.py`; the UI translates statuses but not reasons yet.
-- Permissions are global roles; Atlos's per-project membership and invite links are not built yet.
+- A link is captured once and belongs to one incident. Adding it to a second incident says where it already is
+  rather than linking it twice (Atlos allows the same URL in several incidents; that needs a join table).
+- Import error messages, like verdict reasons, are English only.
+- Notifications are in-app only (no email/Telegram push yet).
+- **Map tiles reveal the viewed area to the tile server** (default: OpenStreetMap's public servers, also subject
+  to their usage policy). For sensitive work set `TILE_URL` to a self-hosted or trusted tile server.
 - Saved HTML renders without its external CSS/images (deliberately: nothing external may load), so it looks unstyled; the screenshots are the visual record.
 - Set `ARTIFACT_URL_SECRET` when running more than one API process (signed URLs otherwise only verify on the process that issued them).
 - Threads (and other sites that scroll inside their own container) get a one-screen "full page" shot; the embed
@@ -139,6 +181,6 @@ tests/                      unit tests; e2e/ (Playwright, needs the stack); cana
 - browsertrix-crawler WACZ witness (replayable archive) and a replay viewer
 - logged-in sessions per platform (throwaway-account profiles), carousel walk, OCR guard, circuit breaker
 - RFC 3161 / OpenTimestamps on the manifest hash
-- per-project membership, invites, notifications/subscriptions, map view, bulk CSV import (Atlos features still to copy)
+- the same link in several incidents; email/Telegram notifications; Atlos API tokens per project
 - scheduled canary; PWA share target + iOS Shortcut + browser extension on top of the save sheet
 - deployment (B2 storage, VPS) and migration of the old `archives` rows

@@ -19,6 +19,8 @@ from psycopg.types.json import Jsonb
 from .config import settings
 from .db import make_pool, migrate
 from .pipeline import run_capture, tool_versions
+from .external import queue_wayback, run_one as run_external
+from .inbox_core import add_update
 from .seal import public_extracted
 
 log = logging.getLogger("memlane.worker")
@@ -86,13 +88,16 @@ async def _finish(pool, cap: dict, item: dict, outcome) -> None:
                 ("queued" if retry else v.verdict, cap["id"], outcome.resolved_url, outcome.platform, outcome.kind,
                  (extracted.get("title") or "")[:300] or None, item["id"]))
             if not retry:
-                # Source material of an incident: the result goes into that incident's feed (as "the system").
-                await conn.execute(
-                    "INSERT INTO capture.updates (incident_id, item_id, kind, new_value, body)"
-                    " SELECT incident_id, id, 'capture', %s, %s FROM capture.items"
-                    " WHERE id = %s AND incident_id IS NOT NULL",
-                    (Jsonb({"verdict": v.verdict, "capture_id": str(cap["id"])}), "; ".join(v.reasons)[:1000],
-                     item["id"]))
+                # Source material of an incident: the result goes into its feed (as "the system") and
+                # notifies whoever follows the incident.
+                cur = await (await conn.execute("SELECT incident_id FROM capture.items WHERE id = %s",
+                                                (item["id"],))).fetchone()
+                if cur and cur["incident_id"]:
+                    await add_update(conn, incident_id=cur["incident_id"], kind="capture", item_id=item["id"],
+                                     new={"verdict": v.verdict, "capture_id": str(cap["id"])},
+                                     body="; ".join(v.reasons)[:1000])
+                if v.verdict != "failed":
+                    await queue_wayback(conn, item["id"])
     log.info("capture %s %s -> %s%s (%s)", cap["id"], item["canonical_url"], v.verdict,
              " (will retry)" if retry else "", "; ".join(v.reasons)[:200])
 
@@ -147,6 +152,21 @@ async def _loop(pool, browsers: BrowserHolder, stop: asyncio.Event, slot: int) -
             await _crash(pool, cap, item, f"{type(e).__name__}: {e}")
 
 
+async def _external_loop(pool, stop: asyncio.Event) -> None:
+    """Internet Archive submissions: one at a time (SPN allows few concurrent jobs per account)."""
+    while not stop.is_set():
+        try:
+            busy = await run_external(pool)
+        except Exception:  # noqa: BLE001
+            log.exception("external copy failed")
+            busy = False
+        if not busy:
+            try:
+                await asyncio.wait_for(stop.wait(), settings.poll_seconds * 3)
+            except asyncio.TimeoutError:
+                pass
+
+
 async def main() -> None:
     logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"),
                         format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -171,7 +191,8 @@ async def main() -> None:
         browsers = BrowserHolder(pw)
         log.info("worker %s started: %d slot(s), storage=%s", WORKER_ID, settings.worker_concurrency,
                  settings.storage_backend)
-        await asyncio.gather(*(_loop(pool, browsers, stop, i) for i in range(settings.worker_concurrency)))
+        await asyncio.gather(*(_loop(pool, browsers, stop, i) for i in range(settings.worker_concurrency)),
+                             _external_loop(pool, stop))
     await pool.close()
 
 

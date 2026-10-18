@@ -49,7 +49,16 @@ class Settings:
     # Internet Archive SPN2 (optional): never counted as "the" capture, see gate.py
     ia_access_key: str = field(default_factory=lambda: os.environ.get("IA_ACCESS_KEY", ""))
     ia_secret_key: str = field(default_factory=lambda: os.environ.get("IA_SECRET_KEY", ""))
-    wayback_enabled: bool = field(default_factory=lambda: _bool("WAYBACK_ENABLED", True))
+    # Unfiled inbox items are not sent unless this is on; filed items follow their project's setting.
+    wayback_default_unfiled: bool = field(default_factory=lambda: _bool("WAYBACK_DEFAULT_UNFILED", False))
+    spn_base: str = field(default_factory=lambda: os.environ.get("SPN_BASE", "https://web.archive.org"))
+
+    # Map tiles for the map view. Every tile request tells the tile server which area is being looked
+    # at; point this at a self-hosted or trusted tile server for sensitive investigations.
+    tile_url: str = field(default_factory=lambda: os.environ.get(
+        "TILE_URL", "https://tile.openstreetmap.org/{z}/{x}/{y}.png"))
+    tile_attribution: str = field(default_factory=lambda: os.environ.get(
+        "TILE_ATTRIBUTION", "© OpenStreetMap contributors"))
 
     # API
     cors_origins: list[str] = field(default_factory=lambda: _list("CORS_ORIGINS"))

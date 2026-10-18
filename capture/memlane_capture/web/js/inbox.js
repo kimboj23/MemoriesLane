@@ -1,11 +1,11 @@
 // The save sheet (same one the share button / extension will open), the project→incident picker,
 // and the inbox: everything you saved, filed or not.
-import { mount, ago, api, el, loadProjects, platformOf, poll, post, projectDot, state, t, toast, verdictChip, VERDICTS,
+import { mount, ago, api, atLeast, el, loadProjects, platformOf, poll, post, projectDot, state, t, toast, verdictChip, VERDICTS,
 } from "./core.js";
 
 // Project → incident dropdowns. Calls onChange(incidentId|null). `allowNew` adds "+ create incident".
 export async function incidentPicker({ value = null, projectId = null, allowNew = false, onNew = null, onChange = () => {} } = {}) {
-  const projects = (await loadProjects()).filter((p) => !p.archived);
+  const projects = (await loadProjects()).filter((p) => !p.archived && atLeast(p.my_role, "editor"));
   const pSel = el("select", { "aria-label": t("project") },
     el("option", { value: "" }, t("chooseProject")),
     projects.map((p) => el("option", { value: p.id, selected: p.id === projectId }, `${p.code} · ${p.name}`)));

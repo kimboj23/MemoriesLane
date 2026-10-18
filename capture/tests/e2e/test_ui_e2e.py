@@ -70,7 +70,7 @@ def test_project_incident_material_feed_and_viewers(browser):
     page.get_by_placeholder("Tên thuộc tính").fill("Loại tư liệu")
     page.get_by_placeholder("Các lựa chọn (mỗi dòng một lựa chọn)").fill("Thông báo\nVideo")
     page.get_by_role("button", name="Tạo").click()
-    expect(page.locator("#view h1")).to_contain_text(code)
+    expect(page.locator(".project-bar")).to_contain_text(code)
     page.goto(BASE + "/app/#/projects")
     expect(page.locator(".proj-card", has_text=code)).to_be_visible()
 

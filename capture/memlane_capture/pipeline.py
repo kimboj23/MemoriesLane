@@ -16,7 +16,7 @@ from .config import settings
 from .models import Verdict, WitnessResult
 from .resolve import resolve
 from .urls import canonicalize, classify, is_login_url, needs_resolution
-from .witnesses import media, view, wayback
+from .witnesses import media, view
 
 log = logging.getLogger("memlane.pipeline")
 
@@ -61,7 +61,6 @@ async def run_capture(browser: Browser, item: dict, capture: dict) -> Outcome:
                             settings.media_timeout_s),
             "view": _guard("view", view.run(browser, url, cls.platform, cls.kind, os.path.join(work, "view")),
                            settings.view_timeout_s * 3),
-            "wayback": _guard("wayback", wayback.run(url, cls.platform), 240),
         }
         done = await asyncio.gather(*tasks.values())
         results = dict(zip(tasks.keys(), done))

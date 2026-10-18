@@ -1,9 +1,7 @@
-"""Workspace API: projects, incidents, their feed. Modelled on Atlos.
+"""Workspace API: projects, incidents, their feed, subscriptions, bulk import. Modelled on Atlos.
 
-Permissions (global roles for now; per-project membership is a later step):
-  contributor  read everything here, create incidents, edit attributes, comment, add material
-  reviewer     + set the privileged statuses (completed, cancelled), as Atlos reserves them for managers
-  editor       + create/configure/archive projects, delete incidents
+Who may do what is decided per project (access.py): data-only viewer < viewer < editor < manager < owner.
+Creating a project needs the instance role `editor` or `admin` (Atlos "trusted"); its creator becomes owner.
 """
 
 import csv
@@ -17,8 +15,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, Field
 
+from . import importer
+from .access import at_least, project_role, require_project, visible_projects_sql
 from .auth import Principal, current_principal, require
 from .inbox_core import ITEM_SELECT, add_update, item_json, save_link
+from .notify import subscribe
 from .signing import artifact_url
 
 router = APIRouter(prefix="/v1")
@@ -26,7 +27,6 @@ router = APIRouter(prefix="/v1")
 STATUSES = ["to_do", "in_progress", "help_needed", "ready_for_review", "completed", "cancelled"]
 PRIVILEGED_STATUSES = {"completed", "cancelled"}
 SENSITIVE = ["not_sensitive", "personal_info", "graphic_violence", "deleted_by_source", "deceptive"]
-ATTR_TYPES = ("text", "select", "multi_select", "date")
 # Incident fields whose changes are recorded in the feed.
 TRACKED = ("description", "status", "sensitive", "tags", "event_date", "place", "lat", "lng", "geo_precision",
            "assignees", "custom")
@@ -48,6 +48,7 @@ class ProjectIn(BaseModel):
     color: str | None = Field(None, pattern=r"^#[0-9a-fA-F]{6}$")
     tag_options: list[str] | None = Field(None, max_length=200)
     attributes: list[AttributeDef] | None = Field(None, max_length=40)
+    wayback_enabled: bool | None = None
     archived: bool | None = None
 
 
@@ -80,6 +81,11 @@ class MaterialIn(BaseModel):
     new_version: bool = False
 
 
+class ImportIn(BaseModel):
+    csv: str = Field(..., max_length=2_000_000)
+    commit: bool = False
+
+
 # ---- helpers ----------------------------------------------------------------
 def _clean_tags(tags: list[str]) -> list[str]:
     out = []
@@ -90,11 +96,12 @@ def _clean_tags(tags: list[str]) -> list[str]:
     return out
 
 
-def _project_json(r: dict) -> dict:
+def _project_json(r: dict, my_role: str | None = None) -> dict:
     return {"id": str(r["id"]), "code": r["code"], "name": r["name"], "description": r["description"],
             "color": r["color"], "tag_options": r["tag_options"], "attributes": r["attributes"],
-            "archived": r["archived"], "created_at": r["created_at"], "updated_at": r["updated_at"],
-            "incident_count": r.get("incident_count"), "open_count": r.get("open_count")}
+            "wayback_enabled": r["wayback_enabled"], "archived": r["archived"], "created_at": r["created_at"],
+            "updated_at": r["updated_at"], "incident_count": r.get("incident_count"),
+            "open_count": r.get("open_count"), "my_role": my_role or r.get("my_role")}
 
 
 def _normalise_attrs(defs: list[AttributeDef]) -> list[dict]:
@@ -156,7 +163,8 @@ async def _names(conn, ids: list) -> dict[str, str]:
     return {str(r["id"]): r["display_name"] for r in rows}
 
 
-def _incident_json(r: dict, names: dict[str, str]) -> dict:
+def _incident_json(r: dict, names: dict[str, str], role: str) -> dict:
+    data_only = role == "data_only_viewer"   # Atlos: no names of the people working on it
     return {
         "id": str(r["id"]), "slug": f"{r['code']}-{r['number']}", "number": r["number"],
         "project": {"id": str(r["project_id"]), "code": r["code"], "name": r["project_name"], "color": r["color"],
@@ -164,42 +172,43 @@ def _incident_json(r: dict, names: dict[str, str]) -> dict:
         "description": r["description"], "status": r["status"], "sensitive": r["sensitive"], "tags": r["tags"],
         "event_date": r["event_date"], "place": r["place"], "lat": r["lat"], "lng": r["lng"],
         "geo_precision": r["geo_precision"],
-        "assignees": [{"id": str(a), "name": names.get(str(a), "?")} for a in r["assignees"]],
+        "assignees": [] if data_only else [{"id": str(a), "name": names.get(str(a), "?")} for a in r["assignees"]],
         "custom": r["custom"], "deleted": r["deleted"], "created_at": r["created_at"], "updated_at": r["updated_at"],
-        "created_by": {"id": str(r["created_by"]) if r["created_by"] else None, "name": r.get("created_by_name")},
+        "created_by": None if data_only else {"id": str(r["created_by"]) if r["created_by"] else None,
+                                              "name": r.get("created_by_name")},
         "material_count": r.get("material_count"),
         "thumbnail_url": artifact_url(r["thumb_artifact_id"]) if r.get("thumb_artifact_id") else None,
+        "my_role": role,
     }
 
 
-async def _get_incident(conn, incident_id: str) -> dict:
+async def _get_incident(conn, incident_id: str, p: Principal, minimum: str = "data_only_viewer") -> tuple[dict, str]:
     r = await (await conn.execute(INCIDENT_SELECT + " WHERE i.id = %s", (incident_id,))).fetchone()
     if not r:
         raise HTTPException(404, "incident not found")
-    return r
-
-
-# ---- contributors -------------------------------------------------------------
-@router.get("/contributors")
-async def contributors(request: Request, p: Principal = Depends(current_principal)):
-    async with request.app.state.pool.connection() as conn:
-        rows = await (await conn.execute(
-            "SELECT id, display_name, role FROM capture.contributors WHERE disabled_at IS NULL ORDER BY display_name")
-        ).fetchall()
-    return {"contributors": [{"id": str(r["id"]), "name": r["display_name"], "role": r["role"]} for r in rows]}
+    try:
+        role = await require_project(conn, p, r["project_id"], minimum)
+    except HTTPException as e:
+        raise HTTPException(404 if e.status_code == 404 else e.status_code,
+                            "incident not found" if e.status_code == 404 else e.detail) from None
+    if r["deleted"] and not at_least(role, "manager"):
+        raise HTTPException(404, "incident not found")
+    return r, role
 
 
 # ---- projects ----------------------------------------------------------------
 @router.get("/projects")
 async def list_projects(request: Request, include_archived: bool = False, p: Principal = Depends(current_principal)):
+    cond, args = visible_projects_sql(p)
     async with request.app.state.pool.connection() as conn:
         rows = await (await conn.execute(
-            "SELECT pr.*, count(i.id) FILTER (WHERE NOT i.deleted) AS incident_count,"
+            "SELECT pr.*, (SELECT role FROM capture.project_members m WHERE m.project_id = pr.id AND m.contributor_id = %s)"
+            " AS my_role, count(i.id) FILTER (WHERE NOT i.deleted) AS incident_count,"
             " count(i.id) FILTER (WHERE NOT i.deleted AND i.status NOT IN ('completed','cancelled')) AS open_count"
             " FROM capture.projects pr LEFT JOIN capture.incidents i ON i.project_id = pr.id"
-            + ("" if include_archived else " WHERE NOT pr.archived") +
-            " GROUP BY pr.id ORDER BY pr.archived, pr.name")).fetchall()
-    return {"projects": [_project_json(r) for r in rows]}
+            f" WHERE {cond}" + ("" if include_archived else " AND NOT pr.archived") +
+            " GROUP BY pr.id ORDER BY pr.archived, pr.name", (p.contributor_id, *args))).fetchall()
+    return {"projects": [_project_json(r, "owner" if p.role == "admin" else r["my_role"]) for r in rows]}
 
 
 @router.post("/projects", status_code=201)
@@ -210,42 +219,47 @@ async def create_project(body: ProjectIn, request: Request, p: Principal = Depen
     if not re.fullmatch(r"[A-Z0-9]{2,6}", code):
         raise HTTPException(422, "code must be 2-6 letters or digits")
     async with request.app.state.pool.connection() as conn:
-        if await (await conn.execute("SELECT 1 FROM capture.projects WHERE code = %s", (code,))).fetchone():
-            raise HTTPException(409, f"code {code} is already used")
-        r = await (await conn.execute(
-            "INSERT INTO capture.projects (code, name, description, color, tag_options, attributes, created_by)"
-            " VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING *",
-            (code, body.name, body.description, body.color or "#2563eb", _clean_tags(body.tag_options or []),
-             Jsonb(_normalise_attrs(body.attributes or [])), p.contributor_id))).fetchone()
-    return _project_json(r)
+        async with conn.transaction():
+            if await (await conn.execute("SELECT 1 FROM capture.projects WHERE code = %s", (code,))).fetchone():
+                raise HTTPException(409, f"code {code} is already used")
+            r = await (await conn.execute(
+                "INSERT INTO capture.projects (code, name, description, color, tag_options, attributes, wayback_enabled,"
+                " created_by) VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *",
+                (code, body.name, body.description, body.color or "#2563eb", _clean_tags(body.tag_options or []),
+                 Jsonb(_normalise_attrs(body.attributes or [])), bool(body.wayback_enabled), p.contributor_id))).fetchone()
+            await conn.execute("INSERT INTO capture.project_members (project_id, contributor_id, role, added_by)"
+                               " VALUES (%s, %s, 'owner', %s)", (r["id"], p.contributor_id, p.contributor_id))
+    return _project_json(r, "owner")
 
 
 @router.get("/projects/{project_id}")
 async def get_project(project_id: str, request: Request, p: Principal = Depends(current_principal)):
     async with request.app.state.pool.connection() as conn:
+        role = await require_project(conn, p, project_id)
         r = await (await conn.execute("SELECT * FROM capture.projects WHERE id = %s", (project_id,))).fetchone()
     if not r:
         raise HTTPException(404, "project not found")
-    return _project_json(r)
+    return _project_json(r, role)
 
 
 @router.patch("/projects/{project_id}")
-async def update_project(project_id: str, body: ProjectIn, request: Request, p: Principal = Depends(require("editor"))):
+async def update_project(project_id: str, body: ProjectIn, request: Request, p: Principal = Depends(current_principal)):
     changes = body.model_dump(exclude_unset=True)
     changes.pop("code", None)  # the code is part of every incident id; it never changes
-    if "tag_options" in changes:
-        changes["tag_options"] = _clean_tags(changes["tag_options"] or [])
-    if "attributes" in changes:
-        changes["attributes"] = Jsonb(_normalise_attrs(body.attributes or []))
     async with request.app.state.pool.connection() as conn:
+        role = await require_project(conn, p, project_id, "manager")
+        if "archived" in changes and not at_least(role, "owner"):
+            raise HTTPException(403, "only owners can archive a project")
+        if "tag_options" in changes:
+            changes["tag_options"] = _clean_tags(changes["tag_options"] or [])
+        if "attributes" in changes:
+            changes["attributes"] = Jsonb(_normalise_attrs(body.attributes or []))
         if changes:
             cols = ", ".join(f"{k} = %s" for k in changes)
             await conn.execute(f"UPDATE capture.projects SET {cols}, updated_at = now() WHERE id = %s",
                                (*changes.values(), project_id))
         r = await (await conn.execute("SELECT * FROM capture.projects WHERE id = %s", (project_id,))).fetchone()
-    if not r:
-        raise HTTPException(404, "project not found")
-    return _project_json(r)
+    return _project_json(r, role)
 
 
 # ---- incidents ----------------------------------------------------------------
@@ -253,34 +267,38 @@ async def update_project(project_id: str, body: ProjectIn, request: Request, p: 
 async def list_incidents(request: Request, p: Principal = Depends(current_principal),
                          project_id: str | None = None, status: str | None = None, tag: str | None = None,
                          assignee: str | None = None, sensitive: str | None = None, q: str | None = None,
-                         sort: Literal["updated", "created", "number"] = "updated",
-                         limit: int = Query(60, ge=1, le=500), offset: int = Query(0, ge=0)):
-    where, args = ["NOT i.deleted", "NOT p.archived" if not project_id else "TRUE"], []
+                         has_location: bool = False, sort: Literal["updated", "created", "number"] = "updated",
+                         limit: int = Query(60, ge=1, le=1000), offset: int = Query(0, ge=0)):
+    cond, cargs = visible_projects_sql(p, "p")
+    where, args = ["NOT i.deleted", "NOT p.archived" if not project_id else "TRUE", cond], list(cargs)
     for col, val in (("i.project_id = %s", project_id), ("i.status = %s", status),
                      ("%s = ANY(i.tags)", tag), ("%s::uuid = ANY(i.assignees)", assignee),
                      ("%s = ANY(i.sensitive)", sensitive)):
         if val:
             where.append(col)
             args.append(val)
+    if has_location:
+        where.append("i.lat IS NOT NULL AND i.lng IS NOT NULL")
     if q:
         where.append("(i.description ILIKE %s OR i.place ILIKE %s OR (p.code || '-' || i.number) ILIKE %s"
                      " OR EXISTS (SELECT 1 FROM capture.items it WHERE it.incident_id = i.id"
                      "            AND (it.canonical_url ILIKE %s OR it.title ILIKE %s)))")
-        like = f"%{q}%"
-        args += [like] * 5
+        args += [f"%{q}%"] * 5
     order = {"updated": "i.updated_at DESC", "created": "i.created_at DESC", "number": "p.code, i.number DESC"}[sort]
     async with request.app.state.pool.connection() as conn:
         rows = await (await conn.execute(
             INCIDENT_SELECT + " WHERE " + " AND ".join(where) + f" ORDER BY {order} LIMIT %s OFFSET %s",
             (*args, limit, offset))).fetchall()
+        roles = {}
+        for pid in {r["project_id"] for r in rows}:
+            roles[pid] = await project_role(conn, p, pid)
         names = await _names(conn, list({a for r in rows for a in r["assignees"]}))
-    return {"incidents": [_incident_json(r, names) for r in rows]}
+    return {"incidents": [_incident_json(r, names, roles[r["project_id"]]) for r in rows]}
 
 
-async def _apply_incident_changes(conn, r: dict, body: IncidentIn, p: Principal) -> int:
+async def _apply_incident_changes(conn, r: dict, body: IncidentIn, p: Principal, role: str) -> int:
     """Write changed fields and one feed entry per change. Returns how many fields changed."""
-    changes = {k: v for k, v in body.model_dump(exclude_unset=True).items()
-               if k in TRACKED or k == "deleted"}
+    changes = {k: v for k, v in body.model_dump(exclude_unset=True).items() if k in TRACKED or k == "deleted"}
     if "tags" in changes:
         changes["tags"] = _clean_tags(changes["tags"] or [])
     if "sensitive" in changes:
@@ -291,11 +309,19 @@ async def _apply_incident_changes(conn, r: dict, body: IncidentIn, p: Principal)
         changes["custom"] = {k: v for k, v in changes["custom"].items() if v not in (None, "", [])}
     if "assignees" in changes:
         changes["assignees"] = list(dict.fromkeys(changes["assignees"] or []))
-    if "status" in changes and changes["status"] != r["status"] and (
-            changes["status"] in PRIVILEGED_STATUSES or r["status"] in PRIVILEGED_STATUSES) and not p.at_least("reviewer"):
-        raise HTTPException(403, "only reviewers can mark an incident completed/cancelled or reopen it")
-    if "deleted" in changes and not p.at_least("editor"):
-        raise HTTPException(403, "only editors can delete incidents")
+        if changes["assignees"]:
+            ok = await (await conn.execute(
+                "SELECT count(*) AS n FROM capture.project_members WHERE project_id = %s AND contributor_id = ANY(%s::uuid[])"
+                " AND role <> 'data_only_viewer'", (r["project_id"], changes["assignees"]))).fetchone()
+            if ok["n"] != len(changes["assignees"]):
+                raise HTTPException(422, "assignees must be members of the project")
+    # Atlos: completed/cancelled incidents, and setting those statuses, are for managers.
+    if r["status"] in PRIVILEGED_STATUSES and not at_least(role, "manager"):
+        raise HTTPException(403, "only managers can edit a completed or cancelled incident")
+    if changes.get("status") in PRIVILEGED_STATUSES and changes["status"] != r["status"] and not at_least(role, "manager"):
+        raise HTTPException(403, "only managers can mark an incident completed or cancelled")
+    if "deleted" in changes and not at_least(role, "manager"):
+        raise HTTPException(403, "only managers can delete incidents")
 
     def norm(v):
         return [str(x) for x in v] if isinstance(v, list) else (v.isoformat() if isinstance(v, date) else v)
@@ -312,45 +338,52 @@ async def _apply_incident_changes(conn, r: dict, body: IncidentIn, p: Principal)
     return len(changed)
 
 
+async def _create_incident(conn, p: Principal, body: IncidentIn, role: str, created_note: str | None = None,
+                           rate_limit: bool = True) -> tuple[str, list[str]]:
+    proj = await (await conn.execute(
+        "UPDATE capture.projects SET next_number = next_number + 1 WHERE id = %s AND NOT archived"
+        " RETURNING next_number - 1 AS number", (body.project_id,))).fetchone()
+    if not proj:
+        raise HTTPException(409, "the project is archived")
+    row = await (await conn.execute(
+        "INSERT INTO capture.incidents (project_id, number, description, created_by) VALUES (%s,%s,%s,%s)"
+        " RETURNING id", (body.project_id, proj["number"], body.description, p.contributor_id))).fetchone()
+    await add_update(conn, incident_id=row["id"], kind="created", p=p, body=created_note or body.reason)
+    # The remaining attributes are set like an edit, but their feed entries are folded into "created".
+    fields = {k for k in body.model_fields_set if k in TRACKED and k != "description"}
+    if fields:
+        r, _ = await _get_incident(conn, row["id"], p)
+        await _apply_incident_changes(conn, r, IncidentIn(**{k: getattr(body, k) for k in fields}), p, role)
+        await conn.execute("DELETE FROM capture.updates WHERE incident_id = %s AND kind = 'attribute'", (row["id"],))
+    saved = []
+    for u in body.urls or []:
+        if u.strip():
+            _, res = await save_link(conn, p, url=None, text=u, client="web", incident_id=str(row["id"]),
+                                     rate_limit=rate_limit)
+            saved.append(res["item"]["id"])
+    return str(row["id"]), saved
+
+
 @router.post("/incidents", status_code=201)
-async def create_incident(body: IncidentIn, request: Request, p: Principal = Depends(require("contributor"))):
+async def create_incident(body: IncidentIn, request: Request, p: Principal = Depends(current_principal)):
     if not body.project_id or not body.description:
         raise HTTPException(422, "project_id and description are required")
-    if body.status in PRIVILEGED_STATUSES and not p.at_least("reviewer"):
-        raise HTTPException(403, "only reviewers can create a completed/cancelled incident")
     async with request.app.state.pool.connection() as conn:
         async with conn.transaction():
-            proj = await (await conn.execute(
-                "UPDATE capture.projects SET next_number = next_number + 1 WHERE id = %s AND NOT archived"
-                " RETURNING next_number - 1 AS number, attributes", (body.project_id,))).fetchone()
-            if not proj:
-                raise HTTPException(404, "project not found or archived")
-            row = await (await conn.execute(
-                "INSERT INTO capture.incidents (project_id, number, description, created_by) VALUES (%s,%s,%s,%s)"
-                " RETURNING id", (body.project_id, proj["number"], body.description, p.contributor_id))).fetchone()
-            await add_update(conn, incident_id=row["id"], kind="created", p=p, body=body.reason)
-            r = await _get_incident(conn, row["id"])
-            # Remaining attributes are set like any later edit, but without feed noise for each.
-            init = body.model_copy(update={"description": body.description, "reason": None})
-            fields = {k for k in body.model_fields_set if k in TRACKED and k != "description"}
-            if fields:
-                await _apply_incident_changes(conn, r, IncidentIn(**{k: getattr(init, k) for k in fields}), p)
-                await conn.execute("DELETE FROM capture.updates WHERE incident_id = %s AND kind = 'attribute'",
-                                   (row["id"],))
-            saved = []
-            for u in body.urls or []:
-                if u.strip():
-                    _, res = await save_link(conn, p, url=None, text=u, client="web", incident_id=str(row["id"]))
-                    saved.append(res["item"]["id"])
-            r = await _get_incident(conn, row["id"])
+            role = await require_project(conn, p, body.project_id, "editor")
+            if body.status in PRIVILEGED_STATUSES and not at_least(role, "manager"):
+                raise HTTPException(403, "only managers can create a completed/cancelled incident")
+            incident_id, saved = await _create_incident(conn, p, body, role)
+            r, _ = await _get_incident(conn, incident_id, p)
             names = await _names(conn, r["assignees"])
-    return {**_incident_json(r, names), "saved_items": saved}
+    return {**_incident_json(r, names, role), "saved_items": saved}
 
 
 @router.get("/incidents/{incident_id}")
 async def get_incident(incident_id: str, request: Request, p: Principal = Depends(current_principal)):
     async with request.app.state.pool.connection() as conn:
-        r = await _get_incident(conn, incident_id)
+        r, role = await _get_incident(conn, incident_id, p)
+        data_only = role == "data_only_viewer"
         items = await (await conn.execute(ITEM_SELECT + " WHERE i.incident_id = %s ORDER BY i.created_at",
                                           (incident_id,))).fetchall()
         thumbs = await (await conn.execute(
@@ -359,51 +392,66 @@ async def get_incident(incident_id: str, request: Request, p: Principal = Depend
             " WHERE it.incident_id = %s AND a.kind IN ('image', 'screenshot')"
             " ORDER BY it.id, (a.role = 'primary') DESC, (a.label = 'embed') DESC, (a.kind = 'image') DESC",
             (incident_id,))).fetchall()
-        feed = await (await conn.execute(
+        feed = [] if data_only else await (await conn.execute(
             "SELECT u.*, c.display_name FROM capture.updates u LEFT JOIN capture.contributors c ON c.id = u.contributor_id"
             " WHERE u.incident_id = %s ORDER BY u.created_at", (incident_id,))).fetchall()
-        names = await _names(conn, list({*r["assignees"], *[x for u in feed if u["field"] == "assignees"
-                                                             for x in (u["old_value"] or []) + (u["new_value"] or [])]}))
+        names = {} if data_only else await _names(conn, list({*r["assignees"], *[
+            x for u in feed if u["field"] == "assignees" for x in (u["old_value"] or []) + (u["new_value"] or [])]}))
         proj = await (await conn.execute("SELECT * FROM capture.projects WHERE id = %s", (r["project_id"],))).fetchone()
+        sub = await (await conn.execute("SELECT 1 FROM capture.subscriptions WHERE contributor_id = %s AND incident_id = %s",
+                                        (p.contributor_id, incident_id))).fetchone()
+        copies = await (await conn.execute(
+            "SELECT DISTINCT ON (e.item_id) e.item_id, e.state, e.copy_url, e.error FROM capture.external_copies e"
+            " JOIN capture.items it ON it.id = e.item_id WHERE it.incident_id = %s ORDER BY e.item_id, e.created_at DESC",
+            (incident_id,))).fetchall()
     thumb_by_item = {str(t["item_id"]): artifact_url(t["id"]) for t in thumbs}
-    out = _incident_json(r, names)
-    out["project"] = _project_json(proj)
-    out["material"] = [{**item_json(i), "thumbnail_url": thumb_by_item.get(str(i["id"]))} for i in items]
+    copy_by_item = {str(c["item_id"]): {"state": c["state"], "url": c["copy_url"], "error": c["error"]} for c in copies}
+    out = _incident_json(r, names, role)
+    out["project"] = _project_json(proj, role)
+    out["material"] = []
+    for i in items:
+        m = item_json(i)
+        if data_only:
+            m["submitted_by"] = None
+        out["material"].append({**m, "thumbnail_url": thumb_by_item.get(str(i["id"])),
+                                "wayback": copy_by_item.get(str(i["id"]))})
     out["feed"] = [{"id": str(u["id"]), "kind": u["kind"], "field": u["field"], "old": u["old_value"],
                     "new": u["new_value"], "body": u["body"], "created_at": u["created_at"],
                     "item_id": str(u["item_id"]) if u["item_id"] else None,
                     "by": {"id": str(u["contributor_id"]) if u["contributor_id"] else None, "name": u["display_name"]}}
                    for u in feed]
     out["names"] = names
+    out["subscribed"] = bool(sub)
     return out
 
 
 @router.patch("/incidents/{incident_id}")
-async def update_incident(incident_id: str, body: IncidentIn, request: Request,
-                          p: Principal = Depends(require("contributor"))):
+async def update_incident(incident_id: str, body: IncidentIn, request: Request, p: Principal = Depends(current_principal)):
     async with request.app.state.pool.connection() as conn:
         async with conn.transaction():
-            r = await _get_incident(conn, incident_id)
+            r, role = await _get_incident(conn, incident_id, p, "editor")
             if r["project_archived"]:
                 raise HTTPException(409, "the project is archived")
-            await _apply_incident_changes(conn, r, body, p)
+            await _apply_incident_changes(conn, r, body, p, role)
     return await get_incident(incident_id, request, p)
 
 
 @router.post("/incidents/{incident_id}/comments", status_code=201)
-async def comment(incident_id: str, body: CommentIn, request: Request, p: Principal = Depends(require("contributor"))):
+async def comment(incident_id: str, body: CommentIn, request: Request, p: Principal = Depends(current_principal)):
     async with request.app.state.pool.connection() as conn:
-        r = await _get_incident(conn, incident_id)
-        await add_update(conn, incident_id=r["id"], kind="comment", p=p, body=body.body.strip())
-        await conn.execute("UPDATE capture.incidents SET updated_at = now() WHERE id = %s", (r["id"],))
+        async with conn.transaction():
+            r, _ = await _get_incident(conn, incident_id, p, "viewer")
+            await add_update(conn, incident_id=r["id"], kind="comment", p=p, body=body.body.strip())
+            await conn.execute("UPDATE capture.incidents SET updated_at = now() WHERE id = %s", (r["id"],))
     return {"ok": True}
 
 
 @router.post("/incidents/{incident_id}/material")
 async def add_material(incident_id: str, body: MaterialIn, request: Request, response: Response,
-                       p: Principal = Depends(require("contributor"))):
+                       p: Principal = Depends(current_principal)):
     async with request.app.state.pool.connection() as conn:
         async with conn.transaction():
+            await _get_incident(conn, incident_id, p, "editor")
             status, res = await save_link(conn, p, url=body.url, text=body.text, note=body.note, client="web",
                                           new_version=body.new_version, incident_id=incident_id)
             await conn.execute("UPDATE capture.incidents SET updated_at = now() WHERE id = %s", (incident_id,))
@@ -411,12 +459,26 @@ async def add_material(incident_id: str, body: MaterialIn, request: Request, res
     return res
 
 
+@router.post("/incidents/{incident_id}/subscription", status_code=204)
+async def follow(incident_id: str, request: Request, p: Principal = Depends(current_principal)):
+    async with request.app.state.pool.connection() as conn:
+        await _get_incident(conn, incident_id, p, "viewer")
+        await subscribe(conn, p.contributor_id, incident_id)
+
+
+@router.delete("/incidents/{incident_id}/subscription", status_code=204)
+async def unfollow(incident_id: str, request: Request, p: Principal = Depends(current_principal)):
+    async with request.app.state.pool.connection() as conn:
+        await conn.execute("DELETE FROM capture.subscriptions WHERE contributor_id = %s AND incident_id = %s",
+                           (p.contributor_id, incident_id))
+
+
+# ---- export / import -------------------------------------------------------------
 @router.get("/incidents.csv")
 async def export_csv(request: Request, project_id: str, p: Principal = Depends(current_principal)):
     async with request.app.state.pool.connection() as conn:
+        await require_project(conn, p, project_id, "viewer")
         proj = await (await conn.execute("SELECT * FROM capture.projects WHERE id = %s", (project_id,))).fetchone()
-        if not proj:
-            raise HTTPException(404, "project not found")
         rows = await (await conn.execute(
             INCIDENT_SELECT + " WHERE i.project_id = %s AND NOT i.deleted ORDER BY i.number", (project_id,))).fetchall()
         urls = await (await conn.execute(
@@ -428,8 +490,9 @@ async def export_csv(request: Request, project_id: str, p: Principal = Depends(c
     attrs = proj["attributes"]
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(["id", "description", "status", "sensitive", "tags", "event_date", "place", "lat", "lng",
-                "geo_precision", "assignees", *[a["name"] for a in attrs], "source_urls", "created_at", "updated_at"])
+    # Same column names the importer reads, so an export can be edited and imported elsewhere.
+    w.writerow(["id", "description", "status", "sensitive", "tags", "date", "place", "lat", "lng", "precision",
+                "assignees", *[a["name"] for a in attrs], "urls", "created_at", "updated_at"])
     for r in rows:
         custom = r["custom"]
         w.writerow([f"{r['code']}-{r['number']}", r["description"], r["status"], "|".join(r["sensitive"]),
@@ -439,3 +502,28 @@ async def export_csv(request: Request, project_id: str, p: Principal = Depends(c
                     by_inc.get(str(r["id"]), ""), r["created_at"].isoformat(), r["updated_at"].isoformat()])
     return Response("﻿" + buf.getvalue(), media_type="text/csv; charset=utf-8",
                     headers={"Content-Disposition": f'attachment; filename="{proj["code"]}-incidents.csv"'})
+
+
+@router.post("/projects/{project_id}/import")
+async def bulk_import(project_id: str, body: ImportIn, request: Request, p: Principal = Depends(current_principal)):
+    """Atlos-style bulk import. `commit: false` validates and previews; `commit: true` creates every row,
+    all or nothing, and only if no row has an error."""
+    async with request.app.state.pool.connection() as conn:
+        role = await require_project(conn, p, project_id, "manager")
+        proj = await (await conn.execute("SELECT * FROM capture.projects WHERE id = %s", (project_id,))).fetchone()
+        if proj["archived"]:
+            raise HTTPException(409, "the project is archived")
+        rows, file_errors = importer.parse(body.csv, proj["attributes"])
+        bad = [r for r in rows if r["errors"]]
+        result = {"rows": rows, "file_errors": file_errors, "valid": len(rows) - len(bad), "invalid": len(bad),
+                  "created": []}
+        blocking = [e for e in file_errors if not e.startswith(("unknown column", "only the first"))]
+        if not body.commit or bad or blocking or not rows:
+            return result
+        async with conn.transaction():
+            for r in rows:
+                inc_in = IncidentIn(project_id=project_id, urls=r["urls"], **r["values"])
+                incident_id, _ = await _create_incident(conn, p, inc_in, role, created_note=f"CSV import, row {r['line']}",
+                                                        rate_limit=False)
+                result["created"].append(incident_id)
+    return result

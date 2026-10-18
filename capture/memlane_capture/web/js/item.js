@@ -50,7 +50,7 @@ export async function itemPage(view, id) {
         el("div", { class: "row" }, verdictChip(status), el("span", { class: "badge" }, platformOf(item.canonical_url) || item.platform),
           item.incident ? el("a", { class: "badge inc", href: `#/incidents/${item.incident.id}` }, item.incident.slug + " · " + item.incident.description) : "",
           el("span", { class: "spacer" }),
-          el("button", { type: "button", id: "recapture", disabled: ["queued", "capturing"].includes(item.status),
+          !item.can_edit ? "" : el("button", { type: "button", id: "recapture", disabled: ["queued", "capturing"].includes(item.status),
             onclick: async () => {
               try { await post(`/v1/items/${id}/recapture`); versionId = null; await reload(true); } catch (e) { toast(e.message, true); }
             } }, t("recapture"))),
@@ -62,6 +62,7 @@ export async function itemPage(view, id) {
         ex.text ? [sec(t("text")), el("div", { class: "text" }, ex.text)] : "",
         versions),
       el("div", { class: "card" }, sec(t("fileUnder")), fileRow),
+      waybackBlock(),
       primary.length ? [sec(t("content")), artifactGrid(primary, { blur })] : "",
       sec(t("evidence")), artifactGrid(context, { blur }),
       cap.manifest_sha256 ? el("p", { class: "hash" }, `${t("manifest")}: ${cap.manifest_sha256}`) : "",
@@ -76,11 +77,26 @@ export async function itemPage(view, id) {
          el("button", { type: "submit" }, t("saveEdits"))));
     lastKey = key();
   }
-  const key = () => `${item.status}|${item.captures.length}|${item.captures[0]?.state}|${item.incident?.id}`;
+  // Internet Archive: an independent public copy, submitted after the capture (external.py).
+  function waybackBlock() {
+    const w = item.wayback;
+    const busy = w && ["queued", "running"].includes(w.state);
+    return el("div", { class: "card", id: "wayback" }, sec(t("wayback")),
+      w ? el("div", { class: "row" }, el("span", { class: `chip wb-${w.state}` }, t("waybackState")[w.state] || w.state),
+            w.url ? el("a", { href: w.url, target: "_blank", rel: "noopener noreferrer" }, t("waybackOpen")) : "",
+            w.error ? el("span", { class: "muted small" }, w.error) : "")
+        : el("p", { class: "muted" }, t("waybackNone")),
+      item.can_edit && !busy ? el("button", { type: "button", id: "send-wayback", onclick: async () => {
+        try { item.wayback = await post(`/v1/items/${id}/wayback`); await render(); } catch (e) { toast(e.message, true); }
+      } }, t("sendWayback")) : "");
+  }
+  const key = () => `${item.status}|${item.captures.length}|${item.captures[0]?.state}|${item.incident?.id}|${item.wayback?.state}`;
   async function reload(force) {
     item = await api(`/v1/items/${id}`);
     if (force || key() !== lastKey) await render();
   }
   await render();
-  poll(() => { if (["queued", "capturing"].includes(item.status)) reload(false).catch(() => {}); }, 4000);
+  poll(() => {
+    if (["queued", "capturing"].includes(item.status) || ["queued", "running"].includes(item.wayback?.state)) reload(false).catch(() => {});
+  }, 4000);
 }

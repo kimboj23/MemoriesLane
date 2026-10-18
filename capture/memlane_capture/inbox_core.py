@@ -3,8 +3,10 @@
 from fastapi import HTTPException
 from psycopg.types.json import Jsonb
 
+from .access import project_role, require_project
 from .auth import Principal
 from .config import settings
+from .notify import fan_out
 from .urls import canonicalize, classify, extract_url
 
 ITEM_SELECT = """
@@ -42,6 +44,13 @@ def item_json(r: dict) -> dict:
     }
 
 
+async def can_see_item(conn, p: Principal, r: dict) -> bool:
+    """Its submitter, global reviewers, and members of the project it is filed under."""
+    if p.at_least("reviewer") or str(r["submitted_by"]) == p.contributor_id:
+        return True
+    return bool(r.get("project_id")) and await project_role(conn, p, r["project_id"]) is not None
+
+
 async def new_capture(conn, item_id, p: Principal) -> str:
     cap = await (await conn.execute(
         "INSERT INTO capture.captures (item_id, requested_by) VALUES (%s, %s) RETURNING id",
@@ -52,18 +61,23 @@ async def new_capture(conn, item_id, p: Principal) -> str:
 
 
 async def add_update(conn, *, incident_id, kind: str, p: Principal | None = None, item_id=None, field=None,
-                     old=None, new=None, body: str | None = None) -> None:
-    await conn.execute(
+                     old=None, new=None, body: str | None = None, notify: bool = True) -> str:
+    """Write a feed entry and notify the people following the incident (notify.py)."""
+    row = await (await conn.execute(
         "INSERT INTO capture.updates (incident_id, item_id, contributor_id, kind, field, old_value, new_value, body)"
-        " VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+        " VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id",
         (incident_id, item_id, p.contributor_id if p else None, kind, field,
-         Jsonb(old) if old is not None else None, Jsonb(new) if new is not None else None, body))
+         Jsonb(old) if old is not None else None, Jsonb(new) if new is not None else None, body))).fetchone()
+    if notify and incident_id:
+        await fan_out(conn, update_id=row["id"], incident_id=incident_id, kind=kind,
+                      actor_id=p.contributor_id if p else None, field=field, old=old, new=new, body=body)
+    return str(row["id"])
 
 
 async def save_link(conn, p: Principal, *, url: str | None, text: str | None, title: str | None = None,
                     note: str | None = None, case_ref: str | None = None, tags: list[str] | None = None,
                     sensitive: bool = False, client: str = "api", new_version: bool = False,
-                    incident_id: str | None = None) -> tuple[int, dict]:
+                    incident_id: str | None = None, rate_limit: bool = True) -> tuple[int, dict]:
     """Returns (http_status, body). Must run inside a transaction."""
     submitted = (url or "").strip() or extract_url(text or "")
     if submitted and not submitted.lower().startswith(("http://", "https://")):
@@ -73,18 +87,20 @@ async def save_link(conn, p: Principal, *, url: str | None, text: str | None, ti
     canonical = canonicalize(submitted)
     cls = classify(canonical)
 
-    recent = await (await conn.execute(
-        "SELECT count(*) AS n FROM capture.items WHERE submitted_by = %s AND created_at > now() - interval '1 hour'",
-        (p.contributor_id,))).fetchone()
-    if recent["n"] >= settings.submit_rate_per_hour:
-        raise HTTPException(429, "too many links this hour, try again later")
+    if rate_limit:
+        recent = await (await conn.execute(
+            "SELECT count(*) AS n FROM capture.items WHERE submitted_by = %s AND created_at > now() - interval '1 hour'",
+            (p.contributor_id,))).fetchone()
+        if recent["n"] >= settings.submit_rate_per_hour:
+            raise HTTPException(429, "too many links this hour, try again later")
 
     if incident_id:
         inc = await (await conn.execute(
-            "SELECT i.id, p.archived FROM capture.incidents i JOIN capture.projects p ON p.id = i.project_id"
+            "SELECT i.id, i.project_id, p.archived FROM capture.incidents i JOIN capture.projects p ON p.id = i.project_id"
             " WHERE i.id = %s AND NOT i.deleted", (incident_id,))).fetchone()
         if not inc:
             raise HTTPException(404, "incident not found")
+        await require_project(conn, p, inc["project_id"], "editor")
         if inc["archived"]:
             raise HTTPException(409, "the project is archived")
 
@@ -100,15 +116,17 @@ async def save_link(conn, p: Principal, *, url: str | None, text: str | None, ti
             await conn.execute("UPDATE capture.items SET incident_id = %s, updated_at = now() WHERE id = %s",
                                (incident_id, existing["id"]))
             await add_update(conn, incident_id=incident_id, kind="material_added", p=p, item_id=existing["id"])
+            from .external import queue_wayback  # local import: external imports this module
+            await queue_wayback(conn, existing["id"])
         if new_version and existing["capture_state"] not in ("queued", "running"):
             await new_capture(conn, existing["id"], p)
         existing = await (await conn.execute(ITEM_SELECT + " WHERE i.id = %s", (existing["id"],))).fetchone()
         item = item_json(existing)
-        # Someone else's private inbox item: reveal only that it exists and who saved it.
-        if (not p.at_least("reviewer") and str(existing["submitted_by"]) != p.contributor_id
-                and not existing["incident_id"]):
-            item = {k: item[k] for k in ("id", "canonical_url", "platform", "kind", "status", "title",
-                                         "created_at", "submitted_by", "latest_capture", "incident")}
+        # Saved by someone else, in their private inbox or a project you aren't in: say only that it exists.
+        if not await can_see_item(conn, p, existing):
+            item = {"id": item["id"], "canonical_url": item["canonical_url"], "platform": item["platform"],
+                    "kind": item["kind"], "status": item["status"], "created_at": item["created_at"],
+                    "submitted_by": item["submitted_by"], "latest_capture": None, "incident": None, "visible": False}
         return 200, {"created": False, "duplicate": True, "new_version": new_version, "item": item}
 
     row = await (await conn.execute(
