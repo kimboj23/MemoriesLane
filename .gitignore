@@ -45,3 +45,8 @@ backup/secrets.passphrase
 backup/archivebox/
 # mirror: read-only B2 key for a mirror host
 mirror/b2.env
+# capture service: env (IA/S3 keys, proxy), throwaway-account cookies/profiles, python caches
+capture/.env
+capture/secrets/
+__pycache__/
+.pytest_cache/

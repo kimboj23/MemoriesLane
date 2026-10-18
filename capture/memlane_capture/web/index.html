@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lưu trữ MemoryLane</title>
+  <link rel="stylesheet" href="app.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="bar">
+    <strong class="brand" data-i18n="brand">Lưu trữ MemoryLane</strong>
+    <span class="spacer"></span>
+    <span id="who" class="muted"></span>
+    <button id="lang" class="link" type="button">EN</button>
+    <button id="logout" class="link" type="button" hidden data-i18n="logout">Đăng xuất</button>
+  </header>
+
+  <main>
+    <!-- 1. Connect: personal token (from the admin CLI) -->
+    <section id="connect" class="card" hidden>
+      <h1 data-i18n="connectTitle">Kết nối</h1>
+      <p class="muted" data-i18n="connectHelp">Dán mã cá nhân (bắt đầu bằng mlc_) mà quản trị viên đã cấp cho bạn. Mã chỉ được lưu trên trình duyệt này.</p>
+      <form id="connect-form">
+        <input id="token" type="password" autocomplete="off" placeholder="mlc_…" required>
+        <button type="submit" class="primary" data-i18n="connect">Kết nối</button>
+      </form>
+      <p id="connect-error" class="error" hidden></p>
+    </section>
+
+    <!-- 2. Save sheet: the same sheet the share button / extension will open -->
+    <section id="save" class="card" hidden>
+      <form id="save-form">
+        <label class="sr" for="link" data-i18n="linkLabel">Liên kết</label>
+        <textarea id="link" rows="2" data-i18n-placeholder="linkPlaceholder" placeholder="Dán liên kết hoặc nội dung được chia sẻ…" required></textarea>
+        <div class="row">
+          <span id="detected" class="badge" hidden></span>
+          <span class="spacer"></span>
+          <button type="button" id="more-toggle" class="link" data-i18n="more">Thêm chi tiết</button>
+        </div>
+        <div id="more" hidden>
+          <input id="case_ref" data-i18n-placeholder="casePh" placeholder="Hồ sơ (vd. case-phuc-tan)">
+          <input id="tags" data-i18n-placeholder="tagsPh" placeholder="Chủ đề, cách nhau bằng dấu phẩy">
+          <textarea id="note" rows="2" data-i18n-placeholder="notePh" placeholder="Ghi chú"></textarea>
+          <label class="check"><input id="sensitive" type="checkbox"> <span data-i18n="sensitive">Nội dung nhạy cảm (làm mờ)</span></label>
+        </div>
+        <button type="submit" id="save-btn" class="primary wide" data-i18n="save">Lưu</button>
+      </form>
+      <div id="result" class="result" hidden></div>
+    </section>
+
+    <!-- 3. My saves -->
+    <section id="list-section" hidden>
+      <div class="row filters" id="filters"></div>
+      <div class="row" id="scope-row" hidden>
+        <label class="check"><input id="all" type="checkbox"> <span data-i18n="showAll">Hiện của mọi người</span></label>
+      </div>
+      <ul id="items" class="items"></ul>
+      <p id="empty" class="muted center" hidden data-i18n="empty">Chưa có liên kết nào.</p>
+    </section>
+
+    <!-- 4. Detail -->
+    <section id="detail" hidden>
+      <button id="back" class="link" type="button" data-i18n="back">← Quay lại</button>
+      <div id="detail-body"></div>
+    </section>
+  </main>
+</body>
+</html>

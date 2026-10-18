@@ -1,0 +1,14 @@
+# Pinned on purpose (proposal F7): bump deliberately, and re-run the canary
+# (tests/canary.py) before deploying a bump. yt-dlp needs bumping every few
+# weeks as platforms change.
+fastapi==0.143.3
+uvicorn[standard]==0.54.0
+psycopg[binary]==3.3.6
+psycopg-pool==3.3.3
+pydantic==2.14.1
+httpx==0.28.1
+boto3==1.43.114
+yt-dlp[default]==2026.8.19
+# must match the base image tag in Dockerfile
+playwright==1.63.0
+pytest==9.1.1

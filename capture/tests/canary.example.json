@@ -1,0 +1,6 @@
+[
+  {"url": "https://vnexpress.net/", "min": "complete", "note": "VN news homepage"},
+  {"url": "https://www.youtube.com/watch?v=jSc5Dn8Z1xQ", "min": "complete", "note": "YouTube: news outlet video"},
+  {"url": "https://www.instagram.com/reel/DZWmzjOILRo", "min": "complete", "note": "Instagram: NGO reel"},
+  {"url": "https://www.facebook.com/luatkhoa.org", "min": "partial", "note": "Facebook: media organisation page"}
+]
