@@ -26,17 +26,23 @@ async def migrate(pool: AsyncConnectionPool) -> list[str]:
     """Apply every migrations/*.sql not yet recorded, in filename order, each in its own transaction."""
     applied_now = []
     async with pool.connection() as conn:
-        await conn.execute(
-            "CREATE TABLE IF NOT EXISTS public.capture_schema_migrations "
-            "(name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())"
-        )
-        rows = await (await conn.execute("SELECT name FROM public.capture_schema_migrations")).fetchall()
-        done = {r["name"] for r in rows}
-        for path in sorted(MIGRATIONS_DIR.glob("*.sql")):
-            if path.name in done:
-                continue
-            async with conn.transaction():
-                await conn.execute(path.read_text(encoding="utf-8"))
-                await conn.execute("INSERT INTO public.capture_schema_migrations (name) VALUES (%s)", (path.name,))
-            applied_now.append(path.name)
+        # The API and the worker start together: serialise them, or both apply the same migration
+        # and the loser crashes ("relation already exists"; seen 2026-10-18).
+        await conn.execute("SELECT pg_advisory_lock(hashtext('memlane_capture_migrations'))")
+        try:
+            await conn.execute(
+                "CREATE TABLE IF NOT EXISTS public.capture_schema_migrations "
+                "(name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())"
+            )
+            rows = await (await conn.execute("SELECT name FROM public.capture_schema_migrations")).fetchall()
+            done = {r["name"] for r in rows}
+            for path in sorted(MIGRATIONS_DIR.glob("*.sql")):
+                if path.name in done:
+                    continue
+                async with conn.transaction():
+                    await conn.execute(path.read_text(encoding="utf-8"))
+                    await conn.execute("INSERT INTO public.capture_schema_migrations (name) VALUES (%s)", (path.name,))
+                applied_now.append(path.name)
+        finally:
+            await conn.execute("SELECT pg_advisory_unlock(hashtext('memlane_capture_migrations'))")
     return applied_now

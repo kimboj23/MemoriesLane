@@ -33,6 +33,7 @@ services:
       DATABASE_URL: postgresql://capture:capture@db:5432/capture
     ports:
       - "127.0.0.1:8700:8700"
+    restart: unless-stopped
     volumes:
       - capture-store:/data/store
     depends_on:
@@ -50,6 +51,7 @@ services:
     volumes:
       - capture-store:/data/store
     shm_size: "1gb"          # Chromium's shared memory; the default 64 MB crashes tabs
+    restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
