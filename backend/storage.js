@@ -81,4 +81,11 @@ async function downloadPhoto(key) {
   return Buffer.from(await data.arrayBuffer());
 }
 
-module.exports = { storageEnabled, ensureBucket, uploadPhoto, downloadPhoto, BUCKET };
+async function deletePhoto(key) {
+  const c = getClient();
+  if (!c) throw new Error("Supabase Storage not configured");
+  const { error } = await c.storage.from(BUCKET).remove([key]);
+  if (error) throw error;
+}
+
+module.exports = { storageEnabled, ensureBucket, uploadPhoto, downloadPhoto, deletePhoto, BUCKET };

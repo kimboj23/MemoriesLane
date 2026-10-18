@@ -30,6 +30,7 @@ function MemoryDetail({ memory, lang, onClose, onPrev, onNext, onOpenCase }) {
   // data URL; approved ones fetched from the server are streamed from the
   // serving route instead.
   const fileUrl = m.photoData || (m.id ? `/api/memories/${m.id}/photo` : null);
+  const approx = m.radius > 0;
   const mediaKind = m.media === "video" ? "video" : m.media === "document" ? "document"
     : (m.photo || m.photoData) ? "photo" : null;
 
@@ -87,6 +88,12 @@ function MemoryDetail({ memory, lang, onClose, onPrev, onNext, onOpenCase }) {
               {lang === "vi" ? m.date : (m.dateEn || m.date)}
             </span>
           </div>
+          {approx && (
+            <div className="read-meta">
+              <span className="meta-k">{lang === "vi" ? "Nơi chốn" : "Where"}</span>
+              <span className="meta-v">{m.ward ? m.ward + " · " : ""}{t.approxArea}</span>
+            </div>
+          )}
           <div className="read-meta">
             <span className="meta-k">{lang === "vi" ? "Kể bởi" : "Told by"}</span>
             <span className="meta-v">

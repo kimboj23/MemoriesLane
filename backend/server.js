@@ -12,6 +12,9 @@ const topicsRouter   = require("./routes/topics");
 const feedRouter     = require("./routes/feed");
 const archiveRouter  = require("./routes/archive");
 const materialsRouter = require("./routes/materials");
+const hubRouter      = require("./routes/hub");
+const hub            = require("./hub");
+const { getPool }    = require("./db");
 
 const PORT = parseInt(process.env.PORT, 10) || 3001;
 const BIND = process.env.BIND_ADDR || "127.0.0.1"; // localhost-only by default
@@ -108,12 +111,13 @@ app.use("/api/topics",   topicsRouter);
 app.use("/api/feed",     feedRouter);
 app.use("/api/archive",  archiveRouter);
 app.use("/api/materials", materialsRouter);
+app.use("/api", hubRouter);
 
 // Small public config for the frontend (e.g. the public ArchiveBox UI URL,
 // set per-environment so the admin "ArchiveBox" link points at the right place
 // without rebuilding the frontend).
 app.get("/api/config", (req, res) =>
-  res.json({ archiveboxUrl: process.env.ARCHIVEBOX_PUBLIC_URL || null })
+  res.json({ archiveboxUrl: process.env.ARCHIVEBOX_PUBLIC_URL || null, hub: { receipts: hub.intakeOn(), source: hub.publicSource() } })
 );
 
 app.get("/health", (req, res) => res.json({ ok: true }));
@@ -136,6 +140,9 @@ app.use((err, req, res, next) => {
 async function start() {
   assertEnv();
   await initDb();
+  // The hub connection (intake outbox + verified feed); a no-op unless HUB_* is configured.
+  await hub.init(getPool(), storage, process.env.UPLOADS_DIR ? require("path").resolve(process.env.UPLOADS_DIR)
+    : require("path").join(__dirname, "uploads"));
 
   // Self-healing: ensure the photo bucket exists. Non-fatal — reads only need
   // Postgres, so a Storage hiccup must not stop the API from starting.

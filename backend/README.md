@@ -24,6 +24,26 @@ npm run dev
 | `POST` | `/api/moderate/:id/approve` | Bearer | Approve a memory |
 | `POST` | `/api/moderate/:id/reject` | Bearer | Reject with optional reason |
 | `GET` | `/health` | — | Liveness probe |
+| `GET` | `/api/receipts/:code` | — | With the hub connected: a submission's status by its receipt code (`received / in_review / published / not_published`) |
+| `POST` | `/api/hub-feed-changed` | — | The hub's nudge after a feed rebuild (carries no data; the site re-fetches and verifies the feed) |
+| `GET` | `/api/hub-status` | Bearer | Hub connection: intake/feed on, public source, last verified feed |
+
+## Connecting to the MemoryLane hub
+
+The site can act as a "spoke" of the internal platform (`capture/`, see docs/integration-design.md and
+docs/spoke-integration.md). Everything is off until configured, so without these variables the site behaves as before.
+
+- **Intake** (`HUB_URL`, `HUB_SOURCE`, `HUB_INTAKE_KEY`): each new memory is written with an outbox row in one
+  transaction (`hub_outbox`), and a relay forwards it, text then file, with retries. The submitter gets a **receipt
+  code**. Once the hub has confirmed the file's hash, the local copy is deleted (`HUB_PURGE_AFTER_FORWARD`, default on).
+  Local moderation answers 410: moderation happens in the hub.
+- **Feed** (`HUB_FEED_URL`, `HUB_FEED_ROOT_KEY`): the site reads what the hub published, verifying the signed feed
+  against the pinned root key. Published memories have a generalised location (`precision`, `radius_m`); the map
+  draws them as areas. Published incidents appear as case pages, their materials with verification hashes.
+- **`PUBLIC_SOURCE`**: `db` (default, as before), `both` (migration: local approved rows plus the feed; a feed copy
+  of a migrated memory replaces the local one and keeps its id), or `feed` (only the hub's publications).
+- **Migration**: `node scripts/export-to-hub.js` counts, `--commit` queues the approved memories (as already
+  public), cases and archives (for review) for the relay. Idempotent.
 
 ## Security design
 

@@ -12,6 +12,12 @@
 const STR = {
   vi: {
     siteName: "Miền Ký Ức",
+    receiptTitle: "Đã nhận ký ức của bạn",
+    receiptText: "Mã biên nhận (hãy lưu lại; đây là cách duy nhất để kiểm tra, vì chúng tôi không lưu tài khoản hay email):",
+    receiptCheck: "Kiểm tra trạng thái",
+    receiptStatus: { received: "Đã nhận, đang chờ xem xét.", in_review: "Đang được xem xét.", published: "Đã được công bố.",
+                     not_published: "Không được công bố.", unknown: "Không tìm thấy mã này." },
+    approxArea: "Khu vực ước lượng (vị trí đã được làm mờ để bảo vệ người liên quan)",
     tagline: "Một bản đồ ký ức của những tiếng nói",
     addMemory: "Để lại ký ức",
     tapToPlace: "Chạm vào bản đồ, nơi ký ức của bạn thuộc về",
@@ -93,6 +99,12 @@ const STR = {
   },
   en: {
     siteName: "Memory Lane",
+    receiptTitle: "Your memory was received",
+    receiptText: "Receipt code (keep it: it is the only way to check, since we keep no account or email):",
+    receiptCheck: "Check status",
+    receiptStatus: { received: "Received, waiting for review.", in_review: "Being reviewed.", published: "Published.",
+                     not_published: "Not published.", unknown: "Code not found." },
+    approxArea: "Approximate area (the location was generalised to protect the people involved)",
     tagline: "A map of memory, made of voices",
     addMemory: "Leave a memory",
     tapToPlace: "Touch the map, where your memory belongs",

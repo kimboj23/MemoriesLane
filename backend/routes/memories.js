@@ -18,6 +18,7 @@ const { queries } = require("../db");
 const storage = require("../storage");
 const { validateSubmission } = require("../middleware/sanitize");
 const { rateLimit } = require("../middleware/rate-limit");
+const hub = require("../hub");
 
 let sharp;
 try {
@@ -197,7 +198,9 @@ router.post("/", rateLimit(5, "submit"), async (req, res, next) => {
       }
     }
 
-    await queries.insert({
+    // With the hub configured, the memory and its outbox row are written in one transaction and forwarded;
+    // the submitter gets a receipt code to check its status later (no account needed).
+    const receipt = await hub.insertMemory((client, row) => queries.insert(row, client), {
       id, ...fields,
       media_type: final_media_type,
       has_photo,
@@ -210,6 +213,7 @@ router.post("/", rateLimit(5, "submit"), async (req, res, next) => {
       id,
       status: "pending",
       message: "Memory received — it will appear after review.",
+      ...(receipt ? { receipt } : {}),
     });
   } catch (err) {
     next(err);
@@ -230,8 +234,10 @@ router.get("/", rateLimit(120, "read"), async (req, res, next) => {
 
     if (minYear > maxYear) return res.status(400).json({ error: "minYear must be ≤ maxYear" });
 
-    const rows = await queries.publicList(city, minYear, maxYear, PAGE_SIZE, offset);
-    res.json({ memories: rows, offset, limit: PAGE_SIZE, hasMore: rows.length === PAGE_SIZE });
+    const dbRows = hub.useDb() ? await queries.publicList(city, minYear, maxYear, PAGE_SIZE, offset) : [];
+    // Feed memories (already published by the hub) are added on the first page only; the feed is small.
+    const rows = offset === 0 ? hub.mergeMemories(dbRows, hub.feedMemories(city, minYear, maxYear)) : dbRows;
+    res.json({ memories: rows, offset, limit: PAGE_SIZE, hasMore: dbRows.length === PAGE_SIZE });
   } catch (err) {
     next(err);
   }
@@ -242,7 +248,7 @@ router.get("/", rateLimit(120, "read"), async (req, res, next) => {
 // ---------------------------------------------------------------------------
 router.get("/:id([A-Za-z0-9_-]{1,24})", async (req, res, next) => {
   try {
-    const row = await queries.publicById(req.params.id);
+    const row = hub.feedMemory(req.params.id) || (hub.useDb() ? await queries.publicById(req.params.id) : null);
     if (!row) return res.status(404).json({ error: "Not found" });
     res.json(row);
   } catch (err) {
@@ -255,7 +261,15 @@ router.get("/:id([A-Za-z0-9_-]{1,24})", async (req, res, next) => {
 // ---------------------------------------------------------------------------
 router.get("/:id([A-Za-z0-9_-]{1,24})/photo", async (req, res, next) => {
   try {
-    const row = await queries.photoPath(req.params.id);
+    // A published (feed) memory: its cleaned file, checked against the hash in the signed record.
+    const fromFeed = await hub.feedPhoto(req.params.id).catch(() => null);
+    if (fromFeed) {
+      res.setHeader("Content-Type", fromFeed.mime);
+      res.setHeader("Cache-Control", "public, max-age=3600");
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      return res.send(fromFeed.buf);
+    }
+    const row = hub.useDb() ? await queries.photoPath(req.params.id) : null;
     if (!row || !row.photo_path) return res.status(404).json({ error: "Not found" });
 
     // Pre-migration rows have no file_mime stored — they're always images.

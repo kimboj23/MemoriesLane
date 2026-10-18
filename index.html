@@ -926,6 +926,13 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 .adm-badge.is-fail{border-color:var(--ember);color:var(--ember)}
 .adm-badge.is-running{border-color:var(--gold);color:var(--gold)}
 .adm-form .adm-input + .field-label{margin-top:18px}
+/* receipt after submitting (shown only when the site forwards to the MemoryLane hub) */
+.receipt-notice{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:1200;width:min(440px,calc(100vw - 32px));
+  background:var(--panel);color:var(--ink);border:1px solid var(--line-2);border-radius:12px;padding:14px 16px;box-shadow:0 10px 30px rgba(0,0,0,.18)}
+.receipt-notice p{margin:6px 0;color:var(--ink-dim);font-size:.9rem}
+.receipt-code{display:block;font-family:var(--mono);font-size:1.15rem;letter-spacing:.06em;margin:6px 0 10px;user-select:all}
+.receipt-close{position:absolute;top:6px;right:10px;background:none;border:0;font-size:1.3rem;color:var(--ink-dim);cursor:pointer}
+.receipt-status{font-size:.9rem;color:var(--ink-dim)}
 </style>
 </head>
 <body>

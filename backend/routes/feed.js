@@ -13,6 +13,7 @@
 const express = require("express");
 const { queries } = require("../db");
 const { rateLimit } = require("../middleware/rate-limit");
+const hub = require("../hub");
 
 const VALID_CITIES = new Set(["hanoi", "hcmc", "hue", "danang", "cantho"]);
 
@@ -26,8 +27,13 @@ router.get("/", rateLimit(60, "read"), async (req, res, next) => {
       ? req.query.topics.split(",").map((s) => s.trim()).filter(Boolean)
       : [];
 
-    const result = await queries.feedCases(city, topicSlugs);
-    res.json(result);
+    const result = hub.useDb() ? await queries.feedCases(city, topicSlugs) : { items: [], casesCount: 0 };
+    // Published hub cases have no topics yet, so a topic filter leaves them out.
+    const published = topicSlugs.length ? [] : hub.feedCases(city).map((c) => ({
+      type: "case", id: c.id, title_vi: c.title_vi, title_en: c.title_en, summary_vi: c.summary_vi, summary_en: c.summary_en,
+      city: c.city, lat: c.lat, lng: c.lng, status: c.status, created_at: c.created_at, topics: [],
+      memory_count: hub.feedCaseMemories(c.id).length, precision: c.precision, radius_m: c.radius_m }));
+    res.json({ items: [...result.items, ...published], casesCount: result.casesCount + published.length });
   } catch (err) {
     next(err);
   }

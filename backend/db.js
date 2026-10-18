@@ -272,7 +272,8 @@ function mapMaterial(r) {
 // Query helpers — all async, return plain values (not Statement objects)
 // ---------------------------------------------------------------------------
 const queries = {
-  insert: (row) => getPool().query(
+  // `client`: a transaction's client (hub.js writes the memory and its outbox row together).
+  insert: (row, client = getPool()) => client.query(
     `INSERT INTO memories
        (id, lat, lng, city, ward, cat, year, month, day, date_label, date_label_en,
         lang, text_vi, text_en, has_photo, photo_path, file_mime, media_type, submit_date,

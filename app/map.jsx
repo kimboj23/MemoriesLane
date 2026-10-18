@@ -95,6 +95,12 @@ function MapView({
       const mk = L.marker([m.lat, m.lng], { icon, riseOnHover: true, keyboard: false }).addTo(map);
       mk.on("click", () => cb.current.onSelect(m));
       markersRef.current[m.id] = mk;
+      // A generalised location (published by the hub) is an area, not a spot: draw it, so nobody reads the
+      // centre as the real place.
+      if (m.radius > 0) {
+        markersRef.current[m.id + "~area"] = L.circle([m.lat, m.lng], { radius: m.radius, color: c, weight: 1, opacity: 0.5,
+          fillOpacity: 0.07, dashArray: "4 4", interactive: false }).addTo(map);
+      }
     });
   }, [memories, accumulation, accent]);
 

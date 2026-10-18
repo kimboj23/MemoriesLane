@@ -9,6 +9,7 @@ const crypto = require("crypto");
 const { queries, VALID_CITIES } = require("../db");
 const { requireAdmin } = require("../middleware/auth");
 const { rateLimit } = require("../middleware/rate-limit");
+const hub = require("../hub");
 
 const router = express.Router();
 
@@ -61,7 +62,13 @@ router.get("/", requireAdmin, async (req, res, next) => {
 
 router.get("/:id([A-Za-z0-9_-]{1,64})", rateLimit(120, "read"), async (req, res, next) => {
   try {
-    const row = await queries.caseById(req.params.id);
+    // A case the hub published: materials (cleaned files, verification hashes) come from the signed feed.
+    const published = hub.feedCase(req.params.id);
+    if (published) {
+      const local = hub.useDb() ? await queries.caseMemories(req.params.id) : [];
+      return res.json({ case: published, memories: hub.mergeMemories(local, hub.feedCaseMemories(req.params.id)) });
+    }
+    const row = hub.useDb() ? await queries.caseById(req.params.id) : null;
     if (!row) return res.status(404).json({ error: "Not found" });
 
     let sections;

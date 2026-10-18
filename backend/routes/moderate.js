@@ -14,8 +14,13 @@ const { requireAdmin } = require("../middleware/auth");
 const { rateLimit } = require("../middleware/rate-limit");
 
 const router = express.Router();
+const hub = require("../hub");
 
 router.use(requireAdmin);
+// Decision 2026-10-18: with the hub connected, moderation happens there only (one review path, two-person
+// publication). Local approve/reject would publish around it.
+router.use((req, res, next) => hub.intakeOn()
+  ? res.status(410).json({ error: "Moderation moved to the MemoryLane hub (Hộp tiếp nhận)." }) : next());
 router.use(rateLimit(60, "moderate"));
 
 // ---------------------------------------------------------------------------

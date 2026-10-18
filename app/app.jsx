@@ -194,7 +194,27 @@ function fromApi(r) {
     attribution: r.attribution || "anonymous",
     authorName: r.author_name || null,
     mediaUrl: r.media_url || null,
+    // Published by the hub: the point is generalised, drawn as an area of this radius (0 = exact).
+    radius: r.radius_m || 0,
+    precision: r.precision || null,
   };
+}
+
+// After submitting: the receipt code (no account needed) and a status check through /api/receipts.
+function ReceiptNotice({ code, S, onClose }) {
+  const [status, setStatus] = React.useState(null);
+  const check = () => fetch(`/api/receipts/${encodeURIComponent(code)}`)
+    .then((r) => r.ok ? r.json() : { status: "unknown" })
+    .then((d) => setStatus(d.status)).catch(() => setStatus("unknown"));
+  return (
+    <div className="receipt-notice" role="status">
+      <button className="receipt-close" aria-label="×" onClick={onClose}>×</button>
+      <strong>{S.receiptTitle}</strong>
+      <p>{S.receiptText}</p>
+      <code className="receipt-code">{code}</code>
+      <div><button onClick={check}>{S.receiptCheck}</button>{status && <span className="receipt-status"> {S.receiptStatus[status] || status}</span>}</div>
+    </div>
+  );
 }
 
 function App() {
@@ -404,13 +424,16 @@ function App() {
     else if (pickingArchiveLoc) { setSelected(null); setAboutOpen(false); setLayersOpen(false); setArchivePoint(p); setPickingArchiveLoc(false); }
   };
   const closeCompose = () => { setComposing(false); setPlacePoint(null); };
+  const [receipt, setReceipt] = React.useState(null);
   const submit = (mem) => {
     setMemories((prev) => [...prev, mem]); // optimistic UI update
     fetch("/api/memories", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(mem),
-    }).catch(() => {}); // silent — memory stays visible locally regardless
+    }).then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (d && d.receipt) setReceipt(d.receipt); })   // only when the site forwards to the hub
+      .catch(() => {}); // silent — memory stays visible locally regardless
   };
   const openMemory = (m) => { setComposing(false); setPlacePoint(null); wanderHist.current = []; setSelected(m); };
   const selectMapItem = (m) => {
@@ -614,6 +637,7 @@ function App() {
           onSelectMemory={(m) => { setOpenCaseId(null); setCaseProfile(null); setSelected(m); }} />
       )}
       {aboutOpen && <AboutPanel lang={lang} onClose={() => setAboutOpen(false)} />}
+      {receipt && <ReceiptNotice code={receipt} S={STR[lang]} onClose={() => setReceipt(null)} />}
       {adminOpen && (
         <ArchiveAdmin lang={lang}
           onClose={() => { setAdminOpen(false); setPickingArchiveLoc(false); setArchivePoint(null); }}
