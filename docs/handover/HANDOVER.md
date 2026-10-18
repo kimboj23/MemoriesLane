@@ -2,6 +2,26 @@
 
 Newest first. One entry per session that commits: who, which assistant, what changed and why, status, how it was tested, follow-ups with an owner, commit hashes. Details belong in the commit messages. This repo is public; see CLAUDE.md for what must never go here.
 
+## 2026-10-18 (night) · kimboj23 with Claude Code (Opus 5.5)
+
+**What:**
+- Map tiles now come from CARTO basemaps (OpenStreetMap's servers returned 403). The CSP allows the `{s}` subdomains and the referrer policy is `strict-origin`.
+- A link can be source material of several incidents (`capture.item_incidents`, migration 005).
+- Internet Archive safeguards: the UI asks to confirm before sending; tests skip the step when IA keys are set.
+- Wrote docs/integration-design.md: the hub-and-spoke design connecting the community map and Hồ sơ Nhân quyền (Intake API in; a signed publication feed out).
+
+**Why:** the user reported the broken map, asked that a link can belong to several incidents, and asked for an integration design.
+
+**Status:** done. Integration design awaits the decisions in its §11.
+
+**Incident:** after the user added IA keys locally, an e2e test and a smoke script submitted two example.com test URLs to the Wayback Machine for real (public, permanent). No sensitive data was involved. The guard and a CLAUDE.md rule now prevent this, and every project's Internet Archive sharing is off in the dev DB.
+
+**Tested:** map tiles 19/19 HTTP 200 with no CSP violations; 72 unit and 6 e2e tests pass; API permission matrix including the many-to-many checks.
+
+**Follow-ups (maintainers):** decide §11 of the integration design; choose which projects share with the Internet Archive.
+
+**Commits** (branch `feat/capture-platform`, not pushed): `9a8181e` map + IA safety, `0f28c1f` many-to-many, and the commit adding this entry.
+
 ## 2026-10-18 (evening) · kimboj23 with Claude Code (Opus 5.5)
 
 **What:** built Atlos-style collaboration in capture/:

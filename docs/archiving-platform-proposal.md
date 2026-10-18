@@ -1,6 +1,6 @@
 # Archiving platform: audit and rebuild proposal
 
-**Status:** accepted 2026-10-18: option B; the current stack is left as-is (not in use) and the new platform is built alongside it, then migrated · **Date:** 2026-10-18 · **Scope:** the capture side of MemoryLane: `archivebox/`, `worker/`, auto-archiver, Internet Archive. The frontend, backend API, moderation and NocoDB are out of scope.
+**Status:** accepted 2026-10-18: option B; the current stack is left as-is (not in use) and the new platform is built alongside it, then migrated · **Date:** 2026-10-18 · **Scope:** the capture side of MemoryLane: `archivebox/`, `worker/`, auto-archiver, Internet Archive. The frontend, backend API, moderation and NocoDB are out of scope. How the new platform connects to the community map and Hồ sơ Nhân quyền is in [integration-design.md](integration-design.md).
 
 ---
 
