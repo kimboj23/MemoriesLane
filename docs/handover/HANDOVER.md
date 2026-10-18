@@ -2,6 +2,27 @@
 
 Newest first. One entry per session that commits: who, which assistant, what changed and why, status, how it was tested, follow-ups with an owner, commit hashes. Details belong in the commit messages. This repo is public; see CLAUDE.md for what must never go here.
 
+## 2026-10-18 (evening) · kimboj23 with Claude Code (Opus 5.5)
+
+**What:** built Atlos-style collaboration in capture/:
+- per-project roles (data-only viewer → owner) and the Access tab;
+- invite links, including joining without an account;
+- an Admin page for people, instance roles and tokens;
+- notifications: follow, @mentions, assignees, bell;
+- map views with Leaflet vendored and the tile server configurable;
+- CSV bulk import with preview, all or nothing;
+- Internet Archive copies as a separate job: per-project opt-in plus "send now"; Facebook via its embed URL; Threads/Instagram skipped with the reason shown.
+
+**Why:** the user asked for members and invite links with admin-assigned access levels, notifications, a map view, bulk import, and an answer on the Internet Archive link.
+
+**Status:** done for this scope. Open: the same link in several incidents, email/Telegram notifications, per-project API tokens, translated server error texts.
+
+**Tested:** capture/ Docker stack. 72 unit and 6 e2e tests pass (the new ones cover invite → roles → @mention → bell, and import → map → Internet Archive → admin); a 42-check API permission matrix; canary 9/9; screenshots reviewed. No real Internet Archive submission was made (no IA keys locally); the SPN2 client was tested against a fake archive.org.
+
+**Follow-ups (maintainers):** IA keys plus which projects share with the Internet Archive; the tile server choice (`TILE_URL`); per CLAUDE.md "Pending ops".
+
+**Commits** (branch `feat/capture-platform`, not pushed): `5adb8d5` collaboration features, and the commit adding this entry.
+
 ## 2026-10-18 (later) · kimboj23 with Claude Code (Opus 5.5)
 
 **What:**

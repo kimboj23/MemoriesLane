@@ -26,7 +26,8 @@ Several people work on this repo through AI coding assistants, and each needs to
 | Create a B2 bucket + key for `capture/` artifacts (S3 backend) before any deployment | maintainers | `capture/.env.example`; keep it separate from the backup bucket |
 | Decide whether permissions should become per-project (Atlos memberships and invites) before more contributors join | maintainers | currently global roles |
 | Set `ARTIFACT_URL_SECRET` in any deployment with more than one API process | whoever deploys `capture/` | see capture/README "Known limitations" |
-| Add Internet Archive keys to `capture/.env` for the wayback witness | maintainers | the existing `IA_ACCESS_KEY`/`IA_SECRET_KEY` work (SPN2 quota checked 2026-10-18) |
+| Choose the map tile server for real use (`TILE_URL`): public OSM tiles reveal viewed areas and have a usage policy | maintainers | capture/.env.example |
+| Add Internet Archive keys to `capture/.env` and decide which projects share with the Internet Archive | maintainers | the existing `IA_ACCESS_KEY`/`IA_SECRET_KEY` work (SPN2 quota checked 2026-10-18) |
 
 ## Commands
 
@@ -55,6 +56,8 @@ See README "Run locally" (root `docker-compose.yml`) and "Deploy" (`docker-compo
 - **Never store yt-dlp's `.info.json`.** With cookies it can contain the session. Write the sanitised subset instead (`witnesses/media.py`). The output template stays `%(id).80B.%(ext)s`: title-based names broke on long Vietnamese captions.
 - **Captured content is hostile.** The UI inserts it only via `textContent` or as `blob:` media, never as HTML. Artifact downloads are served with `Content-Security-Policy: sandbox`, and the UI with a strict CSP. Chromium and yt-dlp run as the non-root `pwuser`. No `docker.sock` anywhere.
 - **Artifacts are only ever served sandboxed.** Every `/v1/artifacts` response carries `CSP: sandbox; default-src 'none'` (no scripts, nothing external loads), and the UI embeds HTML in `<iframe sandbox>`. Signed artifact URLs (`signing.py`) are issued only inside responses to users who may read the item. Don't relax either.
+- **Access is per project** (`access.py`, Atlos's five roles). Every endpoint that touches a project checks the role there with `require_project`, and a project you aren't in answers 404, never 403. Data-only viewers never receive the feed, comments or anyone's name. Invite links store only a hash, are shown once, can't grant owner, and never lower an existing role.
+- **The Internet Archive is an external copy, not evidence.** Wayback submissions are a separate job (`external.py`), never part of a sealed capture or a verdict, and never automatic unless the project opted in ("Share with the Internet Archive", off by default; submissions are public). Threads/Instagram are skipped; Facebook sends the embed URL.
 - **Migrations:** add a new numbered file in `capture/migrations/`; never edit one that has been applied. The runner holds an advisory lock, because the API and worker start together.
 - **Workspace UI:** copy Atlos's *design*, not its code (Atlos is GPLv3). Render pages with `mount()`/`el()` from `web/js/core.js`. They flatten arrays and insert captured text only as text.
 - **Pin everything** (base image, Python deps, yt-dlp, Playwright). Bump deliberately, and run the canary before and after.
