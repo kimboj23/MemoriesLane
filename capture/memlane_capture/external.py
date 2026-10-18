@@ -54,14 +54,16 @@ async def queue_wayback(conn, item_id, requested_by=None, force: bool = False) -
 
     Returns the external_copies row, or None if nothing was queued (not wanted, or one already exists).
     """
+    # A link used in several incidents is sent if any of their projects shares with the Internet Archive.
     item = await (await conn.execute(
-        "SELECT i.id, i.platform, i.kind, coalesce(i.resolved_url, i.canonical_url) AS url, i.incident_id,"
-        "       p.wayback_enabled FROM capture.items i"
-        " LEFT JOIN capture.incidents inc ON inc.id = i.incident_id LEFT JOIN capture.projects p ON p.id = inc.project_id"
-        " WHERE i.id = %s", (item_id,))).fetchone()
+        "SELECT i.id, i.platform, i.kind, coalesce(i.resolved_url, i.canonical_url) AS url,"
+        " (SELECT count(*) FROM capture.item_incidents ii WHERE ii.item_id = i.id) AS filed,"
+        " EXISTS (SELECT 1 FROM capture.item_incidents ii JOIN capture.incidents inc ON inc.id = ii.incident_id"
+        "         JOIN capture.projects p ON p.id = inc.project_id WHERE ii.item_id = i.id AND p.wayback_enabled)"
+        " AS wayback_enabled FROM capture.items i WHERE i.id = %s", (item_id,))).fetchone()
     if not item:
         return None
-    wanted = force or (item["wayback_enabled"] if item["incident_id"] else settings.wayback_default_unfiled)
+    wanted = force or (item["wayback_enabled"] if item["filed"] else settings.wayback_default_unfiled)
     if not wanted:
         return None
     existing = await (await conn.execute(

@@ -61,6 +61,8 @@ See README "Run locally" (root `docker-compose.yml`) and "Deploy" (`docker-compo
 - **Migrations:** add a new numbered file in `capture/migrations/`; never edit one that has been applied. The runner holds an advisory lock, because the API and worker start together.
 - **Workspace UI:** copy Atlos's *design*, not its code (Atlos is GPLv3). Render pages with `mount()`/`el()` from `web/js/core.js`. They flatten arrays and insert captured text only as text.
 - **Pin everything** (base image, Python deps, yt-dlp, Playwright). Bump deliberately, and run the canary before and after.
+- **A link is one item, in any number of incidents** (`capture.item_incidents`). Its captures exist once; filing it elsewhere never re-captures it. People see a link if they're in any project using it, but only the incidents in projects they belong to, and never the submitter's private note or tags.
+- **Tests never send anything to external services for real**, above all the Internet Archive (public and permanent). Check `/v1/config` → `wayback_configured` and skip the step when keys are set. This happened twice on 2026-10-18 (two example.com test URLs were archived publicly) before the guard existed.
 - **Unit tests stay offline.** Anything needing the network goes in `tests/e2e/` or `tests/canary.py`.
 - **Throwaway accounts only** for any cookies or profiles, per [archivebox/THROWAWAY-ACCOUNTS.md](archivebox/THROWAWAY-ACCOUNTS.md), and never committed (`capture/secrets/` and `capture/.env` are gitignored).
 

@@ -66,7 +66,7 @@ export async function saveSheet({ prefill = "", projectId = null, incidentId = n
         const it = r.item;
         const who = it.submitted_by?.id === state.me.id ? t("you") : (it.submitted_by?.name || t("someone"));
         show(el("span", {}, t("dupBy")(who, ago(it.created_at)), " ", it.latest_capture?.verdict ? verdictChip(it.latest_capture.verdict) : ""),
-          it.incident ? el("span", { class: "muted" }, " · ", it.incident.slug) : "",
+          (it.incidents || []).length ? el("span", { class: "muted" }, " · ", it.incidents.map((x) => x.slug).join(", ")) : "",
           el("div", { class: "row" },
             el("a", { class: "btn", href: `#/items/${it.id}` }, t("view")),
             el("button", { type: "button", onclick: () => save(true) }, t("newVersion"))));
@@ -92,7 +92,7 @@ export function itemRow(it) {
                     onclick: () => { location.hash = `#/items/${it.id}`; },
                     onkeydown: (e) => { if (e.key === "Enter") location.hash = `#/items/${it.id}`; } },
     el("div", { class: "row" }, verdictChip(it.status), el("span", { class: "badge" }, platformOf(it.canonical_url) || it.platform),
-      it.incident ? el("span", { class: "badge inc" }, projectDot({ color: it.incident.color }), it.incident.slug) : "",
+      (it.incidents || []).map((x) => el("span", { class: "badge inc" }, projectDot({ color: x.color }), x.slug)),
       el("span", { class: "spacer" }), el("span", { class: "meta" }, ago(it.created_at))),
     el("div", { class: "title" }, it.title || ex.title || it.canonical_url),
     el("div", { class: "snippet" }, ex.text || ex.author || it.canonical_url));

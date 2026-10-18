@@ -125,7 +125,8 @@ Run the canary before and after any dependency bump (yt-dlp, Playwright, base im
 | POST | `/v1/projects/{id}/import` | manager+ | `{csv, commit}`: validate and preview, or create every row (all or nothing) |
 | POST/DELETE | `/v1/incidents/{id}/subscription` | viewer+ | Follow / unfollow |
 | GET/POST | `/v1/notifications`, `/v1/notifications/unread_count`, `/v1/notifications/read`, `/v1/me/subscriptions` | everyone | Notifications |
-| POST | `/v1/items/{id}/wayback` | submitter / project editor+ | Request an Internet Archive copy now |
+| POST | `/v1/items/{id}/wayback` | submitter / project editor+ | Request an Internet Archive copy now (the UI asks to confirm: it is public) |
+| POST / DELETE | `/v1/items/{id}/incidents`, `/v1/items/{id}/incidents/{incident_id}` | editor of that incident's project | File a link under another incident / remove it from one (a link can be in several) |
 | GET/POST/PATCH | `/v1/admin/contributors[/{id}[/token, /revoke-tokens]]` | admin | People, instance roles, tokens |
 | GET | `/v1/contributors?project_id=`, `/v1/config`, `/v1/me`, `/healthz` | | Assignable members; tile settings |
 
@@ -136,6 +137,7 @@ migrations/001_init.sql     capture.{contributors,tokens,items,captures,artifact
 migrations/002_restricted.sql the `restricted` verdict
 migrations/003_workspace.sql capture.{projects,incidents,updates}, items.incident_id
 migrations/004_access_notifications.sql project_members, project_invites, subscriptions, notifications, external_copies
+migrations/005_item_incidents.sql a link can be source material of several incidents (replaces items.incident_id)
 memlane_capture/
   urls.py                   extract link from shared text, canonicalise (dedupe key), classify, login-URL detection
   resolve.py                follow share links / shorteners
@@ -162,8 +164,6 @@ tests/                      unit tests; e2e/ (Playwright, needs the stack); cana
 ## Known limitations
 
 - Reasons in verdicts are English strings from `gate.py`; the UI translates statuses but not reasons yet.
-- A link is captured once and belongs to one incident. Adding it to a second incident says where it already is
-  rather than linking it twice (Atlos allows the same URL in several incidents; that needs a join table).
 - Import error messages, like verdict reasons, are English only.
 - Notifications are in-app only (no email/Telegram push yet).
 - **Map tiles reveal the viewed area to the tile server** (default: CARTO basemaps, like the public map; OpenStreetMap's
@@ -181,6 +181,6 @@ tests/                      unit tests; e2e/ (Playwright, needs the stack); cana
 - browsertrix-crawler WACZ witness (replayable archive) and a replay viewer
 - logged-in sessions per platform (throwaway-account profiles), carousel walk, OCR guard, circuit breaker
 - RFC 3161 / OpenTimestamps on the manifest hash
-- the same link in several incidents; email/Telegram notifications; Atlos API tokens per project
+- email/Telegram notifications; Atlos API tokens per project
 - scheduled canary; PWA share target + iOS Shortcut + browser extension on top of the save sheet
 - deployment (B2 storage, VPS) and migration of the old `archives` rows

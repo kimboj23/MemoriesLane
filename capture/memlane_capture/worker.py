@@ -90,10 +90,10 @@ async def _finish(pool, cap: dict, item: dict, outcome) -> None:
             if not retry:
                 # Source material of an incident: the result goes into its feed (as "the system") and
                 # notifies whoever follows the incident.
-                cur = await (await conn.execute("SELECT incident_id FROM capture.items WHERE id = %s",
-                                                (item["id"],))).fetchone()
-                if cur and cur["incident_id"]:
-                    await add_update(conn, incident_id=cur["incident_id"], kind="capture", item_id=item["id"],
+                links = await (await conn.execute("SELECT incident_id FROM capture.item_incidents WHERE item_id = %s",
+                                                  (item["id"],))).fetchall()
+                for link in links:   # every incident using this link
+                    await add_update(conn, incident_id=link["incident_id"], kind="capture", item_id=item["id"],
                                      new={"verdict": v.verdict, "capture_id": str(cap["id"])},
                                      body="; ".join(v.reasons)[:1000])
                 if v.verdict != "failed":

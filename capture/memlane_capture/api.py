@@ -22,7 +22,8 @@ from .config import settings
 from .db import make_pool, migrate
 from .access import project_role, require_project
 from .external import queue_wayback
-from .inbox_core import ITEM_SELECT, add_update, can_see_item, item_json, new_capture, save_link
+from .inbox_core import (ITEM_SELECT, can_see_item, item_json, item_json_for, link_item, new_capture, project_ids,
+                         save_link, unlink_item)
 from .signing import artifact_url, verify
 from .storage import get_storage, iter_chunks
 
@@ -90,7 +91,7 @@ class InboxIn(BaseModel):
     sensitive: bool = False
     client: Literal["web", "android-share", "ios-shortcut", "extension", "telegram", "api", "import"] = "api"
     new_version: bool = Field(False, description="Already saved? Capture it again as a new version.")
-    incident_id: str | None = Field(None, description="File it under this incident (source material).")
+    incident_id: str | None = Field(None, description="Also file it under this incident (source material).")
 
 
 class ItemPatch(BaseModel):
@@ -99,11 +100,14 @@ class ItemPatch(BaseModel):
     case_ref: str | None = Field(None, max_length=100)
     tags: list[str] | None = Field(None, max_length=30)
     sensitive: bool | None = None
-    incident_id: str | None = Field(None, description="Attach to an incident; null detaches.")
+
+
+class LinkIn(BaseModel):
+    incident_id: str
 
 
 async def _get_item(conn, item_id: str, p: Principal) -> dict:
-    """Visible to its submitter, global reviewers, and members of the project it is filed under."""
+    """Visible to its submitter, global reviewers, and members of any project it is used in."""
     r = await (await conn.execute(ITEM_SELECT + " WHERE i.id = %s", (item_id,))).fetchone()
     if not r or not await can_see_item(conn, p, r):
         raise HTTPException(404, "item not found")
@@ -111,11 +115,13 @@ async def _get_item(conn, item_id: str, p: Principal) -> dict:
 
 
 async def _can_edit_material(conn, p: Principal, r: dict) -> bool:
-    """Re-capture / send to the Internet Archive: the submitter, editors of its project, global reviewers."""
+    """Re-capture / send to the Internet Archive: the submitter, global reviewers, editors of any project using it."""
     if p.at_least("reviewer") or str(r["submitted_by"]) == p.contributor_id:
         return True
-    role = await project_role(conn, p, r["project_id"]) if r.get("project_id") else None
-    return role in ("editor", "manager", "owner")
+    for pid in project_ids(r):
+        if await project_role(conn, p, pid) in ("editor", "manager", "owner"):
+            return True
+    return False
 
 
 async def _wayback(conn, item_id) -> dict | None:
@@ -180,20 +186,20 @@ async def list_items(request: Request, p: Principal = Depends(current_principal)
         where.append("i.status = %s")
         args.append(status)
     if unfiled:
-        where.append("i.incident_id IS NULL")
+        where.append("NOT EXISTS (SELECT 1 FROM capture.item_incidents ii WHERE ii.item_id = i.id)")
     if before:
         where.append("i.created_at < %s::timestamptz")
         args.append(before)
     sql = ITEM_SELECT + (" WHERE " + " AND ".join(where) if where else "") + " ORDER BY i.created_at DESC LIMIT %s"
     async with request.app.state.pool.connection() as conn:
         rows = await (await conn.execute(sql, (*args, limit))).fetchall()
-    return {"items": [item_json(r) for r in rows]}
+        return {"items": [await item_json_for(conn, p, r) for r in rows]}
 
 
 @app.get("/v1/items/{item_id}")
 async def get_item(item_id: str, request: Request, p: Principal = Depends(current_principal)):
     async with request.app.state.pool.connection() as conn:
-        item = item_json(await _get_item(conn, item_id, p))
+        item = await item_json_for(conn, p, await _get_item(conn, item_id, p))
         caps = await (await conn.execute(
             "SELECT id, state, verdict, verdict_reasons, attempts, created_at, started_at, finished_at, final_url,"
             " extracted, witnesses, tool_versions, manifest_sha256, error FROM capture.captures WHERE item_id = %s"
@@ -231,32 +237,35 @@ async def patch_item(item_id: str, body: ItemPatch, request: Request, p: Princip
     async with request.app.state.pool.connection() as conn:
         async with conn.transaction():
             r = await _get_item(conn, item_id, p)
-            own = str(r["submitted_by"]) == p.contributor_id
-            moving = "incident_id" in changes and str(changes["incident_id"] or "") != str(r["incident_id"] or "")
-            # Notes/tags: the submitter or a global editor. Filing: editor in both the old and the new project.
-            if (set(changes) - {"incident_id"}) and not own and not p.at_least("editor"):
+            # Notes and tags are the submitter's own (or a global editor's to fix).
+            if changes and str(r["submitted_by"]) != p.contributor_id and not p.at_least("editor"):
                 raise HTTPException(403, "only the submitter or an editor can edit this item")
-            if moving and r["incident_id"]:
-                await require_project(conn, p, r["project_id"], "editor")
-            if moving and changes["incident_id"]:
-                inc = await (await conn.execute(
-                    "SELECT i.project_id FROM capture.incidents i JOIN capture.projects pr ON pr.id = i.project_id"
-                    " WHERE i.id = %s AND NOT i.deleted AND NOT pr.archived", (changes["incident_id"],))).fetchone()
-                if not inc:
-                    raise HTTPException(404, "incident not found or its project is archived")
-                await require_project(conn, p, inc["project_id"], "editor")
             if changes:
                 cols = ", ".join(f"{k} = %s" for k in changes)
                 await conn.execute(f"UPDATE capture.items SET {cols}, updated_at = now() WHERE id = %s",
                                    (*changes.values(), item_id))
-            if moving:
-                if r["incident_id"]:
-                    await add_update(conn, incident_id=r["incident_id"], kind="material_removed", p=p, item_id=item_id)
-                if changes["incident_id"]:
-                    await add_update(conn, incident_id=changes["incident_id"], kind="material_added", p=p,
-                                     item_id=item_id)
-                    await queue_wayback(conn, item_id)
-        return item_json(await _get_item(conn, item_id, p))
+        return await item_json_for(conn, p, await _get_item(conn, item_id, p))
+
+
+@app.post("/v1/items/{item_id}/incidents", status_code=201)
+async def file_item(item_id: str, body: LinkIn, request: Request, p: Principal = Depends(current_principal)):
+    """File a link under (another) incident: editor of that incident's project. A link can be in several."""
+    async with request.app.state.pool.connection() as conn:
+        async with conn.transaction():
+            await _get_item(conn, item_id, p)
+            added = await link_item(conn, p, item_id, body.incident_id)
+        return {"added": added, "item": await item_json_for(conn, p, await _get_item(conn, item_id, p))}
+
+
+@app.delete("/v1/items/{item_id}/incidents/{incident_id}")
+async def unfile_item(item_id: str, incident_id: str, request: Request, p: Principal = Depends(current_principal)):
+    async with request.app.state.pool.connection() as conn:
+        async with conn.transaction():
+            await _get_item(conn, item_id, p)
+            removed = await unlink_item(conn, p, item_id, incident_id)
+        r = await (await conn.execute(ITEM_SELECT + " WHERE i.id = %s", (item_id,))).fetchone()
+        visible = await can_see_item(conn, p, r)
+        return {"removed": removed, "item": await item_json_for(conn, p, r) if visible else None}
 
 
 @app.post("/v1/items/{item_id}/recapture", status_code=202)

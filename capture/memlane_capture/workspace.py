@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from . import importer
 from .access import at_least, project_role, require_project, visible_projects_sql
 from .auth import Principal, current_principal, require
-from .inbox_core import ITEM_SELECT, add_update, item_json, save_link
+from .inbox_core import ITEM_SELECT, add_update, item_json_for, save_link
 from .notify import subscribe
 from .signing import artifact_url
 
@@ -145,10 +145,11 @@ def _validate_custom(custom: dict, defs: list[dict]) -> dict:
 INCIDENT_SELECT = """
 SELECT i.*, p.code, p.name AS project_name, p.color, p.archived AS project_archived, p.attributes AS project_attributes,
        c.display_name AS created_by_name,
-       (SELECT count(*) FROM capture.items it WHERE it.incident_id = i.id) AS material_count,
-       (SELECT a.id FROM capture.items it JOIN capture.artifacts a ON a.capture_id = it.latest_capture_id
-         WHERE it.incident_id = i.id AND a.role = 'primary' AND a.kind IN ('image', 'screenshot')
-         ORDER BY (a.kind = 'image') DESC, it.created_at LIMIT 1) AS thumb_artifact_id
+       (SELECT count(*) FROM capture.item_incidents ii WHERE ii.incident_id = i.id) AS material_count,
+       (SELECT a.id FROM capture.item_incidents ii JOIN capture.items it ON it.id = ii.item_id
+          JOIN capture.artifacts a ON a.capture_id = it.latest_capture_id
+         WHERE ii.incident_id = i.id AND a.role = 'primary' AND a.kind IN ('image', 'screenshot')
+         ORDER BY (a.kind = 'image') DESC, ii.added_at LIMIT 1) AS thumb_artifact_id
   FROM capture.incidents i
   JOIN capture.projects p ON p.id = i.project_id
   LEFT JOIN capture.contributors c ON c.id = i.created_by
@@ -281,7 +282,8 @@ async def list_incidents(request: Request, p: Principal = Depends(current_princi
         where.append("i.lat IS NOT NULL AND i.lng IS NOT NULL")
     if q:
         where.append("(i.description ILIKE %s OR i.place ILIKE %s OR (p.code || '-' || i.number) ILIKE %s"
-                     " OR EXISTS (SELECT 1 FROM capture.items it WHERE it.incident_id = i.id"
+                     " OR EXISTS (SELECT 1 FROM capture.item_incidents ii JOIN capture.items it ON it.id = ii.item_id"
+                     "            WHERE ii.incident_id = i.id"
                      "            AND (it.canonical_url ILIKE %s OR it.title ILIKE %s)))")
         args += [f"%{q}%"] * 5
     order = {"updated": "i.updated_at DESC", "created": "i.created_at DESC", "number": "p.code, i.number DESC"}[sort]
@@ -384,12 +386,13 @@ async def get_incident(incident_id: str, request: Request, p: Principal = Depend
     async with request.app.state.pool.connection() as conn:
         r, role = await _get_incident(conn, incident_id, p)
         data_only = role == "data_only_viewer"
-        items = await (await conn.execute(ITEM_SELECT + " WHERE i.incident_id = %s ORDER BY i.created_at",
-                                          (incident_id,))).fetchall()
+        items = await (await conn.execute(
+            ITEM_SELECT + " JOIN capture.item_incidents link ON link.item_id = i.id WHERE link.incident_id = %s"
+            " ORDER BY link.added_at", (incident_id,))).fetchall()
         thumbs = await (await conn.execute(
-            "SELECT DISTINCT ON (it.id) it.id AS item_id, a.id FROM capture.items it"
-            " JOIN capture.artifacts a ON a.capture_id = it.latest_capture_id"
-            " WHERE it.incident_id = %s AND a.kind IN ('image', 'screenshot')"
+            "SELECT DISTINCT ON (it.id) it.id AS item_id, a.id FROM capture.item_incidents ii"
+            " JOIN capture.items it ON it.id = ii.item_id JOIN capture.artifacts a ON a.capture_id = it.latest_capture_id"
+            " WHERE ii.incident_id = %s AND a.kind IN ('image', 'screenshot')"
             " ORDER BY it.id, (a.role = 'primary') DESC, (a.label = 'embed') DESC, (a.kind = 'image') DESC",
             (incident_id,))).fetchall()
         feed = [] if data_only else await (await conn.execute(
@@ -402,7 +405,8 @@ async def get_incident(incident_id: str, request: Request, p: Principal = Depend
                                         (p.contributor_id, incident_id))).fetchone()
         copies = await (await conn.execute(
             "SELECT DISTINCT ON (e.item_id) e.item_id, e.state, e.copy_url, e.error FROM capture.external_copies e"
-            " JOIN capture.items it ON it.id = e.item_id WHERE it.incident_id = %s ORDER BY e.item_id, e.created_at DESC",
+            " JOIN capture.item_incidents ii ON ii.item_id = e.item_id WHERE ii.incident_id = %s"
+            " ORDER BY e.item_id, e.created_at DESC",
             (incident_id,))).fetchall()
     thumb_by_item = {str(t["item_id"]): artifact_url(t["id"]) for t in thumbs}
     copy_by_item = {str(c["item_id"]): {"state": c["state"], "url": c["copy_url"], "error": c["error"]} for c in copies}
@@ -410,7 +414,8 @@ async def get_incident(incident_id: str, request: Request, p: Principal = Depend
     out["project"] = _project_json(proj, role)
     out["material"] = []
     for i in items:
-        m = item_json(i)
+        async with request.app.state.pool.connection() as conn:
+            m = await item_json_for(conn, p, i)   # other incidents it's in: only those you can see
         if data_only:
             m["submitted_by"] = None
         out["material"].append({**m, "thumbnail_url": thumb_by_item.get(str(i["id"])),
@@ -482,9 +487,10 @@ async def export_csv(request: Request, project_id: str, p: Principal = Depends(c
         rows = await (await conn.execute(
             INCIDENT_SELECT + " WHERE i.project_id = %s AND NOT i.deleted ORDER BY i.number", (project_id,))).fetchall()
         urls = await (await conn.execute(
-            "SELECT it.incident_id, string_agg(it.canonical_url, ' ' ORDER BY it.created_at) AS urls"
-            " FROM capture.items it JOIN capture.incidents i ON i.id = it.incident_id WHERE i.project_id = %s"
-            " GROUP BY it.incident_id", (project_id,))).fetchall()
+            "SELECT ii.incident_id, string_agg(it.canonical_url, ' ' ORDER BY ii.added_at) AS urls"
+            " FROM capture.item_incidents ii JOIN capture.items it ON it.id = ii.item_id"
+            " JOIN capture.incidents i ON i.id = ii.incident_id WHERE i.project_id = %s"
+            " GROUP BY ii.incident_id", (project_id,))).fetchall()
         names = await _names(conn, list({a for r in rows for a in r["assignees"]}))
     by_inc = {str(u["incident_id"]): u["urls"] for u in urls}
     attrs = proj["attributes"]

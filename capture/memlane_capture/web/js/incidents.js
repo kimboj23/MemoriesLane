@@ -331,6 +331,8 @@ export async function incidentPage(view, id) {
           el("span", { class: "spacer" }), el("span", { class: "meta" }, ago(m.created_at))),
         el("a", { class: "title", href: `#/items/${m.id}` }, m.title || ex.title || m.canonical_url),
         ex.restriction_notice ? el("p", { class: "notice small" }, ex.restriction_notice.slice(0, 220) + (ex.restriction_notice.length > 220 ? "…" : "")) : "",
+        (m.incidents || []).filter((x) => x.id !== id).length ? el("div", { class: "row meta" }, t("alsoIn"),
+          m.incidents.filter((x) => x.id !== id).map((x) => el("a", { class: "badge inc", href: `#/incidents/${x.id}` }, projectDot({ color: x.color }), x.slug))) : "",
         prim.length ? artifactGrid(prim, { blur }) : "",
         el("div", { class: "row meta" }, el("a", { href: m.url, target: "_blank", rel: "noopener noreferrer" }, t("openOriginal")),
           m.wayback?.url ? el("a", { href: m.wayback.url, target: "_blank", rel: "noopener noreferrer" }, t("waybackOpen")) : "",
@@ -401,20 +403,17 @@ function addMaterial(incidentId, reload) {
   const close = modal(t("addMaterial").replace("+ ", ""), el("form", { class: "stack", onsubmit: async (e) => {
     e.preventDefault();
     btn.disabled = true;
-    // A link is captured once; if it is already source material of another incident, say where
-    // instead of silently adding nothing.
-    const elsewhere = [];
+    // A link is captured once and can be source material of several incidents: an already-saved link is
+    // simply filed here too. Only a link that was already in *this* incident is worth mentioning.
+    const already = [];
     try {
       for (const line of input.value.split("\n").map((s) => s.trim()).filter(Boolean)) {
         const r = await post(`/v1/incidents/${incidentId}/material`, { text: line });
-        const inc = r.item?.incident;
-        if (r.duplicate && inc && inc.id !== incidentId) elsewhere.push([line, inc]);
-        else if (r.duplicate && r.item?.visible === false) elsewhere.push([line, null]);
+        if (r.duplicate && !r.linked) already.push(line);
       }
       await reload(true);
-      if (!elsewhere.length) { close(); return; }
-      mount(notes, elsewhere.map(([line, inc]) => el("p", { class: "notice small" }, line, " — ",
-        inc ? [t("alreadyIn"), " ", el("a", { href: `#/incidents/${inc.id}` }, `${inc.slug} · ${inc.description}`)] : t("alreadySavedPrivate"))));
+      if (!already.length) { close(); return; }
+      mount(notes, already.map((line) => el("p", { class: "notice small" }, line, " — ", t("alreadyHere"))));
       input.value = "";
     } catch (err) { toast(err.message, true); }
     btn.disabled = false;

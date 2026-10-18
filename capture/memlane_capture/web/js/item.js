@@ -1,6 +1,6 @@
 // One saved link (source material): verdict, what was extracted, its capture versions, and every
 // artifact viewable in the browser.
-import { mount, api, el, fmtDate, patch, platformOf, poll, post, sec, state, t, toast, verdictChip } from "./core.js";
+import { mount, api, el, fmtDate, patch, platformOf, poll, post, projectDot, sec, state, t, toast, verdictChip } from "./core.js";
 import { incidentPicker } from "./inbox.js";
 import { artifactGrid } from "./viewer.js";
 
@@ -29,12 +29,23 @@ export async function itemPage(view, id) {
     add(t("client"), item.client);
     add("URL", item.resolved_url && item.resolved_url !== item.canonical_url ? `${item.canonical_url} → ${item.resolved_url}` : item.canonical_url);
 
-    const picker = await incidentPicker({ projectId: item.incident?.project_id, value: item.incident?.id });
-    const fileRow = el("div", { class: "row" }, picker.node,
-      el("button", { type: "button", onclick: async () => {
-        try { item = { ...item, ...(await patch(`/v1/items/${id}`, { incident_id: picker.value })) }; toast(t("saved")); render(); }
+    // A link can be source material of several incidents: list them, add another, remove one.
+    const picker = await incidentPicker({});
+    const fileRow = el("div", { class: "stack" },
+      (item.incidents || []).length ? el("ul", { class: "plain", id: "item-incidents" }, item.incidents.map((x) => el("li", { class: "row" },
+        projectDot({ color: x.color }), el("a", { href: `#/incidents/${x.id}` }, `${x.slug} · ${x.description}`),
+        el("button", { type: "button", class: "link danger small", "aria-label": t("detach"), onclick: async () => {
+          try {
+            const r = await api(`/v1/items/${id}/incidents/${x.id}`, { method: "DELETE" });
+            if (!r.item) { location.hash = `#/incidents/${x.id}`; return; }   // no longer visible to you
+            await reload(true);
+          } catch (e) { toast(e.message, true); }
+        } }, t("detach"))))) : el("p", { class: "muted" }, t("unfiled")),
+      el("div", { class: "row" }, picker.node, el("button", { type: "button", id: "file-under", onclick: async () => {
+        if (!picker.value) return;
+        try { await post(`/v1/items/${id}/incidents`, { incident_id: picker.value }); toast(t("saved")); await reload(true); }
         catch (e) { toast(e.message, true); }
-      } }, t("attach")));
+      } }, t("fileAnother"))));
 
     const versions = caps.length > 1 ? el("div", { class: "row versions" }, el("span", { class: "meta" }, t("versions") + ":"),
       caps.map((c, i) => el("button", { type: "button", "aria-pressed": String(c.id === cap.id),
@@ -45,10 +56,10 @@ export async function itemPage(view, id) {
     const tags = el("input", { value: (item.tags || []).join(", ") });
 
     mount(view, 
-      el("a", { class: "link", href: item.incident ? `#/incidents/${item.incident.id}` : "#/inbox" }, t("back")),
+      el("a", { class: "link", href: item.incidents?.length === 1 ? `#/incidents/${item.incidents[0].id}` : "#/inbox" }, t("back")),
       el("div", { class: "card" },
         el("div", { class: "row" }, verdictChip(status), el("span", { class: "badge" }, platformOf(item.canonical_url) || item.platform),
-          item.incident ? el("a", { class: "badge inc", href: `#/incidents/${item.incident.id}` }, item.incident.slug + " · " + item.incident.description) : "",
+          (item.incidents || []).map((x) => el("a", { class: "badge inc", href: `#/incidents/${x.id}` }, projectDot({ color: x.color }), x.slug)),
           el("span", { class: "spacer" }),
           !item.can_edit ? "" : el("button", { type: "button", id: "recapture", disabled: ["queued", "capturing"].includes(item.status),
             onclick: async () => {
@@ -92,7 +103,7 @@ export async function itemPage(view, id) {
         try { item.wayback = await post(`/v1/items/${id}/wayback`); await render(); } catch (e) { toast(e.message, true); }
       } }, t("sendWayback")) : "");
   }
-  const key = () => `${item.status}|${item.captures.length}|${item.captures[0]?.state}|${item.incident?.id}|${item.wayback?.state}`;
+  const key = () => `${item.status}|${item.captures.length}|${item.captures[0]?.state}|${(item.incidents || []).map((x) => x.id).join(",")}|${item.wayback?.state}`;
   async function reload(force) {
     item = await api(`/v1/items/${id}`);
     if (force || key() !== lastKey) await render();
