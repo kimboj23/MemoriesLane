@@ -1,5 +1,7 @@
 // People: a project's Access panel (members, roles, invite links), the invite page, and the admin page.
 import { ago, api, atLeast, copyText, el, fmtDate, isAdmin, loadContributors, mount, patch, post, sec, state, t, toast } from "./core.js";
+import { sourcesPanel } from "./intake.js";
+import { feedPanel } from "./publish.js";
 
 const ROLES = ["data_only_viewer", "viewer", "editor", "manager", "owner"];
 const INVITE_ROLES = ["data_only_viewer", "viewer", "editor", "manager"];
@@ -10,6 +12,7 @@ export function inviteLink(code) { return `${location.origin}/app/#/invite/${cod
 // ---- project Access panel ------------------------------------------------------------------
 export async function accessPanel(project) {
   const owner = atLeast(project.my_role, "owner");
+  const manager = atLeast(project.my_role, "manager");
   const box = el("div", { class: "stack" });
   async function draw() {
     const { members } = await api(`/v1/projects/${project.id}/members`);
@@ -19,14 +22,20 @@ export async function accessPanel(project) {
         try { await patch(`/v1/projects/${project.id}/members/${m.id}`, { role: e.target.value }); toast(t("saved")); }
         catch (err) { toast(err.message, true); e.target.value = m.role; }
       } }, roleOptions(ROLES, m.role)) : t("roles")[m.role]),
+      el("td", {}, manager && atLeast(m.role, "editor") ? el("input", { type: "checkbox", checked: m.can_publish, "aria-label": t("publishGrant"),
+        onchange: async (e) => {
+          try { await api(`/v1/projects/${project.id}/members/${m.id}/publish`, { method: "PUT", body: JSON.stringify({ can_publish: e.target.checked }) }); toast(t("saved")); }
+          catch (err) { toast(err.message, true); e.target.checked = !e.target.checked; }
+        } }) : (m.can_publish ? "✓" : "")),
       el("td", { class: "muted small" }, ago(m.since)),
       el("td", {}, owner || m.id === state.me.id ? el("button", { type: "button", class: "link danger", onclick: async () => {
         try { await api(`/v1/projects/${project.id}/members/${m.id}`, { method: "DELETE" }); await draw(); }
         catch (err) { toast(err.message, true); }
       } }, m.id === state.me.id ? t("leave") : t("remove")) : "")));
     const parts = [sec(t("members")), el("div", { class: "table-wrap" }, el("table", { class: "inc-table" },
-      el("thead", {}, el("tr", {}, [t("name"), t("roleCol"), t("since"), ""].map((h) => el("th", {}, h)))),
+      el("thead", {}, el("tr", {}, [t("name"), t("roleCol"), t("publishGrant"), t("since"), ""].map((h) => el("th", {}, h)))),
       el("tbody", {}, rows))),
+      el("p", { class: "meta" }, t("publishGrantHelp")),
       el("details", { class: "role-help" }, el("summary", {}, t("whatRoles")),
         el("dl", { class: "kv" }, ROLES.map((r) => [el("dt", {}, t("roles")[r]), el("dd", {}, t("roleHelp")[r])])))];
     if (owner) parts.push(await addMemberForm(project, members, draw), await invitesPanel(project));
@@ -164,6 +173,6 @@ export async function adminPage(view) {
       } catch (err) { toast(err.message, true); }
     } }, sec(t("newPerson")), el("div", { class: "row two" }, el("label", {}, t("name"), name), el("label", {}, t("email"), email)),
       el("label", {}, t("globalRole"), role), el("button", { type: "submit" }, t("add"))),
-    out);
+    out, await sourcesPanel(), await feedPanel());
   await draw();
 }

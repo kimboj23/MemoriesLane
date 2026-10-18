@@ -5,27 +5,26 @@
 
 import logging
 import pathlib
-import re
 from contextlib import asynccontextmanager
 from urllib.parse import urlsplit
 from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import __version__, people, workspace
+from . import __version__, intake, people, publish, workspace
 from .auth import Principal, current_principal, require
 from .config import settings
 from .db import make_pool, migrate
 from .access import project_role, require_project
 from .external import queue_wayback
-from .inbox_core import (ITEM_SELECT, can_see_item, item_json, item_json_for, link_item, new_capture, project_ids,
-                         save_link, unlink_item)
+from .inbox_core import (ITEM_SELECT, can_see_item, intake_role, item_json, item_json_for, link_item, new_capture,
+                         project_ids, save_link, unlink_item)
+from .serve import stored_response
 from .signing import artifact_url, verify
-from .storage import get_storage, iter_chunks
 
 log = logging.getLogger("memlane.api")
 
@@ -42,23 +41,23 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="MemoryLane capture", version=__version__, lifespan=lifespan)
 app.include_router(workspace.router)
 app.include_router(people.router)
+app.include_router(intake.router)
+app.include_router(intake.spoke)
+app.include_router(publish.router)
 
 # The workspace UI: static files, no build step (memlane_capture/web).
 WEB_DIR = pathlib.Path(__file__).resolve().parent / "web"
 app.mount("/app", StaticFiles(directory=WEB_DIR, html=True), name="app")
+if settings.feed_serve_local:
+    # Development only: in production the feed is served from its public bucket (FEED_PUBLIC_URL).
+    pathlib.Path(settings.feed_dir).mkdir(parents=True, exist_ok=True)
+    app.mount("/feed", StaticFiles(directory=settings.feed_dir), name="feed")
 # Map tiles come from the configured tile server (config.tile_url); nothing else external is allowed.
 # A "{s}" subdomain placeholder (a/b/c/d.basemaps.cartocdn.com) becomes a wildcard for that host only.
 _TILE_ORIGIN = "{0.scheme}://{0.netloc}".format(urlsplit(settings.tile_url)).replace("{s}", "*")
 _APP_CSP = (f"default-src 'self'; img-src 'self' blob: data: {_TILE_ORIGIN}; media-src 'self' blob:; script-src 'self'; "
             "style-src 'self'; connect-src 'self'; frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; "
             "form-action 'self'")
-
-# Artifacts are hostile content. Every response is sandboxed (opaque origin, no scripts), and may not
-# fetch anything: captured HTML renders from its own markup only, so opening it never pings the
-# platform or a tracker. The UI additionally embeds HTML in <iframe sandbox>.
-_ARTIFACT_CSP = ("sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'; "
-                 "font-src data:")
-
 
 @app.middleware("http")
 async def app_security_headers(request: Request, call_next):
@@ -68,6 +67,10 @@ async def app_security_headers(request: Request, call_next):
         response.headers["X-Content-Type-Options"] = "nosniff"
         # Origin only (never paths): tile servers require a referrer under their usage policies.
         response.headers["Referrer-Policy"] = "strict-origin"
+    elif request.url.path.startswith("/feed/"):
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Cache-Control"] = "no-cache"
+        response.headers["X-Content-Type-Options"] = "nosniff"
     return response
 
 
@@ -89,7 +92,7 @@ class InboxIn(BaseModel):
     case_ref: str | None = Field(None, max_length=100)
     tags: list[str] = Field(default_factory=list, max_length=30)
     sensitive: bool = False
-    client: Literal["web", "android-share", "ios-shortcut", "extension", "telegram", "api", "import"] = "api"
+    client: Literal["web", "android-share", "ios-shortcut", "extension", "telegram", "api", "import", "intake"] = "api"
     new_version: bool = Field(False, description="Already saved? Capture it again as a new version.")
     incident_id: str | None = Field(None, description="Also file it under this incident (source material).")
 
@@ -121,7 +124,7 @@ async def _can_edit_material(conn, p: Principal, r: dict) -> bool:
     for pid in project_ids(r):
         if await project_role(conn, p, pid) in ("editor", "manager", "owner"):
             return True
-    return False
+    return await intake_role(conn, p, r["id"], ("editor", "manager", "owner"))
 
 
 async def _wayback(conn, item_id) -> dict | None:
@@ -280,9 +283,6 @@ async def recapture(item_id: str, request: Request, p: Principal = Depends(curre
     return {"capture_id": cap_id}
 
 
-_RANGE = re.compile(r"bytes=(\d*)-(\d*)$")
-
-
 @app.get("/v1/artifacts/{artifact_id}")
 async def get_artifact(artifact_id: str, request: Request, exp: str | None = None, sig: str | None = None):
     """The stored file. Auth: a Bearer token that may see the item, or a signed URL from an item response."""
@@ -296,26 +296,4 @@ async def get_artifact(artifact_id: str, request: Request, exp: str | None = Non
             await _get_item(conn, a["item_id"], await current_principal(request))
     if a["kind"] == "link":
         return RedirectResponse(a["source_url"])
-
-    size = a["bytes"] or get_storage().size(a["storage_key"])
-    headers = {"X-Content-SHA256": a["sha256"], "Cache-Control": "private, max-age=21600",
-               "Content-Security-Policy": _ARTIFACT_CSP, "X-Content-Type-Options": "nosniff",
-               "Cross-Origin-Resource-Policy": "same-origin", "Accept-Ranges": "bytes",
-               "Content-Disposition": "inline"}
-    mime = a["mime"] or "application/octet-stream"
-    if mime.startswith("text/") and "charset" not in mime:
-        mime += "; charset=utf-8"
-    m = _RANGE.match(request.headers.get("range", ""))
-    if m and (m.group(1) or m.group(2)):
-        # Single byte range, so <video> can seek and start without downloading the whole file.
-        if m.group(1):
-            start, end = int(m.group(1)), min(int(m.group(2) or size - 1), size - 1)
-        else:
-            start, end = max(0, size - int(m.group(2))), size - 1
-        if start > end or start >= size:
-            raise HTTPException(416, headers={"Content-Range": f"bytes */{size}"})
-        headers.update({"Content-Range": f"bytes {start}-{end}/{size}", "Content-Length": str(end - start + 1)})
-        f = get_storage().open(a["storage_key"], start, end)
-        return StreamingResponse(iter_chunks(f, end - start + 1), status_code=206, media_type=mime, headers=headers)
-    headers["Content-Length"] = str(size)
-    return StreamingResponse(iter_chunks(get_storage().open(a["storage_key"])), media_type=mime, headers=headers)
+    return stored_response(request, storage_key=a["storage_key"], size=a["bytes"], mime=a["mime"], sha256=a["sha256"])

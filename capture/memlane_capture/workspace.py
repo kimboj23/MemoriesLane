@@ -408,6 +408,24 @@ async def get_incident(incident_id: str, request: Request, p: Principal = Depend
             " JOIN capture.item_incidents ii ON ii.item_id = e.item_id WHERE ii.incident_id = %s"
             " ORDER BY e.item_id, e.created_at DESC",
             (incident_id,))).fetchall()
+        # Community submissions filed here (they may identify people: not for data-only viewers), and the
+        # public version, if any.
+        intake_rows = [] if data_only else await (await conn.execute(
+            "SELECT k.id, k.kind, k.payload, k.received_at, s.name AS source_name FROM capture.intake k"
+            " JOIN capture.sources s ON s.id = k.source_id WHERE k.incident_id = %s ORDER BY k.received_at",
+            (incident_id,))).fetchall()
+        intake_out = []
+        for k in intake_rows:
+            from .intake import intake_files   # intake imports workspace lazily; this keeps imports one-way at load
+            pl = k["payload"] or {}
+            intake_out.append({"id": str(k["id"]), "kind": k["kind"], "source": k["source_name"],
+                               "received_at": k["received_at"],
+                               "summary": (pl.get("title") or pl.get("text") or pl.get("note") or pl.get("url") or "")[:300],
+                               "files": await intake_files(conn, k["id"])})
+        pub = await (await conn.execute(
+            "SELECT id, public_id, state, version, dirty, approved_by_manager IS NOT NULL AS m,"
+            " approved_by_publisher IS NOT NULL AS pb FROM capture.publications WHERE incident_id = %s",
+            (incident_id,))).fetchone()
     thumb_by_item = {str(t["item_id"]): artifact_url(t["id"]) for t in thumbs}
     copy_by_item = {str(c["item_id"]): {"state": c["state"], "url": c["copy_url"], "error": c["error"]} for c in copies}
     out = _incident_json(r, names, role)
@@ -427,6 +445,10 @@ async def get_incident(incident_id: str, request: Request, p: Principal = Depend
                    for u in feed]
     out["names"] = names
     out["subscribed"] = bool(sub)
+    out["intake"] = intake_out
+    out["publication"] = None if not pub else {
+        "id": str(pub["id"]), "public_id": pub["public_id"], "state": pub["state"], "version": pub["version"],
+        "dirty": pub["dirty"], "approvals": int(pub["m"]) + int(pub["pb"])}
     return out
 
 

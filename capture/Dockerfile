@@ -30,7 +30,7 @@ COPY tests ./tests
 COPY pytest.ini .
 
 # Never run Chromium or yt-dlp as root on captured, hostile content.
-RUN mkdir -p /data/store /tmp/memlane-capture && chown -R pwuser:pwuser /data /tmp/memlane-capture
+RUN mkdir -p /data/store /data/feed /tmp/memlane-capture && chown -R pwuser:pwuser /data /tmp/memlane-capture
 USER pwuser
 
 ENTRYPOINT ["tini", "--"]

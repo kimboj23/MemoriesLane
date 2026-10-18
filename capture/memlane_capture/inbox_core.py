@@ -66,10 +66,20 @@ async def visible_projects(conn, p: Principal, r: dict) -> set[str]:
     return out
 
 
+async def intake_role(conn, p: Principal, item_id, roles: tuple = ("viewer", "editor", "manager", "owner")) -> bool:
+    """A link that came in with a community submission is visible to the members (viewer and up) of the project
+    the submission is routed to, before anyone files it (intake.py)."""
+    return bool(await (await conn.execute(
+        "SELECT 1 FROM capture.intake_items ii JOIN capture.intake k ON k.id = ii.intake_id"
+        " JOIN capture.project_members m ON m.project_id = k.project_id"
+        " WHERE ii.item_id = %s AND m.contributor_id = %s AND m.role = ANY(%s) LIMIT 1",
+        (item_id, p.contributor_id, list(roles)))).fetchone())
+
+
 async def can_see_item(conn, p: Principal, r: dict) -> bool:
     if p.at_least("reviewer") or str(r["submitted_by"]) == p.contributor_id:
         return True
-    return bool(await visible_projects(conn, p, r))
+    return bool(await visible_projects(conn, p, r)) or await intake_role(conn, p, r["id"])
 
 
 async def item_json_for(conn, p: Principal, r: dict) -> dict:

@@ -64,6 +64,34 @@ class Settings:
     tile_attribution: str = field(default_factory=lambda: os.environ.get(
         "TILE_ATTRIBUTION", "© OpenStreetMap contributors · © CARTO"))
 
+    # Community intake (intake.py): per-source keys are derived from this secret, so the DB holds none.
+    # Without it the Intake API answers 503.
+    intake_key_secret: str = field(default_factory=lambda: os.environ.get("INTAKE_KEY_SECRET", ""))
+    # X25519 private key (base64) that opens contact details sealed by the public sites (libsodium sealed box).
+    contact_secret_key: str = field(default_factory=lambda: os.environ.get("CONTACT_SECRET_KEY", ""))
+    intake_max_video_mb: int = field(default_factory=lambda: int(os.environ.get("INTAKE_MAX_VIDEO_MB", "60")))
+    intake_max_file_mb: int = field(default_factory=lambda: int(os.environ.get("INTAKE_MAX_FILE_MB", "20")))
+
+    # Publication feed (feed.py): written to a local directory or an S3-compatible bucket (B2), served publicly.
+    feed_store: str = field(default_factory=lambda: os.environ.get("FEED_STORE", "local"))
+    feed_dir: str = field(default_factory=lambda: os.environ.get("FEED_DIR", "/data/feed"))
+    feed_s3_bucket: str = field(default_factory=lambda: os.environ.get("FEED_S3_BUCKET", ""))
+    feed_s3_endpoint: str = field(default_factory=lambda: os.environ.get("FEED_S3_ENDPOINT", ""))
+    feed_s3_region: str = field(default_factory=lambda: os.environ.get("FEED_S3_REGION", ""))
+    feed_s3_access_key: str = field(default_factory=lambda: os.environ.get("FEED_S3_ACCESS_KEY", ""))
+    feed_s3_secret_key: str = field(default_factory=lambda: os.environ.get("FEED_S3_SECRET_KEY", ""))
+    feed_s3_prefix: str = field(default_factory=lambda: os.environ.get("FEED_S3_PREFIX", ""))
+    # Where readers fetch it, e.g. https://feed.example.org (shown in the UI; records use relative paths).
+    feed_public_url: str = field(default_factory=lambda: os.environ.get("FEED_PUBLIC_URL", ""))
+    # Online signing key (file or base64), the root's delegation for it, and any revocations (feedkeys.py).
+    feed_online_key: str = field(default_factory=lambda: os.environ.get("FEED_ONLINE_KEY", ""))
+    feed_delegation: str = field(default_factory=lambda: os.environ.get("FEED_DELEGATION", ""))
+    feed_revocations: str = field(default_factory=lambda: os.environ.get("FEED_REVOCATIONS", ""))
+    # Local development only: serve FEED_DIR at /feed/ from the API.
+    feed_serve_local: bool = field(default_factory=lambda: _bool("FEED_SERVE_LOCAL", False))
+    # Optional URLs told "the feed changed" after each build (a nudge only: readers still verify the feed).
+    feed_webhooks: list[str] = field(default_factory=lambda: _list("FEED_WEBHOOKS"))
+
     # API
     cors_origins: list[str] = field(default_factory=lambda: _list("CORS_ORIGINS"))
     submit_rate_per_hour: int = field(default_factory=lambda: int(os.environ.get("SUBMIT_RATE_PER_HOUR", "120")))

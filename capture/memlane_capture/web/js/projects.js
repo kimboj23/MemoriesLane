@@ -2,6 +2,7 @@
 //   Overview | Access (members, roles, invite links) | Manage (settings, attributes, Internet Archive, archive)
 //   | Import (bulk CSV). What each tab allows follows the project role (access.py).
 import { api, atLeast, canEdit, el, loadProjects, mount, PALETTE, patch, post, sec, state, t, toast } from "./core.js";
+import { publicationsPanel } from "./publish.js";
 import { accessPanel } from "./people.js";
 
 export async function projectsPage(view) {
@@ -148,6 +149,7 @@ export async function projectManagePage(view, id, params) {
   const p = await api(`/v1/projects/${id}`);
   const role = p.my_role;
   const tabs = [["overview", t("overview"), true], ["access", t("access"), atLeast(role, "viewer")],
+                ["publications", t("publications"), atLeast(role, "viewer")],
                 ["manage", t("manage"), atLeast(role, "manager")], ["import", t("bulkImport"), atLeast(role, "manager") && !p.archived]]
     .filter(([, , ok]) => ok);
   const tab = tabs.some(([k]) => k === params.get("tab")) ? params.get("tab") : "overview";
@@ -162,6 +164,8 @@ export async function projectManagePage(view, id, params) {
         atLeast(role, "viewer") ? el("button", { type: "button", onclick: () => downloadCsv(p) }, t("exportCsv")) : ""));
   } else if (tab === "access") {
     body = await accessPanel(p);
+  } else if (tab === "publications") {
+    body = await publicationsPanel(p);
   } else if (tab === "manage") {
     const { form, save } = settingsForm(p, false);
     body = el("div", {}, form, atLeast(role, "owner") ? el("section", { class: "card danger-zone" },

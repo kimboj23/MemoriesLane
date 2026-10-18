@@ -20,6 +20,7 @@ from .config import settings
 from .db import make_pool, migrate
 from .pipeline import run_capture, tool_versions
 from .external import queue_wayback, run_one as run_external
+from .feed import run_if_dirty as build_feed
 from .inbox_core import add_update
 from .seal import public_extracted
 
@@ -167,6 +168,19 @@ async def _external_loop(pool, stop: asyncio.Event) -> None:
                 pass
 
 
+async def _feed_loop(pool, stop: asyncio.Event) -> None:
+    """Rebuild the publication feed after approvals and withdrawals (feed.py)."""
+    while not stop.is_set():
+        try:
+            await build_feed(pool)
+        except Exception:  # noqa: BLE001
+            log.exception("feed loop failed")
+        try:
+            await asyncio.wait_for(stop.wait(), settings.poll_seconds * 2)
+        except asyncio.TimeoutError:
+            pass
+
+
 async def main() -> None:
     logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"),
                         format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -192,7 +206,7 @@ async def main() -> None:
         log.info("worker %s started: %d slot(s), storage=%s", WORKER_ID, settings.worker_concurrency,
                  settings.storage_backend)
         await asyncio.gather(*(_loop(pool, browsers, stop, i) for i in range(settings.worker_concurrency)),
-                             _external_loop(pool, stop))
+                             _external_loop(pool, stop), _feed_loop(pool, stop))
     await pool.close()
 
 

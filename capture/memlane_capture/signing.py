@@ -28,7 +28,17 @@ def artifact_url(artifact_id) -> str:
     return f"/v1/artifacts/{artifact_id}?exp={exp}&sig={_mac(str(artifact_id), exp)}"
 
 
+def intake_file_url(file_id) -> str:
+    """Same scheme for files sent by the community (a separate namespace, so the two ids can't be swapped)."""
+    exp = int(time.time()) + TTL_SECONDS
+    return f"/v1/intake-files/{file_id}?exp={exp}&sig={_mac('if:' + str(file_id), exp)}"
+
+
 def verify(artifact_id: str, exp: str | None, sig: str | None) -> bool:
     if not exp or not sig or not exp.isdigit() or int(exp) < time.time():
         return False
     return hmac.compare_digest(_mac(artifact_id, int(exp)), sig)
+
+
+def verify_intake_file(file_id: str, exp: str | None, sig: str | None) -> bool:
+    return verify("if:" + file_id, exp, sig)

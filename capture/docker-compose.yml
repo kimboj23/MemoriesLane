@@ -36,6 +36,9 @@ services:
     restart: unless-stopped
     volumes:
       - capture-store:/data/store
+      - capture-feed:/data/feed
+      # key files named in .env (feed signing): gitignored, read-only
+      - ./secrets:/secrets:ro
     depends_on:
       db:
         condition: service_healthy
@@ -50,6 +53,8 @@ services:
       WORKER_CONCURRENCY: "2"
     volumes:
       - capture-store:/data/store
+      - capture-feed:/data/feed
+      - ./secrets:/secrets:ro
     shm_size: "1gb"          # Chromium's shared memory; the default 64 MB crashes tabs
     restart: unless-stopped
     depends_on:
@@ -59,3 +64,4 @@ services:
 volumes:
   capture-db:
   capture-store:
+  capture-feed:        # the publication feed, written by the worker; served at /feed/ only with FEED_SERVE_LOCAL

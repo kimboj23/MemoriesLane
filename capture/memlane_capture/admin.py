@@ -5,6 +5,8 @@
     python -m memlane_capture.admin add-token lan@example.org "Lan's phone"     # prints the token once
     python -m memlane_capture.admin revoke-token <token-id>
     python -m memlane_capture.admin list
+    python -m memlane_capture.admin contact-key-init        # prints CONTACT_SECRET_KEY for .env, and the public key
+    python -m memlane_capture.admin source-key <slug>       # a source's current intake key (needs INTAKE_KEY_SECRET)
 """
 
 import argparse
@@ -15,6 +17,13 @@ from .db import make_pool, migrate
 
 
 async def _run(args) -> None:
+    if args.cmd == "contact-key-init":
+        import base64
+        from nacl.public import PrivateKey
+        k = PrivateKey.generate()
+        print("CONTACT_SECRET_KEY=" + base64.b64encode(bytes(k)).decode())
+        print("# public key (the sites seal contacts to it):", base64.b64encode(bytes(k.public_key)).decode())
+        return
     pool = make_pool(max_size=2)
     await pool.open()
     try:
@@ -45,6 +54,13 @@ async def _run(args) -> None:
                 cur = await conn.execute("UPDATE capture.tokens SET revoked_at = now() WHERE id = %s AND revoked_at IS NULL",
                                          (args.token_id,))
                 print("revoked" if cur.rowcount else "no such active token")
+            elif args.cmd == "source-key":
+                from .intake import derive_key
+                s = await (await conn.execute("SELECT slug, key_version FROM capture.sources WHERE slug = %s",
+                                              (args.slug,))).fetchone()
+                if not s:
+                    raise SystemExit(f"no source {args.slug!r}")
+                print(derive_key(s["slug"], s["key_version"]))
             elif args.cmd == "list":
                 rows = await (await conn.execute(
                     "SELECT c.id, c.display_name, c.email, c.role, count(t.id) FILTER (WHERE t.revoked_at IS NULL) AS tokens"
@@ -70,6 +86,9 @@ def main() -> None:
     r = sub.add_parser("revoke-token")
     r.add_argument("token_id")
     sub.add_parser("list")
+    sub.add_parser("contact-key-init")
+    k = sub.add_parser("source-key")
+    k.add_argument("slug")
     asyncio.run(_run(ap.parse_args()))
 
 

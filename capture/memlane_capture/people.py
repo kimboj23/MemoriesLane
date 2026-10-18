@@ -36,6 +36,10 @@ class MemberPatch(BaseModel):
     role: ProjectRole
 
 
+class PublishGrant(BaseModel):
+    can_publish: bool
+
+
 class InviteIn(BaseModel):
     role: InviteRole = "viewer"
     expires_in_days: int | None = Field(14, ge=1, le=365)
@@ -72,11 +76,28 @@ async def members(project_id: str, request: Request, p: Principal = Depends(curr
     async with request.app.state.pool.connection() as conn:
         await require_project(conn, p, project_id, "viewer")   # data-only viewers don't see who works on it
         rows = await (await conn.execute(
-            "SELECT m.contributor_id, m.role, m.created_at, c.display_name FROM capture.project_members m"
+            "SELECT m.contributor_id, m.role, m.created_at, m.can_publish, c.display_name FROM capture.project_members m"
             " JOIN capture.contributors c ON c.id = m.contributor_id WHERE m.project_id = %s AND c.disabled_at IS NULL"
             " ORDER BY array_position(%s::text[], m.role) DESC, c.display_name", (project_id, PROJECT_ROLES))).fetchall()
     return {"members": [{"id": str(r["contributor_id"]), "name": r["display_name"], "role": r["role"],
-                         "since": r["created_at"]} for r in rows]}
+                         "can_publish": r["can_publish"], "since": r["created_at"]} for r in rows]}
+
+
+@router.put("/projects/{project_id}/members/{contributor_id}/publish")
+async def set_publish_grant(project_id: str, contributor_id: str, body: PublishGrant, request: Request,
+                            p: Principal = Depends(current_principal)):
+    """Publication access ("Quyền công bố"): owners and managers entrust it to members (editor and up)."""
+    async with request.app.state.pool.connection() as conn:
+        await require_project(conn, p, project_id, "manager")
+        cur = await (await conn.execute("SELECT role FROM capture.project_members WHERE project_id = %s"
+                                        " AND contributor_id = %s", (project_id, contributor_id))).fetchone()
+        if not cur:
+            raise HTTPException(404, "not a member")
+        if body.can_publish and RANK[cur["role"]] < RANK["editor"]:
+            raise HTTPException(422, "publication access is for editors, managers and owners")
+        await conn.execute("UPDATE capture.project_members SET can_publish = %s WHERE project_id = %s"
+                           " AND contributor_id = %s", (body.can_publish, project_id, contributor_id))
+    return {"ok": True}
 
 
 async def _owner_count(conn, project_id) -> int:
@@ -251,8 +272,9 @@ async def contributors(request: Request, project_id: str | None = None, p: Princ
                 (p.contributor_id,))).fetchone()
             if not owner:
                 raise HTTPException(403, "only project owners and admins can list everyone")
-            rows = await (await conn.execute("SELECT id, display_name, role FROM capture.contributors"
-                                             " WHERE disabled_at IS NULL ORDER BY display_name")).fetchall()
+            # Not the accounts that community sources save links as (intake.py): they're not people.
+            rows = await (await conn.execute("SELECT c.id, c.display_name, c.role FROM capture.contributors c"
+                                             " WHERE c.disabled_at IS NULL AND NOT EXISTS (SELECT 1 FROM capture.sources s WHERE s.contributor_id = c.id) ORDER BY c.display_name")).fetchall()
     return {"contributors": [{"id": str(r["id"]), "name": r["display_name"], "role": r["role"]} for r in rows]}
 
 
@@ -265,7 +287,7 @@ async def admin_list(request: Request, p: Principal = Depends(require("admin")))
             " (SELECT coalesce(json_agg(json_build_object('code', pr.code, 'role', m.role) ORDER BY pr.code), '[]')"
             "   FROM capture.project_members m JOIN capture.projects pr ON pr.id = m.project_id"
             "   WHERE m.contributor_id = c.id) AS projects"
-            " FROM capture.contributors c ORDER BY c.disabled_at NULLS FIRST, c.display_name")).fetchall()
+            " FROM capture.contributors c WHERE TRUE AND NOT EXISTS (SELECT 1 FROM capture.sources s WHERE s.contributor_id = c.id) ORDER BY c.disabled_at NULLS FIRST, c.display_name")).fetchall()
     return {"contributors": [{"id": str(r["id"]), "name": r["display_name"], "email": r["email"], "role": r["role"],
                               "disabled": r["disabled_at"] is not None, "tokens": r["tokens"], "last_seen": r["last_seen"],
                               "projects": r["projects"], "created_at": r["created_at"]} for r in rows]}

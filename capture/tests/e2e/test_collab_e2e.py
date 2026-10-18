@@ -155,7 +155,7 @@ def test_import_map_admin_and_wayback(browser):
     # Admin: add a person; their token is shown once.
     page.goto(BASE + "/app/#/admin")
     page.locator("label", has_text="Tên").first.locator("input").fill(f"Người {code}")
-    page.get_by_role("button", name="Thêm").click()
+    page.get_by_role("button", name="Thêm").first.click()   # the people form comes first; sources has its own
     expect(page.locator(".notice .linkbox")).to_have_text(re.compile(r"^mlc_"))
     expect(page.locator("tr", has_text=f"Người {code}")).to_be_visible()
 

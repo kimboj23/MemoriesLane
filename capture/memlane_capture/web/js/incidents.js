@@ -170,7 +170,7 @@ async function editorFor(field, inc, project, role) {
 }
 
 function fieldLabel(field, project) {
-  if (field.startsWith("custom:")) return (project?.attributes || []).find((a) => a.id === field.slice(7))?.name || field;
+  if (field?.startsWith("custom:")) return (project?.attributes || []).find((a) => a.id === field.slice(7))?.name || field;
   return { description: t("description"), status: t("status"), sensitive: t("sensitivity"), tags: t("tags"),
            event_date: t("date"), location: t("location"), assignees: t("assignees"), place: t("place"),
            lat: t("lat"), lng: t("lng"), geo_precision: t("precision"), custom: t("attributes") }[field] || field;
@@ -275,6 +275,8 @@ function feedEntry(u, inc, project, names) {
   else if (u.kind === "material_added") action = t("feedMaterialAdded");
   else if (u.kind === "material_removed") action = t("feedMaterialRemoved");
   else if (u.kind === "capture") action = t("feedCaptureVerb");
+  else if (u.kind === "intake") action = t("feedIntake");
+  else if (u.kind === "publication") action = (t("feedPub")[u.new?.action] || u.new?.action || "") + (u.new?.public_id ? ` ${u.new.public_id}` : "");
   else action = t("feedChanged")(fieldLabel(u.field, project));
 
   const show = (field, val) => {
@@ -372,6 +374,20 @@ export async function incidentPage(view, id) {
           el("section", { class: "card" }, sec(t("sourceMaterial"),
             archived || !atLeast(role, "editor") ? "" : el("button", { type: "button", class: "link", onclick: () => addMaterial(id, reload) }, t("addMaterial"))),
             material.length ? material : el("p", { class: "muted" }, t("empty"))),
+          inc.intake?.length ? el("section", { class: "card" }, sec(t("fromCommunity")),
+            inc.intake.map((k) => el("div", { class: "material" },
+              el("div", { class: "row" }, el("span", { class: "badge" }, t("intakeKinds")[k.kind] || k.kind), el("span", { class: "meta" }, k.source),
+                el("span", { class: "spacer" }), el("span", { class: "meta" }, ago(k.received_at))),
+              el("a", { class: "title", href: `#/intake/${k.id}` }, k.summary || t("submission")),
+              k.files.filter((f) => f.url).length ? artifactGrid(k.files.filter((f) => f.url).map((f) => ({ ...f, role: "primary", label: t("providedByContributor") })), { blur }) : ""))) : "",
+          role === "data_only_viewer" ? "" : el("section", { class: "card stack" }, sec(t("publication")),
+            inc.publication ? [el("p", {}, el("span", { class: "chip" }, t("pubStates")[inc.publication.state]), " ",
+                el("code", {}, inc.publication.public_id), " ", el("span", { class: "meta" }, t("approvals")(inc.publication.approvals)),
+                inc.publication.dirty && inc.publication.state === "published" ? el("span", { class: "chip sens" }, t("unpublishedChanges")) : ""),
+                el("a", { href: `#/publications/${inc.publication.id}` }, t("openPublication"))]
+              : atLeast(role, "editor") && !archived ? el("button", { type: "button", onclick: async () => {
+                try { const r = await post(`/v1/incidents/${id}/publication`); location.hash = `#/publications/${r.id}`; } catch (e) { toast(e.message, true); }
+              } }, t("startPublication")) : el("p", { class: "muted" }, t("none"))),
           el("section", { class: "card" }, sec(t("location")),
             inc.lat != null ? el("div", { class: "map small-map", id: "inc-map" }) : "",
             el("p", {}, inc.place || el("span", { class: "muted" }, t("none"))),

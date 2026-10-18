@@ -2,10 +2,12 @@
 import { $, api, el, isAdmin, localSet, modal, state, t } from "./core.js";
 import { inboxPage, saveSheet } from "./inbox.js";
 import { incidentPage, incidentsPage, newIncidentPage } from "./incidents.js";
+import { intakeDetailPage, intakePage } from "./intake.js";
 import { itemPage } from "./item.js";
 import { notificationsPage } from "./notifications.js";
 import { adminPage, invitePage } from "./people.js";
 import { projectManagePage, projectsPage } from "./projects.js";
+import { publicationPage } from "./publish.js";
 
 const ROUTES = [
   [/^#\/incidents\/([\w-]+)$/, (v, m) => incidentPage(v, m[1])],
@@ -17,6 +19,9 @@ const ROUTES = [
   [/^#\/projects$/, (v) => projectsPage(v)],
   [/^#\/notifications$/, (v, m, q) => notificationsPage(v, q)],
   [/^#\/admin$/, (v) => adminPage(v)],
+  [/^#\/intake\/([\w-]+)$/, (v, m) => intakeDetailPage(v, m[1])],
+  [/^#\/intake$/, (v, m, q) => intakePage(v, q)],
+  [/^#\/publications\/([\w-]+)$/, (v, m) => publicationPage(v, m[1])],
 ];
 // An invite link must work for someone who has no account yet.
 const INVITE = /^#\/invite\/([\w-]+)$/;
@@ -66,6 +71,7 @@ function renderShell() {
   $("nav").replaceChildren(
     el("a", { href: "#/incidents" }, t("navIncidents")),
     el("a", { href: "#/inbox" }, t("navInbox")),
+    el("a", { href: "#/intake" }, t("navIntake")),
     el("a", { href: "#/projects" }, t("navProjects")),
     isAdmin() ? el("a", { href: "#/admin" }, t("admin")) : "");
   $("quick-save").textContent = "+ " + t("saveLink");
