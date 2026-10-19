@@ -51,9 +51,12 @@ class Site:
         return self.call("POST", "/intake/v1/submissions", json.dumps(envelope).encode(), "application/json")
 
 
-def gps_jpeg() -> bytes:
+def gps_jpeg(seed: str = "") -> bytes:
+    # A different image per run: public files are content-addressed, and a file another live record still uses
+    # (say, from an earlier run that stopped before its withdrawal) is rightly kept.
+    rgb = tuple(hashlib.sha256(seed.encode()).digest()[:3])
     from PIL import Image
-    im, ex = Image.new("RGB", (320, 240), (200, 60, 40)), Image.Exif()
+    im, ex = Image.new("RGB", (320, 240), rgb), Image.Exif()
     gps = ex.get_ifd(0x8825)
     gps[1], gps[2], gps[3], gps[4] = "N", (21.0, 1.0, 30.0), "E", (105.0, 51.0, 10.0)
     buf = io.BytesIO()
@@ -127,7 +130,7 @@ def test_intake_to_feed():
     assert Site(site.slug, "0" * 64).submit({"external_id": "x", "kind": "link", "payload": {"url": "https://example.com/"}}).status_code == 401
 
     # a memory with a photo carrying GPS, and a case report with a link in its text
-    jpg = gps_jpeg()
+    jpg = gps_jpeg(tag)
     receipt = hashlib.sha256(f"RCPT{tag}".encode()).hexdigest()
     r = site.submit({"external_id": f"m-{tag}", "kind": "memory", "receipt_sha256": receipt,
                      "files": [{"n": 1, "mime": "image/jpeg", "bytes": len(jpg)}],

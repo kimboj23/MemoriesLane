@@ -156,9 +156,13 @@ def test_import_map_admin_and_wayback(browser):
 
     # Admin: add a person; their token is shown once.
     page.goto(BASE + "/app/#/admin")
-    page.locator("label", has_text="Tên").first.locator("input").fill(f"Người {code}")
-    page.get_by_role("button", name="Thêm").first.click()   # the people form comes first; sources has its own
-    expect(page.locator(".notice .linkbox")).to_have_text(re.compile(r"^mlc_"))
+    # The page renders once its panels have loaded; scope to the people form (sources has its own "Tên"/"Thêm").
+    people = page.locator("form.card", has=page.get_by_role("button", name="Thêm", exact=True)).first
+    expect(people).to_be_visible()
+    people.locator("label", has_text="Tên").first.locator("input").fill(f"Người {code}")
+    people.get_by_role("button", name="Thêm", exact=True).click()
+    # Slow under load: the capture started just above runs Chromium in this same container.
+    expect(page.locator(".notice .linkbox")).to_have_text(re.compile(r"^mlc_"), timeout=20_000)
     expect(page.locator("tr", has_text=f"Người {code}")).to_be_visible()
 
     assert not errors, errors
