@@ -79,4 +79,5 @@ See README "Run locally" (root `docker-compose.yml`) and "Deploy" (`docker-compo
 ## Gotchas
 
 - **Windows + Git Bash mangles non-ASCII in command-line arguments.** Vietnamese text in `curl -d '…'` or `node -e '…'` arrives as invalid UTF-8. Put the payload in a UTF-8 file (`curl --data-binary @file.json`), edit files with the editor rather than inline scripts, and set `PYTHONIOENCODING=utf-8` when printing Vietnamese from Python on Windows.
+- **The hub UI's scripts and styles are served under `/app/b/<build>/`** (a hash of `web/`, computed in `api.py`), because Cloudflare imposes a 4-hour browser cache on `.js`/`.css` whatever the origin says. `index.html` must keep loading exactly `app.css` and `js/main.js` (that's what `api.py` rewrites), and modules import each other with relative paths only.
 - **`archivebox/archivebox:latest` is now v0.9.x.** The old stack's `archivebox/Dockerfile` only builds on a cached 0.7.4 base (`--pull` fails). Another reason not to touch it.

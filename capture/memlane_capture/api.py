@@ -3,6 +3,7 @@
     uvicorn memlane_capture.api:app --host 0.0.0.0 --port 8700
 """
 
+import hashlib
 import logging
 import pathlib
 from contextlib import asynccontextmanager
@@ -11,7 +12,7 @@ from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -47,7 +48,32 @@ app.include_router(publish.router)
 
 # The workspace UI: static files, no build step (memlane_capture/web).
 WEB_DIR = pathlib.Path(__file__).resolve().parent / "web"
-app.mount("/app", StaticFiles(directory=WEB_DIR, html=True), name="app")
+_web = StaticFiles(directory=WEB_DIR, html=True)
+# Scripts and styles are served under /app/b/<build>/, a hash of the UI files, so a deploy changes every URL and
+# no browser or CDN can keep running the previous UI (Cloudflare imposes its own browser cache on .js/.css).
+# Only index.html names the build; modules import each other relatively and inherit it.
+WEB_BUILD = hashlib.sha256(b"".join(p.relative_to(WEB_DIR).as_posix().encode() + p.read_bytes()
+                                    for p in sorted(WEB_DIR.rglob("*")) if p.is_file())).hexdigest()[:12]
+_INDEX = ((WEB_DIR / "index.html").read_text(encoding="utf-8")
+          .replace('href="app.css"', f'href="b/{WEB_BUILD}/app.css"')
+          .replace('src="js/main.js"', f'src="b/{WEB_BUILD}/js/main.js"'))
+
+
+@app.get("/app/", include_in_schema=False)
+@app.get("/app/index.html", include_in_schema=False)
+async def app_index():
+    return HTMLResponse(_INDEX)
+
+
+@app.get("/app/b/{build}/{path:path}", include_in_schema=False)
+async def app_build_file(build: str, path: str, request: Request):
+    response = await _web.get_response(path, request.scope)
+    if build == WEB_BUILD and response.status_code == 200:
+        response.headers["X-Immutable"] = "1"   # read by app_security_headers
+    return response
+
+
+app.mount("/app", _web, name="app")
 if settings.feed_serve_local:
     # Development only: in production the feed is served from its public bucket (FEED_PUBLIC_URL).
     pathlib.Path(settings.feed_dir).mkdir(parents=True, exist_ok=True)
@@ -67,9 +93,11 @@ async def app_security_headers(request: Request, call_next):
         response.headers["X-Content-Type-Options"] = "nosniff"
         # Origin only (never paths): tile servers require a referrer under their usage policies.
         response.headers["Referrer-Policy"] = "strict-origin"
-        # Revalidate every load (cheap 304s via ETag). Without it Cloudflare adds a 4-hour browser cache and
-        # people keep running the previous UI after a deploy, with old and new modules mixed.
-        response.headers["Cache-Control"] = "no-cache"
+        # Files of the current build never change (their URL carries the build); everything else revalidates.
+        immutable = "x-immutable" in response.headers
+        if immutable:
+            del response.headers["x-immutable"]
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable" if immutable else "no-cache"
     elif request.url.path.startswith("/feed/"):
         response.headers["Access-Control-Allow-Origin"] = "*"
         response.headers["Cache-Control"] = "no-cache"
