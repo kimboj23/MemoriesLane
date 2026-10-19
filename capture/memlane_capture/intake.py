@@ -468,12 +468,16 @@ async def get_intake(intake_id: str, request: Request, p: Principal = Depends(cu
             " ORDER BY i.created_at", (intake_id,))).fetchall()
         pub = await (await conn.execute("SELECT id, state, public_id FROM capture.publications WHERE intake_id = %s",
                                         (intake_id,))).fetchone()
+        inc_pub = None if not k["incident_id"] else await (await conn.execute(
+            "SELECT id, state, public_id, dirty FROM capture.publications WHERE incident_id = %s", (k["incident_id"],))).fetchone()
         out = _intake_json(k, role)
         out.update(payload=k["payload"], links=k["links"], consents=k["consents"],
                    files=await intake_files(conn, intake_id),
                    items=[await item_json_for(conn, p, i) for i in items],
                    publication=None if not pub else {"id": str(pub["id"]), "state": pub["state"],
-                                                     "public_id": pub["public_id"]})
+                                                     "public_id": pub["public_id"]},
+                   incident_publication=None if not inc_pub else {"id": str(inc_pub["id"]), "state": inc_pub["state"],
+                                                                  "public_id": inc_pub["public_id"], "dirty": inc_pub["dirty"]})
     return out
 
 
@@ -496,6 +500,10 @@ async def _attach(conn, k: dict, p: Principal, incident_id: str, state: str) -> 
                      body=f"{k['source_name']}: {_summary(k)}"[:1000])
     await conn.execute("UPDATE capture.incidents SET updated_at = now() WHERE id = %s", (incident_id,))
     await _review(conn, k, p, state, incident_id=incident_id)
+    # If the incident already has a public version, the submission joins it as a community note at once, and a
+    # published version is marked "unpublished changes" until someone approves the new version.
+    from .publish import refresh_for_incidents
+    await refresh_for_incidents(conn, [incident_id])
 
 
 @router.post("/intake/{intake_id}/attach")

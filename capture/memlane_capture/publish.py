@@ -54,6 +54,15 @@ class MaterialDraft(BaseModel):
     files: list[str] = Field(default_factory=list, max_length=20)     # artifact ids
 
 
+class NoteDraft(BaseModel):
+    """A community submission filed under the incident, published as a note on the map, linked to the case."""
+    intake_id: str
+    public_id: str | None = None
+    include: bool = True
+    text_vi: str | None = Field(None, max_length=8000)
+    text_en: str | None = Field(None, max_length=8000)
+
+
 class DraftPatch(BaseModel):
     """Every field optional: a PATCH merges into the draft."""
     title_vi: str | None = Field(None, max_length=300)
@@ -75,6 +84,8 @@ class DraftPatch(BaseModel):
     refresh_location: bool = False          # ignored: an incident's public version always uses its current location
     materials: list[MaterialDraft] | None = Field(None, max_length=100)
     community_files: list[str] | None = Field(None, max_length=50)    # intake file ids
+    community_notes: list[NoteDraft] | None = Field(None, max_length=100)
+    materials_excluded: list[str] | None = Field(None, max_length=500)   # item ids deliberately left out
     files: list[str] | None = Field(None, max_length=10)              # memories: intake file ids
     credit: str | None = Field(None, max_length=80)
 
@@ -157,6 +168,56 @@ async def incident_draft(conn, inc: dict) -> dict:
     }
 
 
+def note_text(k: dict) -> str:
+    """The submitter's own words, as the default public text of a community note."""
+    pl = k["payload"] or {}
+    if k["kind"] == "memory":
+        return pl.get("text") or ""
+    if k["kind"] == "case_report":
+        return pl.get("description") or pl.get("title") or ""
+    return pl.get("context") or pl.get("title") or ""
+
+
+async def sync_notes(conn, incident_id, notes: list[dict] | None) -> list[dict]:
+    """The draft's community notes, plus any submission filed under the incident since (included by default).
+    Public ids are kept once given, so a preview and the published record name the same note."""
+    notes = list(notes or [])
+    have = {n["intake_id"] for n in notes}
+    rows = await (await conn.execute(
+        "SELECT * FROM capture.intake WHERE incident_id = %s AND kind <> 'link' AND state <> 'rejected'"
+        " ORDER BY received_at", (incident_id,))).fetchall()
+    for k in rows:
+        if str(k["id"]) not in have:
+            notes.append({"intake_id": str(k["id"]), "public_id": new_public_id("km"), "include": True,
+                          "text_vi": note_text(k)[:8000], "text_en": (k["payload"] or {}).get("text_en")})
+    return notes
+
+
+async def sync_materials(conn, incident_id, materials: list[dict] | None, excluded: list[str] | None) -> list[dict]:
+    """The draft's materials, plus links filed under the incident since whose capture is publishable."""
+    materials = list(materials or [])
+    have = {m["item_id"] for m in materials} | set(excluded or [])
+    rows = await (await conn.execute(
+        "SELECT ii.item_id, c.verdict FROM capture.item_incidents ii JOIN capture.items i ON i.id = ii.item_id"
+        " LEFT JOIN capture.captures c ON c.id = i.latest_capture_id AND c.state = 'done'"
+        " WHERE ii.incident_id = %s ORDER BY ii.added_at", (incident_id,))).fetchall()
+    for it in rows:
+        if str(it["item_id"]) not in have and it["verdict"] in VERDICT_PUBLIC:
+            materials.append({"item_id": str(it["item_id"]), "public_id": new_public_id("mt"), "show_original_url": True,
+                              "files": await _publishable_artifacts(conn, it["item_id"])})
+    return materials
+
+
+async def refresh_for_incidents(conn, incident_ids) -> None:
+    """After something is filed under incidents (or a capture of their material finishes): bring their public
+    versions up to date (live() saves new notes/materials and marks published ones as changed)."""
+    for iid in {str(i) for i in incident_ids if i}:
+        r = await (await conn.execute("SELECT * FROM capture.publications WHERE incident_id = %s AND state <> 'withdrawn'",
+                                      (iid,))).fetchone()
+        if r:
+            await live(conn, r)
+
+
 def memory_draft(k: dict, file_ids: list[str]) -> dict:
     pl = k["payload"] or {}
     loc = pl.get("location") or {}
@@ -205,9 +266,26 @@ def notices(d: dict) -> list[dict]:
 
 async def live(conn, r: dict) -> tuple[dict, dict | None]:
     """The draft with the location it would be published with. An incident's public version always uses the
-    incident's *current* location (never a copy that goes stale); a memory uses the submitted point."""
+    incident's *current* location (never a copy that goes stale); a memory uses the submitted point.
+
+    An incident's community notes and source material are kept in step with what is filed under it: a submission
+    or a captured link added later joins the public version (included by default, unless someone left it out on
+    purpose), and a published version is then marked as having unpublished changes until it is approved again."""
     d = dict(r["draft"])
     if r["incident_id"]:
+        notes = await sync_notes(conn, r["incident_id"], d.get("community_notes"))
+        materials = await sync_materials(conn, r["incident_id"], d.get("materials"), d.get("materials_excluded"))
+        # Published before community notes existed (2026-10-19): its public copy lacks the notes it should show.
+        missing_notes = (r["state"] == "published" and r["published"] is not None and "frozen_notes" not in r["published"]
+                         and any(n.get("include", True) for n in notes))
+        if missing_notes and not r["dirty"]:
+            await conn.execute("UPDATE capture.publications SET dirty = true WHERE id = %s", (r["id"],))
+            r["dirty"] = True
+        if notes != (d.get("community_notes") or []) or materials != (d.get("materials") or []):
+            d["community_notes"], d["materials"] = notes, materials
+            await conn.execute("UPDATE capture.publications SET draft = %s, dirty = dirty OR state = 'published'"
+                               " WHERE id = %s",
+                               (Jsonb({**r["draft"], "community_notes": notes, "materials": materials}), r["id"]))
         inc = await (await conn.execute("SELECT lat, lng, place FROM capture.incidents WHERE id = %s",
                                         (r["incident_id"],))).fetchone()
         d["lat"], d["lng"] = (inc["lat"], inc["lng"]) if inc else (None, None)
@@ -254,8 +332,36 @@ async def freeze(conn, pub_type: str, d: dict) -> dict:
             cf.append({"source": "intake_file", "id": str(f["id"]), "kind": f["kind"], "label": "community",
                        "source_sha256": f["sha256"], "mime": f["mime"]})
     snap["frozen_community_files"] = cf
+    if pub_type == "incident":
+        snap["frozen_notes"] = await freeze_notes(conn, d)
     snap["frozen_at"] = datetime.now(timezone.utc).isoformat()
     return snap
+
+
+async def freeze_notes(conn, d: dict) -> list[dict]:
+    """Each included note: its public text, date, and a location never finer than the incident's precision nor
+    than what its submitter allowed. A note without its own point sits at the incident's (generalised) area."""
+    out = []
+    for n in d.get("community_notes") or []:
+        if not n.get("include", True):
+            continue
+        k = await (await conn.execute("SELECT * FROM capture.intake WHERE id = %s", (n["intake_id"],))).fetchone()
+        if not k:
+            continue
+        pl = k["payload"] or {}
+        loc = pl.get("location") or {}
+        precision = d.get("precision") or "none"
+        wish = loc.get("precision_wish")
+        if wish in geo.RANK and geo.RANK[wish] > geo.RANK.get(precision, 0):
+            precision = wish
+        own = loc.get("lat") is not None and loc.get("lng") is not None
+        date, date_precision = _date_from_parts(pl.get("date"))
+        out.append({"public_id": n["public_id"], "text_vi": (n.get("text_vi") or note_text(k)).strip(),
+                    "text_en": n.get("text_en"), "category": pl.get("category") or "community",
+                    "date": date or d.get("date"), "date_precision": date_precision if date else d.get("date_precision"),
+                    "lat": loc.get("lat") if own else d.get("lat"), "lng": loc.get("lng") if own else d.get("lng"),
+                    "precision": precision, "place_label": d.get("place_label"), "credit": pl.get("pseudonym")})
+    return out
 
 
 def _pub_json(r: dict, role: str | None, publisher: bool, names: dict, d: dict | None = None) -> dict:
@@ -265,7 +371,7 @@ def _pub_json(r: dict, role: str | None, publisher: bool, names: dict, d: dict |
             "project_id": str(r["project_id"]), "incident_id": str(r["incident_id"]) if r["incident_id"] else None,
             "intake_id": str(r["intake_id"]) if r["intake_id"] else None,
             "batch_id": str(r["batch_id"]) if r["batch_id"] else None,
-            "draft": r["draft"], "version": r["version"], "dirty": r["dirty"],
+            "draft": {k: v for k, v in d.items() if k not in ("lat", "lng")}, "version": r["version"], "dirty": r["dirty"],
             "published_by": name(r["published_by"]),
             "review_request": None if not r["review_requested_by"] else {
                 "by": name(r["review_requested_by"]), "by_id": str(r["review_requested_by"]),
@@ -413,6 +519,11 @@ async def edit_publication(pub_id: str, body: DraftPatch, request: Request, p: P
             if "materials" in ch:
                 for m in d["materials"]:
                     m["public_id"] = m.get("public_id") or new_public_id("mt")
+            if "community_notes" in ch:
+                # keep each note's public id (it is the note's public link)
+                old = {n["intake_id"]: n.get("public_id") for n in r["draft"].get("community_notes") or []}
+                for n in d["community_notes"]:
+                    n["public_id"] = n.get("public_id") or old.get(n["intake_id"]) or new_public_id("km")
             r = await (await conn.execute(
                 "UPDATE capture.publications SET draft = %s, dirty = true, updated_at = now() WHERE id = %s RETURNING *",
                 (Jsonb(d), pub_id))).fetchone()

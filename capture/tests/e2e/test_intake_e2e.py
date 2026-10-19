@@ -208,6 +208,36 @@ def test_intake_to_feed():
     assert api("POST", f"/v1/publications/{pub['id']}/approve", token=ed["token"])[0] == 403     # editor without the grant
     s, done = api("POST", f"/v1/publications/{pub['id']}/approve", token=pubr["token"])          # one approval publishes
     assert (s, done["state"], done["published_by"]) == (200, "published", f"Người công bố {tag}")
+    # its community note: the case report itself, on the map at the incident's generalised area
+    assert [n["intake_id"] for n in done["draft"]["community_notes"]] == [case["intake_id"]]
+    assert done["preview"]["notes"][0]["location"]["precision"] == "ward"
+
+    # A note filed later under the published incident joins its public version and waits for approval.
+    later = site.submit({"external_id": f"l-{tag}", "kind": "memory", "payload": {
+        "text": f"Ghi chú đến sau {tag}", "location": {"lat": 10.78, "lng": 106.70, "allow_exact": True}}}).json()
+    assert api("POST", f"/v1/intake/{later['intake_id']}/attach", {"incident_id": incident_id})[0] == 200
+    s, k = api("GET", f"/v1/intake/{later['intake_id']}")
+    assert k["incident_publication"]["dirty"] is True                      # "unpublished changes" on the case
+    s, pub2 = api("GET", f"/v1/publications/{pub['id']}")
+    assert pub2["dirty"] and len(pub2["draft"]["community_notes"]) == 2
+    s, done = api("POST", f"/v1/publications/{pub['id']}/approve", token=pubr["token"])
+    assert done["version"] == 2 and [n["text"]["vi"] for n in done["preview"]["notes"]][-1] == f"Ghi chú đến sau {tag}"
+
+    # The same for source material: a link filed later joins the published case once its capture is done.
+    n_mat = len(done["draft"]["materials"])
+    s, added = api("POST", f"/v1/incidents/{incident_id}/material", {"url": f"https://example.com/?later-material={tag}"})
+    assert s in (200, 201)
+    wait_for(lambda: len(api("GET", f"/v1/publications/{pub['id']}")[1]["draft"]["materials"]) == n_mat + 1)
+    s, pub3 = api("GET", f"/v1/publications/{pub['id']}")
+    assert pub3["dirty"] and pub3["draft"]["materials"][-1]["files"]          # with its publishable files
+    s, done = api("POST", f"/v1/publications/{pub['id']}/approve", token=pubr["token"])
+    assert done["version"] == 3 and len(done["preview"]["materials"]) == n_mat + 1
+    # Left out on purpose: it stays out (not added back by the sync).
+    left = done["draft"]["materials"][-1]["item_id"]
+    s, pub4 = api("PATCH", f"/v1/publications/{pub['id']}", {"materials": done["draft"]["materials"][:-1], "materials_excluded": [left]})
+    assert left not in [m["item_id"] for m in pub4["draft"]["materials"]]
+    s, done = api("POST", f"/v1/publications/{pub['id']}/approve", token=pubr["token"])
+    assert done["version"] == 4
 
     # @reviewer in a comment reaches everyone who can approve (the publisher, not the plain editor)
     api("POST", f"/v1/incidents/{incident_id}/comments", {"body": "@reviewer xem giúp bản công khai"})
@@ -233,6 +263,9 @@ def test_intake_to_feed():
     raw = json.dumps(inc_rec) + json.dumps(mem_rec)
     assert "10.7769" not in raw and "21.02851" not in raw and incident_id not in raw
     assert inc_rec["materials"][0]["original_url"].startswith("https://example.com/")
+    assert [n["text"]["vi"] for n in inc_rec["notes"]][-1] == f"Ghi chú đến sau {tag}"
+    assert all(n["location"]["precision"] == "ward" for n in inc_rec["notes"])     # never finer than the case
+    assert inc_rec["version"] == 4 and len(inc_rec["materials"]) == n_mat
     f = mem_rec["files"][0]
     data = httpx.get(BASE + "/feed/" + f["url"]).content
     assert hashlib.sha256(data).hexdigest() == f["sha256"] and f["original_sha256"] == hashlib.sha256(jpg).hexdigest()

@@ -99,6 +99,9 @@ async def _finish(pool, cap: dict, item: dict, outcome) -> None:
                                      body="; ".join(v.reasons)[:1000])
                 if v.verdict != "failed":
                     await queue_wayback(conn, item["id"])
+                    # material of an already public incident: its public version now has it, waiting for approval
+                    from .publish import refresh_for_incidents
+                    await refresh_for_incidents(conn, [x["incident_id"] for x in links])
     log.info("capture %s %s -> %s%s (%s)", cap["id"], item["canonical_url"], v.verdict,
              " (will retry)" if retry else "", "; ".join(v.reasons)[:200])
 

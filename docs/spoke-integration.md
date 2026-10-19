@@ -151,7 +151,7 @@ The hub only ever answers with one of four statuses.
 <feed>/keys.json          root public key, the root's delegation of the online key, revocations
 <feed>/index.json         {schema, generated_at, records: [{type, public_id, version, updated_at, path, sha256}], tombstones: [...]}
 <feed>/index.json.sig     {"online_public": "<b64>", "signature": "<b64>"}   Ed25519 over the exact bytes of index.json
-<feed>/records/<id>.json  one record
+<feed>/records/<id>.<hash>.json  one record version (use the `path` from index.json; the previous version stays for one rebuild)
 <feed>/files/<sha256>.<ext>
 ```
 

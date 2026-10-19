@@ -3,7 +3,7 @@
     keys.json            root public key, the root's delegation of the online key, revocations
     index.json           every live record {type, public_id, version, updated_at, path, sha256} + tombstones
     index.json.sig       {"online_public", "signature"}: Ed25519 over the exact bytes of index.json
-    records/<id>.json    one public record (its sha256 is in the index, so the signature covers it)
+    records/<id>.<hash>.json  one public record, content-addressed (its sha256 is in the index, so the signature covers it)
     files/<sha256>.<ext> cleaned media, content-addressed
 
 Rebuilt in full by the worker whenever a publication is approved or withdrawn (feed_state.dirty). Files and
@@ -20,6 +20,7 @@ import pathlib
 from datetime import datetime, timezone
 
 import httpx
+from psycopg.types.json import Jsonb
 
 from . import geo
 from .config import settings
@@ -49,6 +50,24 @@ def _files(frozen: list[dict], resolve) -> list[dict]:
                     "bytes": (pub or {}).get("bytes"), "mime": (pub or {}).get("mime"),
                     "original_sha256": f["source_sha256"], "manifest_sha256": f.get("manifest_sha256")})
     return out
+
+
+def _public_date(value, precision):
+    if not value:
+        return None
+    if len(str(value)) == 10:
+        return geo.coarsen_date(value, precision or "day")
+    return {"value": value, "precision": "month" if len(str(value)) == 7 else "year"}
+
+
+def _note(n: dict) -> dict:
+    """A community note of an incident: shown on the map as the submitter's voice, linked to the case."""
+    loc = geo.snap(n.get("lat"), n.get("lng"), n.get("precision") or "none")
+    if loc:
+        loc["label"] = n.get("place_label")
+    return {"public_id": n["public_id"], "text": {"vi": n.get("text_vi"), "en": n.get("text_en")},
+            "category": n.get("category"), "date": _public_date(n.get("date"), n.get("date_precision")),
+            "location": loc, "credit": n.get("credit") or None}
 
 
 def public_record(pub_type: str, public_id: str, version: int, published_at, snap: dict, resolve) -> dict:
@@ -84,7 +103,8 @@ def public_record(pub_type: str, public_id: str, version: int, published_at, sna
     return {**base, "title": {"vi": snap.get("title_vi"), "en": snap.get("title_en")},
             "summary": {"vi": snap.get("summary_vi"), "en": snap.get("summary_en")},
             "group": snap.get("group"), "tags": snap.get("tags") or [], "public_status": snap.get("public_status"),
-            "materials": materials, "community_files": _files(snap.get("frozen_community_files") or [], resolve)}
+            "materials": materials, "community_files": _files(snap.get("frozen_community_files") or [], resolve),
+            "notes": [_note(n) for n in snap.get("frozen_notes") or []]}
 
 
 VERDICT = {"complete": "archived", "partial": "partially_archived", "restricted": "restricted",
@@ -212,13 +232,15 @@ async def build(pool) -> dict:
         pubs = await (await conn.execute(
             "SELECT * FROM capture.publications WHERE version > 0 AND state IN ('published', 'withdrawn')"
             " ORDER BY published_at")).fetchall()
-        records, tombstones, used_files = [], [], set()
+        prev = (await (await conn.execute("SELECT live_paths FROM capture.feed_state WHERE id = 1")).fetchone())["live_paths"]
+        records, tombstones, used_files, paths_by_id = [], [], set(), {}
         for pb in pubs:
             if pb["state"] == "withdrawn":
                 tombstones.append({"type": pb["type"], "public_id": pb["public_id"],
                                    "withdrawn_at": pb["withdrawn_at"].isoformat()})
                 continue
             cleaned: dict[str, dict] = {}
+            mine: list[str] = []
             for f in _all_frozen(pb["published"]):
                 c = await public_file(conn, f)
                 if c:
@@ -226,16 +248,20 @@ async def build(pool) -> dict:
                     path = f"files/{c['sha256']}{ext}"
                     await asyncio.to_thread(_copy_to_store, store, c, path)
                     used_files.add(path)
+                    mine.append(path)
                     cleaned[f["source_sha256"]] = {"path": path, "sha256": c["sha256"], "bytes": c["bytes"],
                                                    "mime": c["mime"], "kind": c["kind"]}
             rec = public_record(pb["type"], pb["public_id"], pb["version"], pb["published_at"], pb["published"],
                                 resolve=lambda f, cl=cleaned: cl.get(f["source_sha256"]))
             data = _dump(rec)
-            path = f"records/{pb['public_id']}.json"
+            digest = hashlib.sha256(data).hexdigest()
+            # Content-addressed: a new version is a new file, so the previous index still points at intact bytes.
+            path = f"records/{pb['public_id']}.{digest[:16]}.json"
             await asyncio.to_thread(store.put, path, data, "application/json")
             records.append({"type": pb["type"], "public_id": pb["public_id"], "version": pb["version"],
                             "updated_at": pb["published_at"].isoformat(), "path": path,
-                            "sha256": hashlib.sha256(data).hexdigest()})
+                            "sha256": digest})
+            paths_by_id[pb["public_id"]] = [path, *mine]
 
     keys_doc = {"schema": "memlane-feed-keys/1", "root_public": delegation["root_public"],
                 "delegation": delegation, "revocations": revocations}
@@ -246,12 +272,17 @@ async def build(pool) -> dict:
     await asyncio.to_thread(store.put, "index.json", index, "application/json")
     await asyncio.to_thread(store.put, "index.json.sig", sig, "application/json")
 
-    # Remove whatever no live record uses any more (withdrawals take their media with them).
-    live = {r["path"] for r in records}
-    stale = [p for p in await asyncio.to_thread(store.list, "records/") if p not in live]
-    stale += [p for p in await asyncio.to_thread(store.list, "files/") if p not in used_files]
+    # Remove whatever no live record uses any more, keeping the previous generation of records that are still
+    # live for one more build (a reader of the old index can finish). Withdrawals take their media at once.
+    withdrawn = {t["public_id"] for t in tombstones}
+    keep = {p for ps in paths_by_id.values() for p in ps}
+    keep |= {p for pid, ps in (prev or {}).items() if pid not in withdrawn for p in ps}
+    stale = [p for p in await asyncio.to_thread(store.list, "records/") if p not in keep]
+    stale += [p for p in await asyncio.to_thread(store.list, "files/") if p not in keep]
     for p in stale:
         await asyncio.to_thread(store.delete, p)
+    async with pool.connection() as conn:
+        await conn.execute("UPDATE capture.feed_state SET live_paths = %s WHERE id = 1", (Jsonb(paths_by_id),))
     return {"records": len(records), "tombstones": len(tombstones), "files": len(used_files), "deleted": len(stale),
             "index_sha256": hashlib.sha256(index).hexdigest()}
 

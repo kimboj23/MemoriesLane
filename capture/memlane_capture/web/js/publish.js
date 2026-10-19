@@ -63,6 +63,16 @@ export async function publicationPage(view, id) {
           : el("p", { class: "meta" }, t("noPublishable")));
       return row;
     });
+    // Community notes: the submissions filed under the incident, shown on the community map as dots that open
+    // the case. Their public text can be edited (e.g. to remove a name); untick to leave one out.
+    const notes = (d.community_notes || []).map((n) => {
+      const include = el("input", { type: "checkbox", checked: n.include !== false, disabled: !editor });
+      const text = el("textarea", { rows: "3", value: n.text_vi || "", disabled: !editor });
+      return { n, include, text, node: el("div", { class: "material note-row" },
+        el("label", { class: "check" }, include, " ", t("showNote"), " ",
+          el("a", { href: `#/intake/${n.intake_id}`, class: "meta" }, t("fromSubmission2"))),
+        text) };
+    });
     const chosenCommunity = new Set(isInc ? d.community_files || [] : d.files || []);
     const cfs = communityFiles.map((cf) => ({ cf, box: el("input", { type: "checkbox", checked: chosenCommunity.has(cf.id), disabled: !editor }) }));
 
@@ -110,7 +120,12 @@ export async function publicationPage(view, id) {
         out.materials = mats.filter((r) => r.include.checked).map((r) => ({ item_id: r.m.item_id, public_id: r.m.public_id,
           show_original_url: r.orig.checked, summary_vi: r.summary.value.trim() || null, summary_en: r.m.summary_en || null,
           files: r.files.filter((x) => x.box.checked).map((x) => x.a.id) }));
+        out.materials_excluded = [...new Set([...(d.materials_excluded || []),
+          ...mats.filter((r) => !r.include.checked).map((r) => r.m.item_id)])]
+          .filter((id) => !mats.some((r) => r.include.checked && r.m.item_id === id));
         out.community_files = cfs.filter((x) => x.box.checked).map((x) => x.cf.id);
+        out.community_notes = notes.map((r) => ({ intake_id: r.n.intake_id, public_id: r.n.public_id, include: r.include.checked,
+          text_vi: r.text.value.trim() || null, text_en: r.n.text_en || null }));
       } else {
         out.files = cfs.filter((x) => x.box.checked).map((x) => x.cf.id);
       }
@@ -139,6 +154,8 @@ export async function publicationPage(view, id) {
       el("h4", {}, t("location")),
       locationSection(),
       field(t("credit"), text("credit")),
+      isInc ? [el("h4", {}, t("communityNotes")), el("p", { class: "meta" }, t("communityNotesHelp")),
+        notes.length ? notes.map((r) => r.node) : el("p", { class: "muted small" }, t("noCommunityNotes"))] : "",
       isInc ? [el("h4", {}, t("materialsToShow")), mats.length ? mats.map((r) => r.node) : el("p", { class: "muted" }, t("empty"))] : "",
       cfs.length ? [el("h4", {}, t("communityFiles")), el("p", { class: "meta" }, t("providedByContributor")),
         el("div", { class: "pick-files" }, cfs.map(({ cf, box }) => el("label", { class: "pick" }, box,
@@ -174,7 +191,7 @@ export async function publicationPage(view, id) {
           return post(`/v1/publications/${id}/withdraw`, { reason });
         }) }, t("withdrawIt")) : "",
         pub.state === "withdrawn" && atLeast(role, "editor") ? el("button", { type: "button", onclick: act(() => post(`/v1/publications/${id}/republish`)) }, t("backToDraft")) : "",
-        pub.feed_url && pub.state === "published" ? el("a", { href: `${pub.feed_url}/records/${pub.public_id}.json`, target: "_blank", rel: "noopener noreferrer" }, "feed ↗") : ""),
+        pub.feed_url && pub.state === "published" ? el("a", { href: `${pub.feed_url}/index.json`, target: "_blank", rel: "noopener noreferrer" }, "feed ↗") : ""),
       el("section", { class: "card" }, sec(t("previewTitle")), previewView(pub.preview)));
 
     mount(view,
@@ -226,6 +243,8 @@ function previewView(r) {
       el("dt", {}, t("credit")), el("dd", {}, r.credit || "—")),
     (r.materials || []).length ? el("ul", {}, r.materials.map((m) => el("li", {}, `${m.platform} · ${m.public_status} · ${m.files.length} 📎 · `,
       m.original_url ? el("span", { class: "meta" }, m.original_url) : el("span", { class: "muted" }, "—")))) : "",
+    (r.notes || []).length ? [el("h4", {}, t("communityNotes")), el("ul", {}, r.notes.map((n) => el("li", { class: "pre" },
+      (n.text?.vi || "").slice(0, 160), n.location ? el("span", { class: "meta" }, ` · ${t("levels")[n.location.precision] || n.location.precision}`) : "")))] : "",
     el("details", {}, el("summary", {}, "JSON"), el("pre", { class: "json" }, JSON.stringify(r, null, 2))));
 }
 

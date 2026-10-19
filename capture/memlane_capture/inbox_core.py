@@ -133,6 +133,8 @@ async def link_item(conn, p: Principal, item_id, incident_id) -> bool:
     await conn.execute("UPDATE capture.incidents SET updated_at = now() WHERE id = %s", (incident_id,))
     from .external import queue_wayback  # local import: external imports this module
     await queue_wayback(conn, item_id)
+    from .publish import refresh_for_incidents   # local import: publish imports this module
+    await refresh_for_incidents(conn, [incident_id])
     return True
 
 

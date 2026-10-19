@@ -98,6 +98,9 @@ export async function intakeDetailPage(view, id) {
               projects.filter((p) => !p.archived && atLeast(p.my_role, "editor") && p.id !== k.project?.id)
                 .map((p) => el("option", { value: p.id }, `${p.code} · ${p.name}`)))) : ""),
           k.incident ? el("section", { class: "card" }, sec(t("incident")), el("a", { href: `#/incidents/${k.incident.id}` }, k.incident.slug),
+            k.incident_publication && k.incident_publication.state === "published" && k.incident_publication.dirty
+              ? el("p", { class: "notice small" }, t("noteAddedToPublished"), " ",
+                  el("a", { href: `#/publications/${k.incident_publication.id}` }, t("openPublication"))) : "",
             k.reviewed_by ? el("p", { class: "meta" }, t("reviewedBy")(k.reviewed_by, ago(k.reviewed_at))) : "",
             manager && k.state !== "published" ? el("button", { type: "button", class: "link", onclick: act(() => post(`/v1/intake/${id}/reopen`)) }, t("reopen")) : "") : "",
           k.state === "rejected" ? el("section", { class: "card" }, el("p", {}, t("intakeStates").rejected, k.reason ? ": " + k.reason : ""),
