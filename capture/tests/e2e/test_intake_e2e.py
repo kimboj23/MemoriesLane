@@ -29,7 +29,7 @@ pytestmark = pytest.mark.skipif(not (BASE and TOKEN), reason="E2E_BASE_URL / E2E
 
 def api(method, path, body=None, token=TOKEN):
     r = httpx.request(method, BASE + path, json=body, headers={"Authorization": "Bearer " + token}, timeout=60)
-    return r.status_code, (r.json() if r.headers.get("content-type", "").startswith("application/json") else r.content)
+    return r.status_code, (r.json() if r.content and r.headers.get("content-type", "").startswith("application/json") else r.content)
 
 
 class Site:

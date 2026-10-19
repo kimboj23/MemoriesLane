@@ -4,6 +4,7 @@
 import { ago, api, atLeast, copyText, el, fmtDate, infoButton, isAdmin, loadProjects, modal, mount, patch, post, projectDot, sec, t, toast,
          verdictChip } from "./core.js";
 import { artifactGrid } from "./viewer.js";
+import { incidentPicker } from "./inbox.js";
 
 const KINDS = ["memory", "case_report", "document", "link"];
 
@@ -72,13 +73,33 @@ export async function intakeDetailPage(view, id) {
       if (e?.type === "submit") e.preventDefault();
       try { k = await fn(e); await render(); } catch (err) { toast(err.message, true); }
     };
+    // Used in other projects (references): the home keeps the contact and decides publication.
+    const filed = ["attached", "created", "published"].includes(k.state) && k.incident;
+    let refPicker = null;
+    const refBtn = el("button", { type: "button", disabled: true }, t("refsAdd"));
+    if (editor && filed) {
+      refPicker = await incidentPicker({ placeholder: t("chooseIncident"), onChange: (v) => { refBtn.disabled = !v || v === k.incident.id; } });
+      refBtn.onclick = act(() => post(`/v1/intake/${id}/references`, { incident_id: refPicker.value }));
+    }
+    const refs = k.references || { incidents: [], elsewhere: 0 };
+    const refsCard = role === "reference" || (!editor && !refs.incidents.length) ? "" : el("section", { class: "card stack" },
+      sec([t("refsTitle"), infoButton(t("refsTitle"), el("p", {}, t("refsHelp")))]),
+      refs.incidents.length ? el("ul", { class: "plain" }, refs.incidents.map((x) => el("li", { class: "row" },
+        projectDot({ color: x.color }), el("a", { href: `#/incidents/${x.id}` }, `${x.slug} · ${x.description}`),
+        editor ? el("button", { type: "button", class: "link danger small", onclick: act(async () => {
+          await api(`/v1/intake/${id}/references/${x.id}`, { method: "DELETE" });
+          return api(`/v1/intake/${id}`);
+        }) }, t("refRemove")) : ""))) : "",
+      refs.elsewhere ? el("p", { class: "meta" }, t("refsElsewhere")(refs.elsewhere)) : "",
+      !editor ? "" : filed ? el("div", { class: "row" }, refPicker.node, refBtn) : el("p", { class: "meta" }, t("refsNeedFiled")));
     mount(view,
       el("p", {}, el("a", { href: "#/inbox?source=community" }, t("back"))),
       el("header", { class: "inc-head" },
         el("div", { class: "row" }, kindChip(k), el("span", { class: "chip" }, t("intakeStates")[k.state]),
           k.legacy_public ? el("span", { class: "chip" }, t("legacyPublic")) : "",
           el("span", { class: "spacer" }), el("span", { class: "meta" }, `${k.source.name} · ${fmtDate(k.received_at)}`)),
-        el("h1", {}, k.summary || t("submission"))),
+        el("h1", {}, k.summary || t("submission")),
+        role === "reference" ? el("p", { class: "notice small" }, t("refViewing")(k.project ? `${k.project.code} · ${k.project.name}` : "")) : ""),
       el("div", { class: "inc-grid" },
         el("div", { class: "inc-main" },
           el("section", { class: "card" }, sec(t("submittedText")), payloadList(k.payload),
@@ -117,6 +138,7 @@ export async function intakeDetailPage(view, id) {
             el("form", { class: "stack", onsubmit: act(() => post(`/v1/intake/${id}/reject`, { reason: reason.value })) },
               reason, el("button", { type: "submit", class: "danger" }, t("rejectIt")))) : "",
 
+          refsCard,
           k.kind === "memory" && editor && k.project ? el("section", { class: "card stack" }, sec(t("publication")),
             k.publication ? el("a", { href: `#/publications/${k.publication.id}` }, `${t("pubStates")[k.publication.state]} · ${k.publication.public_id} →`)
               : el("button", { type: "button", onclick: act(async () => {

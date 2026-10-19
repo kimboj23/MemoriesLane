@@ -68,12 +68,17 @@ async def visible_projects(conn, p: Principal, r: dict) -> set[str]:
 
 async def intake_role(conn, p: Principal, item_id, roles: tuple = ("viewer", "editor", "manager", "owner")) -> bool:
     """A link that came in with a community submission is visible to the members (viewer and up) of the project
-    the submission is routed to, before anyone files it (intake.py)."""
+    the submission is routed to, before anyone files it (intake.py), and to members of projects whose incidents use
+    the submission as a reference (capture.intake_references)."""
     return bool(await (await conn.execute(
         "SELECT 1 FROM capture.intake_items ii JOIN capture.intake k ON k.id = ii.intake_id"
         " JOIN capture.project_members m ON m.project_id = k.project_id"
-        " WHERE ii.item_id = %s AND m.contributor_id = %s AND m.role = ANY(%s) LIMIT 1",
-        (item_id, p.contributor_id, list(roles)))).fetchone())
+        " WHERE ii.item_id = %s AND m.contributor_id = %s AND m.role = ANY(%s)"
+        " UNION ALL "
+        "SELECT 1 FROM capture.intake_items ii JOIN capture.intake_references r ON r.intake_id = ii.intake_id"
+        " JOIN capture.incidents i ON i.id = r.incident_id JOIN capture.project_members m ON m.project_id = i.project_id"
+        " WHERE ii.item_id = %s AND m.contributor_id = %s AND m.role = ANY(%s) AND NOT i.deleted LIMIT 1",
+        (item_id, p.contributor_id, list(roles), item_id, p.contributor_id, list(roles)))).fetchone())
 
 
 async def can_see_item(conn, p: Principal, r: dict) -> bool:

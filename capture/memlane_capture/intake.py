@@ -405,7 +405,19 @@ def _intake_json(k: dict, role: str | None) -> dict:
     }
 
 
-async def _get_intake(conn, intake_id: str, p: Principal, minimum: str = "viewer") -> tuple[dict, str]:
+async def _reference_access(conn, p: Principal, intake_id) -> bool:
+    """Viewer or up (not data-only) in a project with an incident that uses this submission as a reference."""
+    return bool(await (await conn.execute(
+        "SELECT 1 FROM capture.intake_references r JOIN capture.incidents i ON i.id = r.incident_id"
+        " JOIN capture.project_members m ON m.project_id = i.project_id"
+        " WHERE r.intake_id = %s AND NOT i.deleted AND m.contributor_id = %s AND m.role <> 'data_only_viewer' LIMIT 1",
+        (intake_id, p.contributor_id))).fetchone())
+
+
+async def _get_intake(conn, intake_id: str, p: Principal, minimum: str = "viewer",
+                      allow_reference: bool = False) -> tuple[dict, str]:
+    """The submission and the caller's role in its home project. With allow_reference (reading only), someone who
+    reaches it only through a reference gets the role "reference": text and files, never the contact."""
     k = await (await conn.execute(INTAKE_SELECT + " WHERE k.id = %s", (intake_id,))).fetchone()
     if not k:
         raise HTTPException(404, "submission not found")
@@ -415,6 +427,8 @@ async def _get_intake(conn, intake_id: str, p: Principal, minimum: str = "viewer
         return k, "owner"
     role = await project_role(conn, p, k["project_id"])
     if role is None or role == "data_only_viewer":     # submissions may identify people: viewers and up only
+        if allow_reference and await _reference_access(conn, p, k["id"]):
+            return k, "reference"
         raise HTTPException(404, "submission not found")
     if not at_least(role, minimum):
         raise HTTPException(403, f"requires the {minimum} role in this project")
@@ -462,7 +476,7 @@ async def list_intake(request: Request, p: Principal = Depends(current_principal
 @router.get("/intake/{intake_id}")
 async def get_intake(intake_id: str, request: Request, p: Principal = Depends(current_principal)):
     async with request.app.state.pool.connection() as conn:
-        k, role = await _get_intake(conn, intake_id, p)
+        k, role = await _get_intake(conn, intake_id, p, allow_reference=True)
         items = await (await conn.execute(
             ITEM_SELECT + " JOIN capture.intake_items link ON link.item_id = i.id WHERE link.intake_id = %s"
             " ORDER BY i.created_at", (intake_id,))).fetchall()
@@ -477,8 +491,28 @@ async def get_intake(intake_id: str, request: Request, p: Principal = Depends(cu
                    publication=None if not pub else {"id": str(pub["id"]), "state": pub["state"],
                                                      "public_id": pub["public_id"]},
                    incident_publication=None if not inc_pub else {"id": str(inc_pub["id"]), "state": inc_pub["state"],
-                                                                  "public_id": inc_pub["public_id"], "dirty": inc_pub["dirty"]})
+                                                                  "public_id": inc_pub["public_id"], "dirty": inc_pub["dirty"]},
+                   references=await _references(conn, p, k["id"]))
+        if role == "reference":
+            # Reached through a reference: what was said, not who said it or what the home project decided.
+            out.update(has_contact=False, reviewed_by=None, reason=None, publication=None, incident_publication=None,
+                       incident=None)
     return out
+
+
+async def _references(conn, p: Principal, intake_id) -> dict:
+    """Incidents using this submission as a reference: those in your projects, and how many elsewhere."""
+    rows = await (await conn.execute(
+        "SELECT i.id, i.number, pr.code, pr.color, i.description,"
+        "       EXISTS (SELECT 1 FROM capture.project_members m WHERE m.project_id = i.project_id"
+        "               AND m.contributor_id = %s AND m.role <> 'data_only_viewer') AS mine"
+        "  FROM capture.intake_references r JOIN capture.incidents i ON i.id = r.incident_id"
+        "  JOIN capture.projects pr ON pr.id = i.project_id WHERE r.intake_id = %s AND NOT i.deleted ORDER BY r.added_at",
+        (p.contributor_id, intake_id))).fetchall()
+    visible = [r for r in rows if r["mine"] or p.role == "admin"]
+    return {"incidents": [{"id": str(r["id"]), "slug": f"{r['code']}-{r['number']}", "color": r["color"],
+                           "description": (r["description"] or "")[:120]} for r in visible],
+            "elsewhere": len(rows) - len(visible)}
 
 
 async def _review(conn, k: dict, p: Principal, state: str, incident_id=None, reason=None) -> None:
@@ -549,6 +583,42 @@ def incident_from_submission(k: dict, attributes: list[dict]) -> dict:
         if attr and (not attr["options"] or label in attr["options"]):
             out["custom"] = {attr["id"]: label}
     return out
+
+
+@router.post("/intake/{intake_id}/references")
+async def add_reference(intake_id: str, body: AttachIn, request: Request, p: Principal = Depends(current_principal)):
+    """Use a filed submission as a reference in another incident (any project). Needs editor in the submission's
+    home project and in the target's. The home keeps the contact and decides publication."""
+    async with request.app.state.pool.connection() as conn:
+        async with conn.transaction():
+            k, _ = await _get_intake(conn, intake_id, p, "editor")
+            if k["state"] not in ("attached", "created", "published") or not k["incident_id"]:
+                raise HTTPException(409, "file the submission in its own project first")
+            if str(k["incident_id"]) == body.incident_id:
+                raise HTTPException(409, "this is the submission's own incident")
+            from .inbox_core import _writable_incident
+            await _writable_incident(conn, p, body.incident_id)
+            cur = await conn.execute(
+                "INSERT INTO capture.intake_references (intake_id, incident_id, added_by) VALUES (%s,%s,%s)"
+                " ON CONFLICT DO NOTHING", (k["id"], body.incident_id, p.contributor_id))
+            if cur.rowcount:
+                await add_update(conn, incident_id=body.incident_id, kind="intake", p=p,
+                                 new={"intake_id": str(k["id"]), "source": k["source_slug"], "kind": k["kind"],
+                                      "reference": True},
+                                 body=f"{k['source_name']}: {_summary(k)}"[:1000])
+    return await get_intake(intake_id, request, p)
+
+
+@router.delete("/intake/{intake_id}/references/{incident_id}", status_code=204)
+async def remove_reference(intake_id: str, incident_id: str, request: Request, p: Principal = Depends(current_principal)):
+    """Editors of the referencing incident's project (they needn't belong to the home project)."""
+    async with request.app.state.pool.connection() as conn:
+        from .inbox_core import _writable_incident
+        await _writable_incident(conn, p, incident_id)
+        cur = await conn.execute("DELETE FROM capture.intake_references WHERE intake_id = %s AND incident_id = %s",
+                                 (intake_id, incident_id))
+        if not cur.rowcount:
+            raise HTTPException(404, "not a reference of this incident")
 
 
 @router.post("/intake/{intake_id}/create")
@@ -633,7 +703,7 @@ async def get_intake_file(file_id: str, request: Request, exp: str | None = None
         if not f:
             raise HTTPException(404, "file not found")
         if not verify_intake_file(file_id, exp, sig):
-            await _get_intake(conn, str(f["intake_id"]), await current_principal(request))
+            await _get_intake(conn, str(f["intake_id"]), await current_principal(request), allow_reference=True)
     return stored_response(request, storage_key=f["storage_key"], size=f["bytes"], mime=f["mime"], sha256=f["sha256"])
 
 

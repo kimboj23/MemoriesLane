@@ -285,7 +285,7 @@ function feedEntry(u, inc, project, names) {
   else if (u.kind === "material_added") action = t("feedMaterialAdded");
   else if (u.kind === "material_removed") action = t("feedMaterialRemoved");
   else if (u.kind === "capture") action = t("feedCaptureVerb");
-  else if (u.kind === "intake") action = t("feedIntake");
+  else if (u.kind === "intake") action = u.new?.reference ? t("feedIntakeRef") : t("feedIntake");
   else if (u.kind === "publication") action = (t("feedPub")[u.new?.action] || u.new?.action || "") + (u.new?.public_id ? ` ${u.new.public_id}` : "");
   else action = t("feedChanged")(fieldLabel(u.field, project));
 
@@ -388,8 +388,14 @@ export async function incidentPage(view, id) {
           inc.intake?.length ? el("section", { class: "card" }, sec(t("fromCommunity")),
             inc.intake.map((k) => el("div", { class: "material" },
               el("div", { class: "row" }, el("span", { class: "badge" }, t("intakeKinds")[k.kind] || k.kind), el("span", { class: "meta" }, k.source),
+                k.reference ? el("span", { class: "chip", title: t("refNotPublished") }, t("refChip")) : "",
                 el("span", { class: "spacer" }), el("span", { class: "meta" }, ago(k.received_at))),
               el("a", { class: "title", href: `#/intake/${k.id}` }, k.summary || t("submission")),
+              k.reference ? el("p", { class: "meta" }, t("refFrom")(k.home_project), " · ", t("refNotPublished"),
+                atLeast(role, "editor") && !archived ? [" ", el("button", { type: "button", class: "link danger small", onclick: async () => {
+                  try { await api(`/v1/intake/${k.id}/references/${inc.id}`, { method: "DELETE" }); await reload(true); }
+                  catch (e) { toast(e.message, true); }
+                } }, t("refRemove"))] : "") : "",
               k.files.filter((f) => f.url).length ? artifactGrid(k.files.filter((f) => f.url).map((f) => ({ ...f, role: "primary", label: t("providedByContributor") })), { blur }) : ""))) : "",
           role === "data_only_viewer" ? "" : el("section", { class: "card stack" }, sec(t("publication")),
             inc.publication ? [el("p", {}, el("span", { class: "chip" }, t("pubStates")[inc.publication.state]), " ",

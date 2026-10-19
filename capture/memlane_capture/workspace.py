@@ -411,15 +411,22 @@ async def get_incident(incident_id: str, request: Request, p: Principal = Depend
         # Community submissions filed here (they may identify people: not for data-only viewers), and the
         # public version, if any.
         intake_rows = [] if data_only else await (await conn.execute(
-            "SELECT k.id, k.kind, k.payload, k.received_at, s.name AS source_name FROM capture.intake k"
-            " JOIN capture.sources s ON s.id = k.source_id WHERE k.incident_id = %s ORDER BY k.received_at",
-            (incident_id,))).fetchall()
+            "SELECT k.id, k.kind, k.payload, k.received_at, s.name AS source_name, NULL AS ref_project"
+            "  FROM capture.intake k JOIN capture.sources s ON s.id = k.source_id WHERE k.incident_id = %s"
+            " UNION ALL "
+            "SELECT k.id, k.kind, k.payload, k.received_at, s.name, pr.code || ' · ' || pr.name"
+            "  FROM capture.intake_references r JOIN capture.intake k ON k.id = r.intake_id"
+            "  JOIN capture.sources s ON s.id = k.source_id JOIN capture.projects pr ON pr.id = k.project_id"
+            " WHERE r.incident_id = %s ORDER BY 4",
+            (incident_id, incident_id))).fetchall()
         intake_out = []
         for k in intake_rows:
             from .intake import intake_files   # intake imports workspace lazily; this keeps imports one-way at load
             pl = k["payload"] or {}
             intake_out.append({"id": str(k["id"]), "kind": k["kind"], "source": k["source_name"],
                                "received_at": k["received_at"],
+                               # A reference: its home is another incident, which alone may publish it.
+                               "reference": k["ref_project"] is not None, "home_project": k["ref_project"],
                                "summary": (pl.get("title") or pl.get("text") or pl.get("note") or pl.get("url") or "")[:300],
                                "files": await intake_files(conn, k["id"])})
         pub = await (await conn.execute(

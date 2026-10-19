@@ -6,7 +6,9 @@ import { mount, ago, api, atLeast, el, isAdmin, loadProjects, loadVocab, modal, 
 import { INTAKE_STATES, intakeRow } from "./intake.js";
 
 // Project → incident dropdowns. Calls onChange(incidentId|null). `allowNew` adds "+ create incident".
-export async function incidentPicker({ value = null, projectId = null, allowNew = false, onNew = null, onChange = () => {} } = {}) {
+// `placeholder` labels the empty incident choice (default: "not filed", which suits the save sheet).
+export async function incidentPicker({ value = null, projectId = null, allowNew = false, onNew = null, onChange = () => {},
+                                       placeholder = null } = {}) {
   const projects = (await loadProjects()).filter((p) => !p.archived && atLeast(p.my_role, "editor"));
   const pSel = el("select", { "aria-label": t("project") },
     el("option", { value: "" }, t("chooseProject")),
@@ -14,7 +16,7 @@ export async function incidentPicker({ value = null, projectId = null, allowNew 
   const iSel = el("select", { "aria-label": t("incident"), disabled: true });
   const fill = async (keep) => {
     const pid = pSel.value;
-    iSel.replaceChildren(el("option", { value: "" }, t("noIncident")));
+    iSel.replaceChildren(el("option", { value: "" }, placeholder || t("noIncident")));
     iSel.disabled = !pid;
     if (!pid) { onChange(null); return; }
     const { incidents } = await api(`/v1/incidents?project_id=${pid}&sort=number&limit=500`);
