@@ -12,6 +12,7 @@
 const express = require("express");
 const { queries } = require("../db");
 const { rateLimit } = require("../middleware/rate-limit");
+const hub = require("../hub");
 
 const router = express.Router();
 router.use(rateLimit(120, "read"));
@@ -36,7 +37,7 @@ router.get("/collections", async (req, res, next) => {
 
 router.get("/:id([A-Za-z0-9_-]{1,24})", async (req, res, next) => {
   try {
-    const material = await queries.materialById(req.params.id);
+    const material = hub.feedMaterial(req.params.id) || (hub.useDb() ? await queries.materialById(req.params.id) : null);
     if (!material) return res.status(404).json({ error: "Not found" });
     res.json(material);
   } catch (err) {
@@ -54,7 +55,10 @@ router.get("/", async (req, res, next) => {
     const limit = Math.min(parseInt(req.query.limit, 10) || 60, 300);
     const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
 
-    const materials = await queries.materialsList({ q, collection, mediaType, tool, city, limit, offset });
+    const local = hub.useDb() ? await queries.materialsList({ q, collection, mediaType, tool, city, limit, offset }) : [];
+    // Published by the hub: on the first page (the feed is small), unless filtering by the old tools/collections.
+    const published = offset === 0 && !collection && !tool ? hub.feedMaterials({ q, mediaType, city }) : [];
+    const materials = [...published, ...local].slice(0, limit);
     res.json({ materials, count: materials.length, limit, offset });
   } catch (err) {
     next(err);

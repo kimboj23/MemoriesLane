@@ -193,6 +193,8 @@ async function initDb() {
   // Uploaded video/document support alongside photos — file_mime tells the
   // serving route what Content-Type to send back for whatever's at photo_path.
   await pool.query(`ALTER TABLE memories ADD COLUMN IF NOT EXISTS file_mime TEXT`);
+  // Consent to show the exact point once published (hub.js forwards it; default: approximate area only).
+  await pool.query(`ALTER TABLE memories ADD COLUMN IF NOT EXISTS allow_exact INTEGER NOT NULL DEFAULT 0`);
   await pool.query(`ALTER TABLE memories DROP CONSTRAINT IF EXISTS memories_media_type_check`);
   await pool.query(`ALTER TABLE memories ADD CONSTRAINT memories_media_type_check CHECK (media_type IN ('text','photo','video','document'))`);
   // Partial index: pending moderation queue
@@ -277,13 +279,13 @@ const queries = {
     `INSERT INTO memories
        (id, lat, lng, city, ward, cat, year, month, day, date_label, date_label_en,
         lang, text_vi, text_en, has_photo, photo_path, file_mime, media_type, submit_date,
-        attribution, author_name, media_url)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
+        attribution, author_name, media_url, allow_exact)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`,
     [row.id, row.lat, row.lng, row.city, row.ward, row.cat,
      row.year, row.month, row.day, row.date_label, row.date_label_en,
      row.lang, row.text_vi, row.text_en,
      row.has_photo, row.photo_path, row.file_mime || null, row.media_type, row.submit_date,
-     row.attribution || "anonymous", row.author_name || null, row.media_url || null]
+     row.attribution || "anonymous", row.author_name || null, row.media_url || null, row.allow_exact ? 1 : 0]
   ),
 
   publicList: async (city, minY, maxY, limit = 500, offset = 0) => {

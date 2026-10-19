@@ -243,9 +243,6 @@ function App() {
   const [placePoint, setPlacePoint] = React.useState(null);
   const [selected, setSelected] = React.useState(null);
   const [aboutOpen, setAboutOpen] = React.useState(false);
-  const [adminOpen, setAdminOpen] = React.useState(false);
-  const [archivePoint, setArchivePoint] = React.useState(null);
-  const [pickingArchiveLoc, setPickingArchiveLoc] = React.useState(false);
   const [materials, setMaterials] = React.useState([]);
   const [selectedMaterial, setSelectedMaterial] = React.useState(null);
   const [materialsOpen, setMaterialsOpen] = React.useState(false);
@@ -421,7 +418,6 @@ function App() {
   const mapClick = (p) => {
     if (city === "all") return;
     if (composing) { setSelected(null); setAboutOpen(false); setLayersOpen(false); setPlacePoint(p); }
-    else if (pickingArchiveLoc) { setSelected(null); setAboutOpen(false); setLayersOpen(false); setArchivePoint(p); setPickingArchiveLoc(false); }
   };
   const closeCompose = () => { setComposing(false); setPlacePoint(null); };
   const [receipt, setReceipt] = React.useState(null);
@@ -510,13 +506,6 @@ function App() {
               <line x1="6" y1="8" x2="9" y2="8" />
             </svg>
           </button>
-          <button className={"pill-btn icon-btn ghost " + (adminOpen ? "active" : "")}
-            onClick={() => { setLayersOpen(false); setAdminOpen((v) => !v); }}
-            title={lang === "vi" ? "Quản trị lưu trữ" : "Archive admin"} aria-label={lang === "vi" ? "Quản trị lưu trữ" : "Archive admin"}>
-            <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M7.5 1.5l2 4 4.4.6-3.2 3.1.75 4.3-3.95-2.1-3.95 2.1.75-4.3-3.2-3.1 4.4-.6z" />
-            </svg>
-          </button>
           <button className="pill-btn" onClick={() => setLang(lang === "vi" ? "en" : "vi")}>{S.langLabel}</button>
           <button className="pill-btn icon-btn ghost"
             onClick={() => { setSelected(null); setComposing(false); setPlacePoint(null); setLayersOpen(false); setAboutOpen(true); }}
@@ -550,8 +539,8 @@ function App() {
       )}
 
       <MapView
-        memories={mapMarkers} placing={placePoint || archivePoint} onPlace={mapClick} onSelect={selectMapItem}
-        selectedId={selected && selected.id} placingMode={(composing && !placePoint) || pickingArchiveLoc}
+        memories={mapMarkers} placing={placePoint} onPlace={mapClick} onSelect={selectMapItem}
+        selectedId={selected && selected.id} placingMode={composing && !placePoint}
         focus={selected ? { lat: selected.lat, lng: selected.lng, id: selected.id } : null}
         basemap={basemap} accent={accent}
         accumulation={t.accumulation} lang={lang}
@@ -581,13 +570,6 @@ function App() {
         </div>
       )}
 
-      {pickingArchiveLoc && (
-        <div className="place-banner">
-          <span className="place-banner-n">①</span>
-          <span>{S.placePrompt}</span>
-          <button className="place-banner-x" onClick={() => setPickingArchiveLoc(false)} aria-label={S.close}>✕</button>
-        </div>
-      )}
 
       {city !== "all" && (
         <button className="cta" onClick={openCompose}>
@@ -638,14 +620,6 @@ function App() {
       )}
       {aboutOpen && <AboutPanel lang={lang} onClose={() => setAboutOpen(false)} />}
       {receipt && <ReceiptNotice code={receipt} S={STR[lang]} onClose={() => setReceipt(null)} />}
-      {adminOpen && (
-        <ArchiveAdmin lang={lang}
-          onClose={() => { setAdminOpen(false); setPickingArchiveLoc(false); setArchivePoint(null); }}
-          point={archivePoint} picking={pickingArchiveLoc}
-          onStartPick={() => setPickingArchiveLoc(true)}
-          onCancelPick={() => setPickingArchiveLoc(false)}
-          onClearPoint={() => setArchivePoint(null)} />
-      )}
       {materialsOpen && (
         <MaterialsPanel lang={lang} onClose={() => setMaterialsOpen(false)}
           onOpenCase={(id) => { setMaterialsOpen(false); setOpenCaseId(id); }} />

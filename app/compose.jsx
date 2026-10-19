@@ -40,6 +40,8 @@ function ComposeSheet({ point, lang, accent, gold, city, onSubmit, onClose, near
   const [file, setFile] = React.useState(null); // { dataUrl, kind: photo|video|document, name }
   const [optimizing, setOptimizing] = React.useState(false);
   const [attribution, setAttribution] = React.useState("anonymous");
+  // Shown as an approximate area unless the submitter allows the exact spot (the reviewers can only go coarser).
+  const [allowExact, setAllowExact] = React.useState(false);
   const [authorName, setAuthorName] = React.useState("");
   const [mediaUrl, setMediaUrl] = React.useState("");
   const fileRef = React.useRef(null);
@@ -108,6 +110,7 @@ function ComposeSheet({ point, lang, accent, gold, city, onSubmit, onClose, near
       attribution,
       authorName: attribution === "anonymous" ? null : authorName.trim(),
       mediaUrl: mediaUrl.trim() || null,
+      allowExact,
       submittedAt: Date.now(),
       mine: true,
     };
@@ -268,6 +271,11 @@ function ComposeSheet({ point, lang, accent, gold, city, onSubmit, onClose, near
           <input className="memory-input" type="url" value={mediaUrl}
             placeholder={lang === "vi" ? "https://… (bản ghi âm gốc, nếu có)" : "https://… (an existing recording, if any)"}
             onChange={(e) => setMediaUrl(e.target.value)} />
+
+          <label className="exact-consent">
+            <input type="checkbox" checked={allowExact} onChange={(e) => setAllowExact(e.target.checked)} />
+            <span>{t.allowExact}<small>{t.allowExactHelp}</small></span>
+          </label>
 
           <button className={"send-btn " + (canSend ? "" : "disabled")} onClick={send} disabled={!canSend}>
             {t.submit}

@@ -133,11 +133,14 @@ function validateSubmission(body) {
     else media_url = clean(body.mediaUrl, 500);
   }
 
+  // The submitter's consent to show the exact point (otherwise only an approximate area is ever published).
+  const allow_exact = body.allowExact === true ? 1 : 0;
+
   if (errors.length) return { ok: false, errors };
 
   return {
     ok: true,
-    data: { lat, lng, city, ward, cat, year, month, day, date_label, date_label_en, lang, text_vi, text_en, media_type, photoData, attribution, author_name, media_url },
+    data: { lat, lng, city, ward, cat, year, month, day, date_label, date_label_en, lang, text_vi, text_en, media_type, photoData, attribution, author_name, media_url, allow_exact },
   };
 }
 

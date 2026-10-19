@@ -100,7 +100,9 @@ function memoryEnvelope(m, kind, receiptSha) {
     payload: {
       text: m.text_vi, text_en: m.text_en || undefined, category: m.cat,
       date: { year: m.year, month: m.month || undefined, day: m.day || undefined, label: m.date_label || undefined },
-      location: { lat: m.lat, lng: m.lng, ward: m.ward || undefined, city: m.city },
+      // Legacy memories were public with their exact point; new ones are approximate unless the submitter allowed it.
+      location: { lat: m.lat, lng: m.lng, ward: m.ward && m.ward !== "—" ? m.ward : undefined, city: m.city,
+                  allow_exact: legacy || !!m.allow_exact, precision_wish: legacy || m.allow_exact ? undefined : "ward" },
       case_ref: m.case_id || undefined,
       pseudonym: named && m.author_name ? m.author_name : undefined,
     },
@@ -338,6 +340,12 @@ module.exports = {
   feedMemory: (id) => { const m = useFeed() && state.memById.get(id); if (!m) return null; const { _file, ...rest } = m; return rest; },
   feedCase: (id) => (useFeed() ? state.caseById.get(id) || null : null),
   feedCases: (city) => (useFeed() ? state.cases.filter((c) => !city || c.city === city) : []),
+  /** Published materials (from the hub's cases), filtered like queries.materialsList. */
+  feedMaterials: ({ q, mediaType, city } = {}) => (useFeed() ? state.cases.flatMap((c) => c.archives)
+    .filter((m) => (!city || m.city === city) && (!mediaType || m.mediaType === mediaType)
+      && (!q || [m.titleVi, m.titleEn, m.source, m.originalUrl, m.caseTitleVi].some((x) => x && x.toLowerCase().includes(q.toLowerCase()))))
+    : []),
+  feedMaterial: (id) => (useFeed() ? state.cases.flatMap((c) => c.archives).find((m) => m.id === id) || null : null),
   feedCaseMemories: (id) => (useFeed() ? state.memories.filter((m) => m.case_id === id).map(({ _file, ...m }) => m) : []),
   status: () => ({ intake: intakeOn, feed: feedOn, publicSource: PUBLIC_SOURCE, loadedAt: state.loadedAt, error: state.error,
                    memories: state.memories.length, cases: state.cases.length }),
