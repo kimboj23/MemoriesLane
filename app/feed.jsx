@@ -78,7 +78,21 @@ function MemoryFeedCard({ item, lang, onOpen }) {
   );
 }
 
-function FeedView({ items, lang, loading, onOpenMemory, onOpenCase }) {
+// "Xem trên bản đồ": switch to the map at this entry; the map then offers "back to the list".
+function OnMapButton({ item, lang, onShowOnMap }) {
+  if (!onShowOnMap || item.lat == null || item.lng == null) return null;
+  return (
+    <button className="feed-onmap" onClick={(e) => { e.stopPropagation(); onShowOnMap(item); }}
+      title={lang === "vi" ? "Xem vị trí trên bản đồ, rồi quay lại danh sách" : "See it on the map, then come back to the list"}>
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M6 11s4-3.6 4-6.4A4 4 0 0 0 2 4.6C2 7.4 6 11 6 11z" /><circle cx="6" cy="4.6" r="1.4" />
+      </svg>
+      {lang === "vi" ? "Xem trên bản đồ" : "Show on map"}
+    </button>
+  );
+}
+
+function FeedView({ items, lang, loading, onOpenMemory, onOpenCase, onShowOnMap }) {
   if (loading) {
     return (
       <div className="feed-view feed-loading">
@@ -109,7 +123,10 @@ function FeedView({ items, lang, loading, onOpenMemory, onOpenCase }) {
             <span className="feed-section-count">{cases.length}</span>
           </div>
           {cases.map((item) => (
-            <CaseFeedCard key={item.id} item={item} lang={lang} onOpen={() => onOpenCase(item.id)} />
+            <div key={item.id} className="feed-entry">
+              <CaseFeedCard item={item} lang={lang} onOpen={() => onOpenCase(item.id)} />
+              <OnMapButton item={item} lang={lang} onShowOnMap={onShowOnMap} />
+            </div>
           ))}
         </div>
       )}
@@ -120,7 +137,10 @@ function FeedView({ items, lang, loading, onOpenMemory, onOpenCase }) {
             <span className="feed-section-count">{memories.length}</span>
           </div>
           {memories.map((item) => (
-            <MemoryFeedCard key={item.id} item={item} lang={lang} onOpen={() => onOpenMemory(item)} />
+            <div key={item.id} className="feed-entry">
+              <MemoryFeedCard item={item} lang={lang} onOpen={() => onOpenMemory(item)} />
+              <OnMapButton item={item} lang={lang} onShowOnMap={onShowOnMap} />
+            </div>
           ))}
         </div>
       )}

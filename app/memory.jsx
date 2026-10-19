@@ -141,7 +141,7 @@ function MemoryDetail({ memory, lang, onClose, onPrev, onNext, onOpenCase }) {
   );
 }
 
-function AboutPanel({ lang, onClose }) {
+function AboutPanel({ lang, onClose, onCheckReceipt }) {
   const t = STR[lang];
   return (
     <div className="read-scrim" onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -157,6 +157,10 @@ function AboutPanel({ lang, onClose }) {
           <li><span className="step-n">03</span>{t.how3}</li>
           <li><span className="step-n">04</span>{t.how4}</li>
         </ol>
+
+        <h3 className="about-sub">{t.receiptCheckTitle}</h3>
+        <p className="about-p small">{t.receiptCheckHelp}</p>
+        <button className="ghost-btn" onClick={onCheckReceipt}>{t.receiptCheckOpen}</button>
 
         <h3 className="about-sub">{t.guidelinesTitle}</h3>
         <p className="about-p small">{t.guidelinesBody}</p>

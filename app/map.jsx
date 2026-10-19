@@ -6,7 +6,7 @@
    ============================================================================ */
 
 function MapView({
-  memories, placing, onPlace, onSelect, selectedId, focus = null, placingMode = false,
+  memories, placing, onPlace, onSelect, selectedId, focus = null, placingMode = false, highlight = null,
   basemap = "streets", accent = "#d8552f", accumulation = "subtle",
   showZone = true, lang = "vi",
   queryMode = null, queryShape = null, onShape = null, onDraftChange = null, drawApiRef = null,
@@ -95,12 +95,6 @@ function MapView({
       const mk = L.marker([m.lat, m.lng], { icon, riseOnHover: true, keyboard: false }).addTo(map);
       mk.on("click", () => cb.current.onSelect(m));
       markersRef.current[m.id] = mk;
-      // A generalised location (published by the hub) is an area, not a spot: draw it, so nobody reads the
-      // centre as the real place.
-      if (m.radius > 0) {
-        markersRef.current[m.id + "~area"] = L.circle([m.lat, m.lng], { radius: m.radius, color: c, weight: 1, opacity: 0.5,
-          fillOpacity: 0.07, dashArray: "4 4", interactive: false }).addTo(map);
-      }
     });
   }, [memories, accumulation, accent]);
 
@@ -204,6 +198,17 @@ function MapView({
       onDraftChange && onDraftChange(0);
     };
   }, [queryMode, accent]);
+
+  // --- a case opened "on the map" from the list: a ring where it is (cases have no memory pin) ---
+  const highlightRef = React.useRef(null);
+  React.useEffect(() => {
+    const map = mapRef.current; if (!map) return;
+    if (highlightRef.current) { highlightRef.current.remove(); highlightRef.current = null; }
+    if (highlight) {
+      highlightRef.current = L.circleMarker([highlight.lat, highlight.lng], { radius: 12, color: accent, weight: 3,
+        fillColor: accent, fillOpacity: 0.25, interactive: false }).addTo(map);
+    }
+  }, [highlight && highlight.id, accent]);
 
   // --- crosshair cursor while waiting for a location pick ---
   React.useEffect(() => {

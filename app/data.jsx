@@ -13,6 +13,11 @@ const STR = {
   vi: {
     siteName: "Miền Ký Ức",
     receiptTitle: "Đã nhận ký ức của bạn",
+    receiptWhere: "Để kiểm tra sau: bấm nút ⓘ ở góc trên → \"Kiểm tra biên nhận\", hoặc lưu đường dẫn này (mã chỉ nằm trên máy bạn, không gửi đi đâu):",
+    copyLink: "Sao chép",
+    receiptCheckTitle: "Kiểm tra biên nhận",
+    receiptCheckHelp: "Nhập mã biên nhận bạn nhận được khi gửi ký ức để xem trạng thái. Mã chỉ cho biết trạng thái, không cho biết nội dung.",
+    receiptCheckOpen: "Kiểm tra biên nhận →",
     receiptText: "Mã biên nhận (hãy lưu lại; đây là cách duy nhất để kiểm tra, vì chúng tôi không lưu tài khoản hay email):",
     receiptCheck: "Kiểm tra trạng thái",
     receiptStatus: { received: "Đã nhận, đang chờ xem xét.", in_review: "Đang được xem xét.", published: "Đã được công bố.",
@@ -102,6 +107,11 @@ const STR = {
   en: {
     siteName: "Memory Lane",
     receiptTitle: "Your memory was received",
+    receiptWhere: "To check later: press ⓘ at the top → \"Check a receipt\", or keep this link (the code stays on your device, it isn't sent anywhere):",
+    copyLink: "Copy",
+    receiptCheckTitle: "Check a receipt",
+    receiptCheckHelp: "Enter the receipt code you got when you sent your memory to see its status. The code only tells the status, never the content.",
+    receiptCheckOpen: "Check a receipt →",
     receiptText: "Receipt code (keep it: it is the only way to check, since we keep no account or email):",
     receiptCheck: "Check status",
     receiptStatus: { received: "Received, waiting for review.", in_review: "Being reviewed.", published: "Published.",

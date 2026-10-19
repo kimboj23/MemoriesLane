@@ -200,7 +200,39 @@ function fromApi(r) {
   };
 }
 
-// After submitting: the receipt code (no account needed) and a status check through /api/receipts.
+// Where anyone checks a receipt later: the ⓘ panel, the link shown with the code (#bien-nhan=CODE, kept in the
+// browser only: the part after # is never sent to a server), or this panel's own field.
+function ReceiptCheck({ S, initial, onClose }) {
+  const [code, setCode] = React.useState(initial || "");
+  const [status, setStatus] = React.useState(null);
+  const check = (e) => {
+    if (e) e.preventDefault();
+    const c = code.trim().toUpperCase();
+    if (!c) return;
+    setStatus("…");
+    fetch(`/api/receipts/${encodeURIComponent(c)}`)
+      .then((r) => r.ok ? r.json() : { status: "unknown" })
+      .then((d) => setStatus(d.status)).catch(() => setStatus("unknown"));
+  };
+  React.useEffect(() => { if (initial) check(); }, []);
+  return (
+    <div className="read-scrim" onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <aside className="about-card receipt-check">
+        <button className="sheet-close" onClick={onClose} aria-label="×">✕</button>
+        <h2 className="about-h">{S.receiptCheckTitle}</h2>
+        <p className="about-p small">{S.receiptCheckHelp}</p>
+        <form onSubmit={check} className="receipt-form">
+          <input className="memory-input" value={code} placeholder="XXXXX-XXXXX-XXXXX" autoComplete="off"
+            onChange={(e) => { setCode(e.target.value); setStatus(null); }} aria-label={S.receiptCheckTitle} />
+          <button type="submit" className="send-btn">{S.receiptCheck}</button>
+        </form>
+        {status && <p className="receipt-status big">{S.receiptStatus[status] || status}</p>}
+      </aside>
+    </div>
+  );
+}
+
+// After submitting: the receipt code (no account needed), where to check it later, and a check right now.
 function ReceiptNotice({ code, S, onClose }) {
   const [status, setStatus] = React.useState(null);
   const check = () => fetch(`/api/receipts/${encodeURIComponent(code)}`)
@@ -212,6 +244,11 @@ function ReceiptNotice({ code, S, onClose }) {
       <strong>{S.receiptTitle}</strong>
       <p>{S.receiptText}</p>
       <code className="receipt-code">{code}</code>
+      <p>{S.receiptWhere}</p>
+      <p className="receipt-link">
+        <a href={`#bien-nhan=${code}`} onClick={(e) => e.preventDefault()}>{`${location.origin}${location.pathname}#bien-nhan=${code}`}</a>
+        <button onClick={() => navigator.clipboard && navigator.clipboard.writeText(`${location.origin}${location.pathname}#bien-nhan=${code}`)}>{S.copyLink}</button>
+      </p>
       <div><button onClick={check}>{S.receiptCheck}</button>{status && <span className="receipt-status"> {S.receiptStatus[status] || status}</span>}</div>
     </div>
   );
@@ -245,7 +282,6 @@ function App() {
   const [aboutOpen, setAboutOpen] = React.useState(false);
   const [materials, setMaterials] = React.useState([]);
   const [selectedMaterial, setSelectedMaterial] = React.useState(null);
-  const [materialsOpen, setMaterialsOpen] = React.useState(false);
   const [openCaseId, setOpenCaseId] = React.useState(null);
   const [caseProfile, setCaseProfile] = React.useState(null);
   const [allTopics, setAllTopics] = React.useState([]);
@@ -255,7 +291,8 @@ function App() {
   // memory categories but kept visually distinct via the "material" pins).
   React.useEffect(() => {
     if (city === "all") { setMaterials([]); return; }
-    const p = new URLSearchParams({ city, limit: "300" });
+    // Only what the archive has published, and only with a place (published=1: no legacy, unreviewed rows).
+    const p = new URLSearchParams({ city, limit: "300", published: "1" });
     fetch("/api/materials?" + p.toString())
       .then((r) => r.ok ? r.json() : null)
       .then((data) => { if (data && data.materials) setMaterials(data.materials.filter((m) => m.lat != null && m.lng != null)); })
@@ -270,6 +307,15 @@ function App() {
     query: "", cats: [], langs: [], content: [], status: "all", topics: [],
   });
   const [listView, setListView] = React.useState(false);
+  // "Xem trên bản đồ" from the list: the map opens at the entry, with a way back to the list.
+  const [backToList, setBackToList] = React.useState(false);
+  const [caseFocus, setCaseFocus] = React.useState(null);
+  const showOnMap = (item) => {
+    setListView(false); setBackToList(true);
+    if (item.type === "case") { setSelected(null); setCaseFocus({ id: "case-" + item.id, lat: item.lat, lng: item.lng }); }
+    else { setCaseFocus(null); openMemory(item); }
+  };
+  const returnToList = () => { setSelected(null); setCaseFocus(null); setBackToList(false); setListView(true); };
   const [feedCases, setFeedCases] = React.useState([]);
   const [feedLoading, setFeedLoading] = React.useState(false);
   const [queryMode, setQueryMode] = React.useState(null);
@@ -410,7 +456,7 @@ function App() {
       .slice(0, 3).map((x) => x.m);
   }, [placePoint, scopeMemories]);
 
-  const pickCity = (k) => { setCity(k); setCityOpen(false); setSelected(null); setComposing(false); setPlacePoint(null); setPickingArchiveLoc(false); setArchivePoint(null); setQueryShape(null); setQueryMode(null); if (k === "all") setListView(false); };
+  const pickCity = (k) => { setCity(k); setCityOpen(false); setSelected(null); setComposing(false); setPlacePoint(null); setQueryShape(null); setQueryMode(null); if (k === "all") setListView(false); };
   const openCompose = () => { if (city === "all") setCity("hanoi"); setSelected(null); setAboutOpen(false); setLayersOpen(false); setComposing(true); setPlacePoint(null); };
   // Map clicks set a location while actively composing a memory (entered via
   // the + button) or while picking a location for an archive submission. A
@@ -421,6 +467,11 @@ function App() {
   };
   const closeCompose = () => { setComposing(false); setPlacePoint(null); };
   const [receipt, setReceipt] = React.useState(null);
+  // the receipt check: opened from ⓘ, or by a saved link #bien-nhan=CODE
+  const [receiptCheck, setReceiptCheck] = React.useState(() => {
+    const m = /^#bien-nhan(?:=([A-Za-z0-9-]+))?$/.exec(location.hash);
+    return m ? { code: m[1] || "" } : null;
+  });
   const submit = (mem) => {
     setMemories((prev) => [...prev, mem]); // optimistic UI update
     fetch("/api/memories", {
@@ -464,7 +515,7 @@ function App() {
           {city !== "all" && (
             <button
               className={"pill-btn icon-btn" + (listView ? " active" : "")}
-              onClick={() => setListView((v) => !v)}
+              onClick={() => { setBackToList(false); setCaseFocus(null); setListView((v) => !v); }}
               title={listView ? (lang === "vi" ? "Xem bản đồ" : "Map view") : (lang === "vi" ? "Xem danh sách" : "List view")}
               aria-label={listView ? "Map view" : "List view"}>
               {listView ? (
@@ -495,15 +546,6 @@ function App() {
             <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="1.5,5.5 7.5,2 13.5,5.5 7.5,9"/>
               <polyline points="1.5,9 7.5,12.5 13.5,9"/>
-            </svg>
-          </button>
-          <button className={"pill-btn icon-btn " + (materialsOpen ? "active" : "")}
-            onClick={() => { setLayersOpen(false); setMaterialsOpen((v) => !v); }}
-            title={lang === "vi" ? "Tư liệu lưu trữ" : "Materials"} aria-label={lang === "vi" ? "Tư liệu lưu trữ" : "Materials"}>
-            <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="1.8" y="2.2" width="11.4" height="3.2" rx="1" />
-              <path d="M2.8 5.4 h9.4 v6 a1 1 0 0 1-1 1 h-7.4 a1 1 0 0 1-1-1 z" />
-              <line x1="6" y1="8" x2="9" y2="8" />
             </svg>
           </button>
           <button className="pill-btn" onClick={() => setLang(lang === "vi" ? "en" : "vi")}>{S.langLabel}</button>
@@ -541,7 +583,8 @@ function App() {
       <MapView
         memories={mapMarkers} placing={placePoint} onPlace={mapClick} onSelect={selectMapItem}
         selectedId={selected && selected.id} placingMode={composing && !placePoint}
-        focus={selected ? { lat: selected.lat, lng: selected.lng, id: selected.id } : null}
+        focus={selected ? { lat: selected.lat, lng: selected.lng, id: selected.id } : caseFocus}
+        highlight={caseFocus}
         basemap={basemap} accent={accent}
         accumulation={t.accumulation} lang={lang}
         queryMode={queryMode} queryShape={queryShape}
@@ -554,8 +597,15 @@ function App() {
           <FeedView
             items={feedItems} lang={lang} loading={feedLoading}
             onOpenMemory={openMemory}
-            onOpenCase={(id) => setOpenCaseId(id)} />
+            onOpenCase={(id) => setOpenCaseId(id)}
+            onShowOnMap={showOnMap} />
         </div>
+      )}
+
+      {backToList && !listView && (
+        <button className="back-to-list" onClick={returnToList}>
+          ← {lang === "vi" ? "Quay lại danh sách" : "Back to the list"}
+        </button>
       )}
 
       {city === "all" && (
@@ -618,12 +668,11 @@ function App() {
           onClose={() => { setOpenCaseId(null); setCaseProfile(null); }}
           onSelectMemory={(m) => { setOpenCaseId(null); setCaseProfile(null); setSelected(m); }} />
       )}
-      {aboutOpen && <AboutPanel lang={lang} onClose={() => setAboutOpen(false)} />}
+      {aboutOpen && <AboutPanel lang={lang} onClose={() => setAboutOpen(false)}
+        onCheckReceipt={() => { setAboutOpen(false); setReceiptCheck({ code: "" }); }} />}
+      {receiptCheck && <ReceiptCheck S={STR[lang]} initial={receiptCheck.code}
+        onClose={() => { setReceiptCheck(null); if (location.hash.startsWith("#bien-nhan")) history.replaceState(null, "", location.pathname + location.search); }} />}
       {receipt && <ReceiptNotice code={receipt} S={STR[lang]} onClose={() => setReceipt(null)} />}
-      {materialsOpen && (
-        <MaterialsPanel lang={lang} onClose={() => setMaterialsOpen(false)}
-          onOpenCase={(id) => { setMaterialsOpen(false); setOpenCaseId(id); }} />
-      )}
       {selectedMaterial && (
         <div className="read-scrim" onPointerDown={(e) => { if (e.target === e.currentTarget) setSelectedMaterial(null); }}>
           <aside className="about-card material-card">

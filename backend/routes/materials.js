@@ -55,7 +55,9 @@ router.get("/", async (req, res, next) => {
     const limit = Math.min(parseInt(req.query.limit, 10) || 60, 300);
     const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
 
-    const local = hub.useDb() ? await queries.materialsList({ q, collection, mediaType, tool, city, limit, offset }) : [];
+    // ?published=1 (the map): only what the hub published, never legacy rows that were never reviewed there.
+    const publishedOnly = req.query.published === "1";
+    const local = hub.useDb() && !publishedOnly ? await queries.materialsList({ q, collection, mediaType, tool, city, limit, offset }) : [];
     // Published by the hub: on the first page (the feed is small), unless filtering by the old tools/collections.
     const published = offset === 0 && !collection && !tool ? hub.feedMaterials({ q, mediaType, city }) : [];
     const materials = [...published, ...local].slice(0, limit);
