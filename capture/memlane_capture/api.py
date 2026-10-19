@@ -67,6 +67,9 @@ async def app_security_headers(request: Request, call_next):
         response.headers["X-Content-Type-Options"] = "nosniff"
         # Origin only (never paths): tile servers require a referrer under their usage policies.
         response.headers["Referrer-Policy"] = "strict-origin"
+        # Revalidate every load (cheap 304s via ETag). Without it Cloudflare adds a 4-hour browser cache and
+        # people keep running the previous UI after a deploy, with old and new modules mixed.
+        response.headers["Cache-Control"] = "no-cache"
     elif request.url.path.startswith("/feed/"):
         response.headers["Access-Control-Allow-Origin"] = "*"
         response.headers["Cache-Control"] = "no-cache"
