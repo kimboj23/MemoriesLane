@@ -1,0 +1,50 @@
+# Demo deployment: the internal platform (capture/: db + api + worker) and the Hồ sơ Nhân quyền site.
+# The community map's backend keeps running from docker-compose.vps.yml and is pointed at this hub by setup.sh.
+# Everything listens on localhost only; the Cloudflare tunnel publishes the hostnames.
+#
+#   cd deploy/demo && HUB_HOST=… HSNQ_HOST=… TUNNEL=… ./setup.sh        (see README.md here)
+
+name: memlane-demo
+
+services:
+  hub-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: capture
+      POSTGRES_PASSWORD: capture
+      POSTGRES_DB: capture
+    volumes: [hub-db:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U capture"], interval: 3s, timeout: 3s, retries: 30 }
+    restart: unless-stopped
+
+  hub-api:
+    build: ../../capture
+    command: ["uvicorn", "memlane_capture.api:app", "--host", "0.0.0.0", "--port", "8700", "--proxy-headers"]
+    env_file: ./hub.env
+    environment: { DATABASE_URL: "postgresql://capture:capture@hub-db:5432/capture" }
+    ports: ["127.0.0.1:${HUB_PORT:-8700}:8700"]
+    volumes: [hub-store:/data/store, hub-feed:/data/feed, ./secrets:/secrets:ro]
+    depends_on: { hub-db: { condition: service_healthy } }
+    restart: unless-stopped
+
+  hub-worker:
+    build: ../../capture
+    env_file: ./hub.env
+    environment: { DATABASE_URL: "postgresql://capture:capture@hub-db:5432/capture", WORKER_CONCURRENCY: "2" }
+    volumes: [hub-store:/data/store, hub-feed:/data/feed, ./secrets:/secrets:ro]
+    shm_size: "1gb"
+    depends_on: { hub-db: { condition: service_healthy } }
+    restart: unless-stopped
+
+  hsnq:
+    build: ../../hosonhanquyen
+    env_file: ./hsnq.env
+    environment: { TRUST_PROXY: "true" }
+    ports: ["127.0.0.1:${HSNQ_PORT:-3903}:3903"]
+    depends_on: [hub-api]
+    restart: unless-stopped
+
+volumes:
+  hub-db:
+  hub-store:
+  hub-feed:

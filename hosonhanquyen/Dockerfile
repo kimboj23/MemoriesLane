@@ -6,6 +6,7 @@ RUN npm ci --omit=dev
 COPY server.js ./
 COPY lib ./lib
 COPY public ./public
+COPY scripts ./scripts
 USER node
 EXPOSE 3903
 ENV BIND_ADDR=0.0.0.0

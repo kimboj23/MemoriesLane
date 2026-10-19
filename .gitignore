@@ -54,3 +54,10 @@ __pycache__/
 # Hồ sơ Nhân quyền site: env holds the hub source key
 hosonhanquyen/.env
 hosonhanquyen/node_modules/
+
+# demo deployment: generated secrets, keys, env files and the admin token
+deploy/demo/hub.env
+deploy/demo/hsnq.env
+deploy/demo/secrets/
+deploy/demo/ADMIN_TOKEN.txt
+deploy/demo/root.pub
