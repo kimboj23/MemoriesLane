@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hồ sơ Nhân quyền</title>
+  <meta name="description" content="Cơ sở dữ liệu công ích về nhân quyền tại Việt Nam: hồ sơ theo nhóm, nguồn cho từng dữ kiện.">
+  <link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="/app.css">
+  <script src="/vendor/leaflet/leaflet.js" defer></script>
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Bỏ qua điều hướng</a>
+  <header class="top">
+    <a class="brand" href="/" data-link>
+      <span class="brand-mark" aria-hidden="true">§</span>
+      <span><strong>Hồ sơ Nhân quyền</strong><small>Nguồn · Xác minh · Trách nhiệm</small></span>
+    </a>
+    <nav class="main-nav" aria-label="Chính">
+      <a href="/" data-link data-nav="home">Tra cứu</a>
+      <a href="/chung-cu" data-link data-nav="evidence">Chứng cứ</a>
+      <a href="/ban-do" data-link data-nav="map">Bản đồ</a>
+      <a href="/cach-hoat-dong" data-link data-nav="how">Cách hoạt động</a>
+      <a href="/bien-nhan" data-link data-nav="receipt">Kiểm tra biên nhận</a>
+    </nav>
+    <div class="top-actions">
+      <a class="btn ghost" href="/report-case" data-link>Mở hồ sơ</a>
+      <a class="btn" href="/submit" data-link>Gửi tài liệu</a>
+    </div>
+  </header>
+  <div class="demo-banner" role="note">Bản trình diễn: mọi hồ sơ ở đây là <strong>dữ liệu mẫu hư cấu</strong>, không phải cáo buộc có thật.</div>
+  <main id="main"><p class="muted">Đang tải…</p></main>
+  <footer class="foot">
+    <div>
+      <strong>Hồ sơ Nhân quyền</strong>
+      <p>Chỉ hiển thị những gì nhóm biên tập đã duyệt và công bố. Mọi đóng góp đều qua kiểm duyệt; vị trí chỉ hiển thị ở độ chính xác an toàn.</p>
+    </div>
+    <div class="foot-verify" id="foot-verify"></div>
+  </footer>
+</body>
+</html>

@@ -50,3 +50,7 @@ capture/.env
 capture/secrets/
 __pycache__/
 .pytest_cache/
+
+# Hồ sơ Nhân quyền site: env holds the hub source key
+hosonhanquyen/.env
+hosonhanquyen/node_modules/

@@ -1,0 +1,20 @@
+{
+  "name": "ho-so-nhan-quyen",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Hồ sơ Nhân quyền: a public site (spoke) of the MemoryLane hub. Shows what the hub published (signed feed); forwards submissions to its Intake API.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "check-client": "node -e \"const f=require('fs');if(f.readFileSync('lib/hub-client.js','utf8')!==f.readFileSync('../backend/lib/hub-client.js','utf8')){console.error('lib/hub-client.js differs from backend/lib/hub-client.js: copy it again');process.exit(1)}\"",
+    "seed-demo": "node scripts/demo-seed.js",
+    "dev": "node --env-file=.env server.js"
+  },
+  "dependencies": {
+    "express": "4.22.3",
+    "libsodium-wrappers": "0.8.4"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
