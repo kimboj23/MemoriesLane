@@ -54,6 +54,7 @@ function CaseSectionTimeline({ section, lang }) {
 }
 
 const ARC_TOOL_LABELS = {
+  "memorylane": "MemoryLane",
   "auto-archiver": "Auto-Archiver",
   "archive-box": "Archive Box",
 };
@@ -203,8 +204,8 @@ function CaseProfile({ caseData, memories, lang, onClose, onSelectMemory }) {
             </h2>
             <p className="case-archives-sub">
               {lang === "vi"
-                ? "Tài liệu được thu thập và lưu trữ bởi nhóm biên tập thông qua Archive Box và Auto-Archiver."
-                : "Materials collected and preserved by the editorial team using Archive Box and Auto-Archiver."}
+                ? "Tư liệu nguồn do kho lưu trữ MemoryLane chụp và niêm phong; mỗi bản lưu kèm mã băm SHA-256 để ai cũng kiểm chứng được."
+                : "Source material captured and sealed by the MemoryLane archive; each copy carries a SHA-256 hash anyone can verify."}
             </p>
             <div className="arc-grid">
               {caseData.archives.map((item, i) => (

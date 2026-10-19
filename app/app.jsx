@@ -280,24 +280,10 @@ function App() {
   const [placePoint, setPlacePoint] = React.useState(null);
   const [selected, setSelected] = React.useState(null);
   const [aboutOpen, setAboutOpen] = React.useState(false);
-  const [materials, setMaterials] = React.useState([]);
-  const [selectedMaterial, setSelectedMaterial] = React.useState(null);
   const [openCaseId, setOpenCaseId] = React.useState(null);
   const [caseProfile, setCaseProfile] = React.useState(null);
   const [allTopics, setAllTopics] = React.useState([]);
 
-  // Load approved, geotagged archived materials for the current city — shown
-  // on the map alongside memories (news/event categories, dot-coloured like
-  // memory categories but kept visually distinct via the "material" pins).
-  React.useEffect(() => {
-    if (city === "all") { setMaterials([]); return; }
-    // Only what the archive has published, and only with a place (published=1: no legacy, unreviewed rows).
-    const p = new URLSearchParams({ city, limit: "300", published: "1" });
-    fetch("/api/materials?" + p.toString())
-      .then((r) => r.ok ? r.json() : null)
-      .then((data) => { if (data && data.materials) setMaterials(data.materials.filter((m) => m.lat != null && m.lng != null)); })
-      .catch(() => {});
-  }, [city]);
 
   // --- research mode ---
   const [research, setResearch] = React.useState(false);
@@ -409,15 +395,8 @@ function App() {
   }, [scopeMemories, lo, hi, adv, queryShape, compiled]);
   const visible = results;
   const mapMemories = visible;
-  // Approved, geotagged archived materials — shown as map markers alongside
-  // memories (not part of the Advanced Search filtered pipeline above).
-  const mapMarkers = React.useMemo(() => {
-    const matMarkers = materials.map((mt) => ({
-      id: "mat-" + mt.id, lat: mt.lat, lng: mt.lng, cat: mt.cat || "news",
-      _material: true, material: mt,
-    }));
-    return city === "all" ? [] : [...mapMemories, ...matMarkers];
-  }, [mapMemories, materials, city]);
+  // Only community notes are dots on the map; source material is listed in the case a note opens.
+  const mapMarkers = React.useMemo(() => (city === "all" ? [] : mapMemories), [mapMemories, city]);
   // List view shares the same filtered `results` for memory cards, so it
   // reflects every Advanced Search facet exactly like the map does.
   const feedItems = React.useMemo(
@@ -484,7 +463,6 @@ function App() {
   };
   const openMemory = (m) => { setComposing(false); setPlacePoint(null); wanderHist.current = []; setSelected(m); };
   const selectMapItem = (m) => {
-    if (m && m._material) { setSelectedMaterial(m.material); return; }
     openMemory(m);
   };
 
@@ -673,19 +651,6 @@ function App() {
       {receiptCheck && <ReceiptCheck S={STR[lang]} initial={receiptCheck.code}
         onClose={() => { setReceiptCheck(null); if (location.hash.startsWith("#bien-nhan")) history.replaceState(null, "", location.pathname + location.search); }} />}
       {receipt && <ReceiptNotice code={receipt} S={STR[lang]} onClose={() => setReceipt(null)} />}
-      {selectedMaterial && (
-        <div className="read-scrim" onPointerDown={(e) => { if (e.target === e.currentTarget) setSelectedMaterial(null); }}>
-          <aside className="about-card material-card">
-            <button className="sheet-close" onClick={() => setSelectedMaterial(null)} aria-label={S.close}>✕</button>
-            <ArchiveCard item={selectedMaterial} lang={lang} />
-            {selectedMaterial.caseId && (
-              <button className="ghost-btn" onClick={() => { setSelectedMaterial(null); setOpenCaseId(selectedMaterial.caseId); }}>
-                {lang === "vi" ? "Xem hồ sơ vụ việc →" : "View case profile →"}
-              </button>
-            )}
-          </aside>
-        </div>
-      )}
 
       <TweaksPanel>
         <TweakSection label={lang === "vi" ? "Tiếng nói" : "Voice"} />

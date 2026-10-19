@@ -255,7 +255,7 @@ const PUBLIC_STATUS = { archived: "archived", partially_archived: "partial", res
 function materialCard(m, caseRow) {
   const file = (m.files || [])[0];
   return {
-    id: m.public_id, tool: "memlane-capture", mediaType: ["facebook", "threads", "instagram", "tiktok", "youtube", "x"].includes(m.platform) ? "social" : "web",
+    id: m.public_id, tool: "memorylane", mediaType: ["facebook", "threads", "instagram", "tiktok", "youtube", "x"].includes(m.platform) ? "social" : "web",
     collection: null, titleVi: (m.summary && m.summary.vi) || m.title || null, titleEn: (m.summary && m.summary.en) || null,
     source: m.platform, account: null, date: m.captured_at ? m.captured_at.slice(0, 10) : null, notes: null,
     lat: caseRow.lat, lng: caseRow.lng, city: caseRow.city, cat: null,
@@ -284,6 +284,22 @@ function caseRow(r) {
   return row;
 }
 
+// A community note of a published case: a dot on the map, in the submitter's words, opening the case.
+function noteRow(n, c) {
+  const loc = n.location || {};
+  const { year, month, day } = dateParts(n.date);
+  return {
+    id: n.public_id, public_id: n.public_id,
+    lat: loc.lat ?? null, lng: loc.lng ?? null, precision: loc.precision || null, radius_m: loc.radius_m || 0,
+    city: nearestCity(loc.lat, loc.lng), ward: loc.label || null,
+    cat: n.category || "community", year, month, day,
+    date_label: n.date && n.date.precision !== "day" ? n.date.value : null, date_label_en: null,
+    lang: "vi", text_vi: n.text && n.text.vi, text_en: n.text && n.text.en,
+    has_photo: 0, media_type: "text", case_id: c.id,
+    attribution: n.credit ? "pseudonym" : "anonymous", author_name: n.credit || null, media_url: null, topics: [], _file: null,
+  };
+}
+
 let refreshing = null;
 async function refreshFeed() {
   if (!feedOn) return state;
@@ -295,7 +311,11 @@ async function refreshFeed() {
       const memories = [], cases = [];
       for (const { record } of records.values()) {
         if (record.type === "memory") memories.push(memoryRow(record));
-        else if (record.type === "incident") cases.push(caseRow(record));
+        else if (record.type === "incident") {
+          const c = caseRow(record);
+          cases.push(c);
+          for (const n of record.notes || []) memories.push(noteRow(n, c));
+        }
       }
       state = { memories, memById: new Map(memories.flatMap((m) => [[m.id, m], [m.public_id, m]])),
                 cases, caseById: new Map(cases.map((c) => [c.id, c])), loadedAt: new Date(), error: null };
