@@ -2,6 +2,36 @@
 
 Newest first. One entry per session that commits: who, which assistant, what changed and why, status, how it was tested, follow-ups with an owner, commit hashes. Details belong in the commit messages. This repo is public; see CLAUDE.md for what must never go here.
 
+## 2026-10-19 (night) · kimboj23 with Claude Code (Opus 5.5)
+
+**What:**
+- **The Hồ sơ Nhân quyền site** (`hosonhanquyen/`, `b0447f2`). Feed records now carry `collection`, so each site shows only its own (`3b253ed`).
+- **A demo deployment of all three apps** on the VPS (`deploy/demo/`, `6e746e9`).
+- **`main` fast-forwarded and pushed:** the live map now runs the new frontend.
+
+**Server state:**
+- **`~/memlane-demo`** (clean clone of main) runs the hub and Hồ sơ Nhân quyền.
+  - Containers: `memlane-demo-*`, on localhost ports 8700 and 3903.
+  - Secrets live in its gitignored `deploy/demo/`, including the admin token and **DEMO feed keys, root generated on the server**.
+- **`~/MemoriesLane`** (runs `docker-compose.vps.yml`):
+  - **only `backend/` was updated** from origin/main (`git checkout origin/main -- backend`);
+  - its uncommitted server-side edits to archivebox/worker/compose were left alone, and HEAD is still old;
+  - `backend/.env` now has the HUB_* variables and `PUBLIC_SOURCE=feed` (backup alongside it).
+- **cloudflared:** two new ingress hostnames (config backed up); DNS routes created.
+- **DNS gotcha:** a fresh hostname was cached as missing by the server's resolver, and the backend couldn't reach the hub until `sudo resolvectl flush-caches`.
+
+**Status:** live for the demo. All three sites are verified in Chromium:
+- the map shows 3 published demo memories from the hub's feed;
+- Hồ sơ Nhân quyền shows 4 cases;
+- the hub is reachable with a token.
+
+**Follow-ups (maintainers):**
+- Reconcile `~/MemoriesLane` on the server: commit or drop its local edits, then pull main.
+- Production feed keys (offline root) and the B2 feed bucket before real use.
+- Pages serves a stale `app/archive-admin.js` from its build cache. Nothing loads it; a no-cache redeploy removes it.
+
+**Commits:** `3b253ed`, `b0447f2`, `6e746e9`, and this entry.
+
 ## 2026-10-19 (evening) · kimboj23 with Claude Code (Opus 5.5)
 
 **What:**

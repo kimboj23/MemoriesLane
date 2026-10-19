@@ -29,6 +29,8 @@ Several people work on this repo through AI coding assistants, and each needs to
 | Switch the community map to the hub: `HUB_*`, `PUBLIC_SOURCE=both`, run `scripts/export-to-hub.js --commit`, approve the legacy batch, later `PUBLIC_SOURCE=feed` | maintainers | backend/README "Connecting to the MemoryLane hub" |
 | Hồ sơ Nhân quyền: implement the spoke on its own codebase | its developers | docs/spoke-integration.md |
 | Create a separate public B2 bucket for the publication feed, behind Cloudflare | maintainers | docs/integration-design.md §6.2; not the backup or artifacts bucket |
+| Reconcile the server's `~/MemoriesLane` checkout: uncommitted local edits (archivebox/, worker/, docker-compose.vps.yml) and an old HEAD; only `backend/` was updated from main on 2026-10-19 | maintainers | handover 2026-10-19 (night) |
+| The demo (deploy/demo on the VPS) uses DEMO feed keys generated on the server; replace before any real publication | the designated maintainer | docs/integration-design.md §13 |
 | Set `ARTIFACT_URL_SECRET` in any deployment with more than one API process | whoever deploys `capture/` | see capture/README "Known limitations" |
 | Choose the map tile server for real use (`TILE_URL`): public OSM tiles reveal viewed areas and have a usage policy | maintainers | capture/.env.example |
 | Add Internet Archive keys to `capture/.env` and decide which projects share with the Internet Archive | maintainers | the existing `IA_ACCESS_KEY`/`IA_SECRET_KEY` work (SPN2 quota checked 2026-10-18) |
