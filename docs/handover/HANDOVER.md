@@ -17,6 +17,8 @@ Newest first. One entry per session that commits: who, which assistant, what cha
 - Chromium screenshots at 1280 and 390 px.
 
 - **Community sites explanation moved into a popup** (ⓘ beside the section title), with the flow shown as numbered steps; the page itself stays compact.
+- **"Add to incident" on a link's page did nothing** with the default "Not filed" choice: it now starts at "Choose an incident", offers "+ Create a new incident", and explains what an unfiled link means (`9dcb99a`). Three tests that failed intermittently because of the tests themselves were fixed (`c961a49`).
+- **Paused, on branch `feat/intake-references` (WIP, not merged):** community submissions used as references in other projects' incidents (contact and publication stay with the home project). Before merging: screenshots, docs, rebase. Owner: kimboj23.
 - **Hub UI cache fix:** Cloudflare kept browsers on the old UI for up to 4 hours after a deploy. Scripts and styles now load from build-versioned URLs (`/app/b/<build>/`).
 
 **Status:** done. Deployed to the demo hub.
