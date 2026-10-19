@@ -25,6 +25,10 @@ BACKEND_REPO="${BACKEND_REPO:-$REPO}"
 step() { printf '\n\033[1;36m== %s ==\033[0m\n' "$1"; }
 rand() { python3 -c 'import secrets; print(secrets.token_hex(32))'; }
 
+# The default holds "}" (the {s} placeholder), which would end a ${TILE_URL:-…} expansion early: keep it in a variable.
+DEFAULT_TILE='https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png'
+TILE="${TILE_URL:-$DEFAULT_TILE}"
+
 step "1. Secrets and keys (once)"
 mkdir -p secrets && chmod 700 secrets
 touch hsnq.env
@@ -38,7 +42,7 @@ FEED_SERVE_LOCAL=true
 FEED_PUBLIC_URL=https://$HUB_HOST/feed
 FEED_ONLINE_KEY=/secrets/feed-online.key
 FEED_DELEGATION=/secrets/feed-delegation.json
-TILE_URL=${TILE_URL:-https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png}
+TILE_URL=$TILE
 EOF
 fi
 $COMPOSE build
