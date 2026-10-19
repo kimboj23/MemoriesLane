@@ -30,7 +30,17 @@ export async function itemPage(view, id) {
     add("URL", item.resolved_url && item.resolved_url !== item.canonical_url ? `${item.canonical_url} → ${item.resolved_url}` : item.canonical_url);
 
     // A link can be source material of several incidents: list them, add another, remove one.
-    const picker = await incidentPicker({});
+    const fileBtn = el("button", { type: "button", id: "file-under", disabled: true }, t("fileAnother"));
+    const picker = await incidentPicker({
+      placeholder: t("chooseIncident"), allowNew: true,
+      onNew: (pid) => { location.hash = `#/new?project=${pid}&url=${encodeURIComponent(item.url)}`; },
+      onChange: (v) => { fileBtn.disabled = !v; },
+    });
+    fileBtn.onclick = async () => {
+      if (!picker.value) return;
+      try { await post(`/v1/items/${id}/incidents`, { incident_id: picker.value }); toast(t("saved")); await reload(true); }
+      catch (e) { toast(e.message, true); }
+    };
     const fileRow = el("div", { class: "stack" },
       (item.incidents || []).length ? el("ul", { class: "plain", id: "item-incidents" }, item.incidents.map((x) => el("li", { class: "row" },
         projectDot({ color: x.color }), el("a", { href: `#/incidents/${x.id}` }, `${x.slug} · ${x.description}`),
@@ -40,12 +50,8 @@ export async function itemPage(view, id) {
             if (!r.item) { location.hash = `#/incidents/${x.id}`; return; }   // no longer visible to you
             await reload(true);
           } catch (e) { toast(e.message, true); }
-        } }, t("detach"))))) : el("p", { class: "muted" }, t("unfiled")),
-      el("div", { class: "row" }, picker.node, el("button", { type: "button", id: "file-under", onclick: async () => {
-        if (!picker.value) return;
-        try { await post(`/v1/items/${id}/incidents`, { incident_id: picker.value }); toast(t("saved")); await reload(true); }
-        catch (e) { toast(e.message, true); }
-      } }, t("fileAnother"))));
+        } }, t("detach"))))) : el("p", { class: "muted" }, t("unfiledHint")),
+      el("div", { class: "row" }, picker.node, fileBtn));
 
     const versions = caps.length > 1 ? el("div", { class: "row versions" }, el("span", { class: "meta" }, t("versions") + ":"),
       caps.map((c, i) => el("button", { type: "button", "aria-pressed": String(c.id === cap.id),
