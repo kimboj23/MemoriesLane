@@ -1,8 +1,8 @@
 // The save sheet (same one the share button / extension will open), the project→incident picker,
 // and the inbox: everything that came in, from the team (saved links) or the community (submissions from the
 // public sites), filtered by source.
-import { mount, ago, api, atLeast, el, isAdmin, loadProjects, platformOf, poll, post, projectDot, state, t, toast, verdictChip,
-         VERDICTS } from "./core.js";
+import { mount, ago, api, atLeast, el, isAdmin, loadProjects, modal, onLeave, platformOf, poll, post, projectDot, state, t, toast,
+         verdictChip, VERDICTS } from "./core.js";
 import { INTAKE_STATES, intakeRow } from "./intake.js";
 
 // Project → incident dropdowns. Calls onChange(incidentId|null). `allowNew` adds "+ create incident".
@@ -186,8 +186,17 @@ export async function inboxPage(view, params) {
     empty.hidden = rows.length > 0;
     return busy;
   }
-  const sheet = f.source === "community" ? "" : await saveSheet({ prefill: params.get("url") || params.get("text") || "", onSaved: refresh });
-  mount(view, el("h1", {}, t("navInbox")), sheet, sourceBar, srcHelp, secondary, list, empty);
+  // Saving is the "+ Lưu liên kết" button in the bar (main.js); the list refreshes when something is saved.
+  const onSaved = () => refresh().catch(() => {});
+  window.addEventListener("mlc:saved", onSaved);
+  onLeave(() => window.removeEventListener("mlc:saved", onSaved));
+  mount(view, el("h1", {}, t("navInbox")), sourceBar, srcHelp, secondary, list, empty);
   await refresh();
+  // A share target / bookmarklet (?url= or ?text=) opens the same save dialog, prefilled, once.
+  const shared = params.get("url") || params.get("text");
+  if (shared) {
+    history.replaceState(null, "", location.pathname + location.hash.replace(/([?&])(url|text)=[^&]*&?/, "$1").replace(/[?&]$/, ""));
+    modal(t("saveLink"), await saveSheet({ prefill: shared, onSaved }));
+  }
   poll(() => refresh().catch(() => {}), 5000);
 }

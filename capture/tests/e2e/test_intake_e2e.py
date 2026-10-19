@@ -150,7 +150,6 @@ def test_intake_to_feed():
         expect(page.locator(".source-bar [data-source=internal]")).to_have_attribute("aria-pressed", "true")
         expect(item).to_have_count(0)
         page.locator(".source-bar [data-source=community]").click()
-        expect(page.locator("#save-form")).to_have_count(0)            # the save sheet is for the team's own links
         expect(item).to_be_visible()
         page.goto(BASE + f"/app/#/intake?project={proj['id']}")      # old links redirect to the community view
         expect(page.locator(".source-bar [data-source=community]")).to_have_attribute("aria-pressed", "true")

@@ -75,8 +75,8 @@ Then open **http://127.0.0.1:8700/** and paste the token (Vietnamese first, `EN`
 - **Vụ việc / Incidents**: cards, table or **map** (Leaflet; dots by status, precision halos), filter by project/status, search. **+ Vụ việc mới** creates one, with
   source links. The incident page has Attributes (each with **Cập nhật** + an optional reason), the Feed with
   comments, Source material with inline previews, Location and Metadata.
-- **Hộp thư / Inbox** and **+ Lưu liên kết** (any page): the save sheet the share button and extension will open.
-  Paste a link or a whole share text, optionally pick Project → Incident from the dropdowns, save.
+- **+ Lưu liên kết** (in the bar, any page): the save dialog the share button and extension open. Paste a link or a
+  whole share text, optionally pick Project → Incident from the dropdowns, save.
 - **An item** (a saved link): verdict and reasons, the platform's restriction notice if any, versions, and every
   file viewable in the browser: images, video, saved HTML (sandboxed, nothing external loads), text, JSON,
   manifest. Click any preview for the full viewer (← → between files, fit/actual size, new tab, download, SHA-256).

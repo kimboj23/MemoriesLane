@@ -119,7 +119,7 @@ document.addEventListener("DOMContentLoaded", () => {
   renderShell();
   $("lang").onclick = () => { state.lang = state.lang === "vi" ? "en" : "vi"; localSet("lang", state.lang); renderShell(); route(); };
   $("logout").onclick = logout;
-  $("quick-save").onclick = async () => modal(t("saveLink"), await saveSheet({ onSaved: () => {} }));
+  $("quick-save").onclick = async () => modal(t("saveLink"), await saveSheet({ onSaved: () => window.dispatchEvent(new Event("mlc:saved")) }));
   $("connect-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     $("connect-error").hidden = true;

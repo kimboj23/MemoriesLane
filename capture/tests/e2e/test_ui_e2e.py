@@ -121,14 +121,18 @@ def test_project_incident_material_feed_and_viewers(browser):
     page.keyboard.press("Escape")
     expect(page.locator("figure.art", has_text="Manifest")).to_be_visible()
 
-    # 6. Inbox save sheet files a link under an incident chosen from the dropdowns.
+    # 6. The save dialog ("+ Lưu liên kết" in the bar) files a link under an incident chosen from the dropdowns;
+    #    the inbox has no form of its own and refreshes when a link is saved.
     page.goto(BASE + "/app/#/inbox")
-    sheet = page.locator("#save-form")
+    expect(page.locator("#view #save-form")).to_have_count(0)
+    page.click("#quick-save")
+    sheet = page.locator(".modal #save-form")
     sheet.locator("textarea").first.fill(f"https://example.com/?e2e-inbox={int(time.time())}")
     sheet.locator(".picker select").nth(0).select_option(label=f"{code} · E2E {code}")
     sheet.locator(".picker select").nth(1).select_option(label=f"{code}-1 · Thông báo thử nghiệm e2e")
     sheet.get_by_role("button", name="Lưu").click()
     expect(sheet.locator(".result")).to_contain_text("Đã gửi vào kho lưu trữ")
+    page.keyboard.press("Escape")
     expect(page.locator("#items li").first.locator(".badge.inc")).to_contain_text(f"{code}-1")
 
     assert not errors, errors
@@ -140,8 +144,10 @@ def test_phone_width_and_share_prefill(browser):
     connect(page)
     expect(page.locator("nav.main")).to_be_visible()
     page.goto(BASE + "/app/#/inbox?text=" + "Xem bài này https://www.threads.com/@user.b/post/PostCode001")
-    expect(page.locator("#save-form textarea").first).to_have_value(re.compile("threads.com"))
-    expect(page.locator("#save-form .badge").first).to_have_text("Threads")
+    # A share opens the save dialog, prefilled.
+    expect(page.locator(".modal #save-form textarea").first).to_have_value(re.compile("threads.com"))
+    expect(page.locator(".modal #save-form .badge").first).to_have_text("Threads")
+    page.keyboard.press("Escape")
     for path in ("#/inbox", "#/incidents", "#/projects"):
         page.goto(BASE + "/app/" + path)
         page.wait_for_timeout(800)
