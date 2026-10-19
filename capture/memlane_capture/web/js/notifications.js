@@ -7,6 +7,8 @@ function describe(n) {
   if (n.kind === "material_added") return t("feedMaterialAdded");
   if (n.kind === "material_removed") return t("feedMaterialRemoved");
   if (n.kind === "capture") return t("feedCaptureVerb");
+  if (n.kind === "publication") return t("feedPub")[n.action] || t("publication");
+  if (n.kind === "intake") return t("feedIntake");
   const label = { description: t("description"), status: t("status"), sensitive: t("sensitivity"), tags: t("tags"),
                   event_date: t("date"), place: t("place"), lat: t("lat"), lng: t("lng"), geo_precision: t("precision"),
                   assignees: t("assignees"), custom: t("attributes"), deleted: "deleted" }[n.field] || n.field || "";
@@ -23,11 +25,12 @@ export async function notificationsPage(view, params) {
         onclick: async () => { await post("/v1/notifications/read", { ids: [n.id], unread: n.read }); await draw(); window.dispatchEvent(new Event("mlc:notif")); } },
         el("span", { class: "unread-dot" })),
       el("div", { class: "feed-body" },
-        el("div", {}, projectDot({ color: n.incident.color }), " ", el("strong", {}, n.actor || t("feedCapture")), " ", describe(n),
-          " · ", el("a", { href: `#/incidents/${n.incident.id}`, onclick: () => post("/v1/notifications/read", { ids: [n.id] })
-            .then(() => window.dispatchEvent(new Event("mlc:notif"))) }, `${n.incident.slug} ${n.incident.description}`),
+        el("div", {}, projectDot({ color: (n.incident || n.publication).color }), " ", el("strong", {}, n.actor || t("feedCapture")), " ", describe(n),
+          " · ", el("a", { href: n.publication && (n.kind === "publication" || !n.incident) ? `#/publications/${n.publication.id}` : `#/incidents/${n.incident.id}`,
+            onclick: () => post("/v1/notifications/read", { ids: [n.id] }).then(() => window.dispatchEvent(new Event("mlc:notif"))) },
+            n.incident ? `${n.incident.slug} ${n.incident.description}` : `${n.publication.public_id} ${n.publication.summary}`),
           n.verdict ? [" ", verdictChip(n.verdict)] : ""),
-        n.body && n.kind === "comment" ? el("div", { class: "comment-text" }, n.body) : "",
+        n.body && (n.kind === "comment" || n.reason === "review_requested") ? el("div", { class: "comment-text" }, n.body) : "",
         el("div", { class: "meta" }, ago(n.created_at), " · ", t("why")[n.reason] || n.reason)))) :
       el("p", { class: "muted center" }, t("noNotifications")));
   }

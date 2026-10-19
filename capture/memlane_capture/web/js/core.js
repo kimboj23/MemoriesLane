@@ -77,7 +77,7 @@ const VI = {
   continueBtn: "Tiếp tục",
   notifications: "Thông báo", markAllRead: "Đánh dấu đã đọc tất cả", markUnread: "Đánh dấu chưa đọc", noNotifications: "Không có thông báo.",
   unreadOnly: "Chỉ chưa đọc", subscriptions: "Vụ việc đang theo dõi", follow: "Theo dõi", following: "Đang theo dõi ✓",
-  why: { subscribed: "bạn theo dõi", mentioned: "bạn được nhắc đến", assigned: "bạn được giao" },
+  why: { subscribed: "bạn theo dõi", mentioned: "bạn được nhắc đến", assigned: "bạn được giao", review_requested: "bạn được xin ý kiến" },
   admin: "Quản trị", people: "Người dùng", newPerson: "Thêm người dùng", email: "Email (không bắt buộc)",
   globalRole: "Vai trò toàn hệ thống", disabled: "Vô hiệu hoá", enable: "Kích hoạt lại", disable: "Vô hiệu hoá",
   newToken: "Cấp mã mới", revokeTokens: "Thu hồi mọi mã", lastSeen: "Lần cuối", tokens: "Mã", projectsCol: "Dự án",
@@ -110,10 +110,21 @@ const VI = {
             "subtitles.vi": "Phụ đề (vi)", "subtitles.en": "Phụ đề (en)" },
   // community intake, publication, feed
   feedIntake: "đã gán một bài gửi từ cộng đồng",
-  feedPub: { drafted: "đã soạn bản công khai", approved_manager: "đã duyệt (quản lý) bản công khai", approved_publisher: "đã duyệt (quyền công bố) bản công khai", published: "đã công bố", withdrawn: "đã rút lại bản công khai" },
+  feedPub: { review_requested: "đã xin ý kiến thứ hai về bản công khai", drafted: "đã soạn bản công khai", approved_manager: "đã duyệt (quản lý) bản công khai", approved_publisher: "đã duyệt (quyền công bố) bản công khai", published: "đã công bố", withdrawn: "đã rút lại bản công khai" },
   srcLabel: "Nguồn", srcAll: "Tất cả", srcInternal: "Nội bộ", srcCommunity: "Cộng đồng", needsAction: "Cần xử lý",
   srcAllHelp: "Mọi thứ đã vào: liên kết đội ngũ lưu, và bài gửi từ các trang cộng đồng.",
   srcInternalHelp: "Liên kết do đội ngũ lưu (nút chia sẻ, tiện ích, trang này).",
+  approvePublish: "Duyệt và công bố", requestReview: "Xin ý kiến thứ hai", cancelReview: "Huỷ yêu cầu",
+  reviewAsk: "Hỏi ai?", reviewNote: "Cần xem điều gì? (không bắt buộc)", sendRequest: "Gửi yêu cầu",
+  reviewOpen: (who, when) => `${who} đã xin ý kiến thứ hai ${when}`, reviewWaiting: "Người xin ý kiến không tự công bố được cho đến khi có người khác duyệt hoặc yêu cầu được huỷ.",
+  publishedBy: (who) => `Công bố bởi ${who}`, reviewRequestedChip: "Đang xin ý kiến",
+  pubHelp1: "Bản công khai là một bản riêng, viết cho công chúng: vị trí được làm mờ theo chính sách, chỉ các tệp được chọn (đã xoá siêu dữ liệu). Một người có quyền (quản lý hoặc có quyền công bố) duyệt là đủ; khi cần, hãy xin ý kiến thứ hai.",
+  roleTagHelp: { reviewer: "người có thể duyệt công bố", manager: "quản lý và chủ sở hữu", editor: "biên tập trở lên", owner: "chủ sở hữu", all: "mọi thành viên" },
+  mentionHint: "Gõ @ để nhắc tên một người hoặc một nhóm: @reviewer, @manager, @editor, @owner, @all.",
+  rolesGroup: "Theo vai trò", peopleGroup: "Từng người",
+  fromInbox: "Chọn từ hộp thư", newLinks: "Hoặc dán liên kết mới", filterPh: "Lọc…", noInboxItems: "Không có liên kết nào trong hộp thư.",
+  submissionsHere: "Bài gửi cộng đồng trong dự án này", addSelected: (n) => `Thêm ${n} mục`, existingValues: "Giá trị đã dùng:",
+  feedReviewRequested: "đã xin ý kiến thứ hai về bản công khai",
   navIntake: "Tiếp nhận", intakeTitle: "Hộp tiếp nhận", intakeHelp: "Bài gửi từ các trang cộng đồng. Liên kết trong bài đã được lưu ngay; chúng chỉ hiện với thành viên dự án cho đến khi được gán vào vụ việc.",
   intakeKinds: { memory: "Ký ức", case_report: "Báo cáo vụ việc", document: "Tài liệu", link: "Liên kết" },
   intakeStates: { new: "Mới", attached: "Đã gán", created: "Đã tạo vụ việc", published: "Đã công bố", rejected: "Từ chối", all: "Tất cả" },
@@ -146,7 +157,7 @@ const VI = {
   problems: "Cần sửa trước khi duyệt", previewTitle: "Xem trước bản công khai (đúng như sẽ đăng)", withdrawIt: "Rút lại ngay",
   withdrawReason: "Lý do rút lại (ghi trong bảng tin)", confirmWithdraw: "Rút bản công khai này? Trang công khai và các bản sao sẽ xoá nó.",
   backToDraft: "Đưa về bản nháp", publishedV: (v, when) => `Đã công bố phiên bản ${v} · ${when}`, withdrawnAt: (when, why) => `Đã rút lại ${when}: ${why}`,
-  publishGrant: "Quyền công bố", publishGrantHelp: "Người được giao quyền công bố có thể duyệt lần thứ hai và rút bản công khai.",
+  publishGrant: "Quyền công bố", publishGrantHelp: "Người có quyền công bố (cùng quản lý và chủ sở hữu) có thể tự duyệt và công bố, và rút bản công khai.",
   policyNote: "Chính sách vị trí (§12.4): chi tiết hơn mặc định cần lý do và hai người duyệt; một số loại địa điểm không bao giờ được chi tiết hơn.",
   legacyBatch: "Ký ức đã công khai trên trang cũ", legacyWaiting: (n) => `${n} ký ức đang chờ`, makeBatch: "Tạo lô công bố",
   batchApprove: "Duyệt lô", batchPublished: "Đã công bố lô",
@@ -216,7 +227,7 @@ const EN = {
   continueBtn: "Continue",
   notifications: "Notifications", markAllRead: "Mark all read", markUnread: "Mark unread", noNotifications: "No notifications.",
   unreadOnly: "Unread only", subscriptions: "Incidents you follow", follow: "Follow", following: "Following ✓",
-  why: { subscribed: "you follow it", mentioned: "you were mentioned", assigned: "you were assigned" },
+  why: { subscribed: "you follow it", mentioned: "you were mentioned", assigned: "you were assigned", review_requested: "your opinion was asked" },
   admin: "Admin", people: "People", newPerson: "Add person", email: "Email (optional)", globalRole: "Instance role",
   disabled: "Disabled", enable: "Re-enable", disable: "Disable", newToken: "Issue token", revokeTokens: "Revoke all tokens",
   lastSeen: "Last seen", tokens: "Tokens", projectsCol: "Projects", tokenFor: (n) => `New token for ${n} (shown once):`,
@@ -247,10 +258,21 @@ const EN = {
             "restriction-notice": "Restriction notice", "restriction-notice-text": "Restriction notice text",
             "subtitles.vi": "Subtitles (vi)", "subtitles.en": "Subtitles (en)" },
   feedIntake: "attached a community submission",
-  feedPub: { drafted: "drafted the public version", approved_manager: "approved (manager) the public version", approved_publisher: "approved (publication access) the public version", published: "published", withdrawn: "withdrew the public version" },
+  feedPub: { review_requested: "asked for a second opinion on the public version", drafted: "drafted the public version", approved_manager: "approved (manager) the public version", approved_publisher: "approved (publication access) the public version", published: "published", withdrawn: "withdrew the public version" },
   srcLabel: "Source", srcAll: "All", srcInternal: "Internal", srcCommunity: "Community", needsAction: "Needs action",
   srcAllHelp: "Everything that came in: links the team saved, and submissions from the community sites.",
   srcInternalHelp: "Links the team saved (share button, extension, this page).",
+  approvePublish: "Approve and publish", requestReview: "Ask for a second opinion", cancelReview: "Cancel request",
+  reviewAsk: "Ask whom?", reviewNote: "What should they look at? (optional)", sendRequest: "Send request",
+  reviewOpen: (who, when) => `${who} asked for a second opinion ${when}`, reviewWaiting: "The person who asked can't publish alone until someone else approves or the request is cancelled.",
+  publishedBy: (who) => `Published by ${who}`, reviewRequestedChip: "Second opinion asked",
+  pubHelp1: "A public version is a separate record written for the public: the location is generalised per the policy, and only the chosen files are shown (metadata removed). One approval by someone entitled (a manager, or a member with publication access) is enough; ask for a second opinion when in doubt.",
+  roleTagHelp: { reviewer: "people who can approve publication", manager: "managers and owners", editor: "editors and up", owner: "owners", all: "every member" },
+  mentionHint: "Type @ to mention a person or a group: @reviewer, @manager, @editor, @owner, @all.",
+  rolesGroup: "By role", peopleGroup: "People",
+  fromInbox: "Pick from the inbox", newLinks: "Or paste new links", filterPh: "Filter…", noInboxItems: "No links in the inbox.",
+  submissionsHere: "Community submissions in this project", addSelected: (n) => `Add ${n}`, existingValues: "Already used:",
+  feedReviewRequested: "asked for a second opinion on the public version",
   navIntake: "Intake", intakeTitle: "Intake inbox", intakeHelp: "Submissions from the community sites. Their links were captured at once; they stay visible only to project members until filed under an incident.",
   intakeKinds: { memory: "Memory", case_report: "Case report", document: "Document", link: "Link" },
   intakeStates: { new: "New", attached: "Attached", created: "Incident created", published: "Published", rejected: "Rejected", all: "All" },
@@ -283,7 +305,7 @@ const EN = {
   problems: "Fix before approving", previewTitle: "Preview of the public record (exactly as it will be published)", withdrawIt: "Withdraw now",
   withdrawReason: "Reason for withdrawing (shown in the feed)", confirmWithdraw: "Withdraw this public version? The public sites and mirrors will delete it.",
   backToDraft: "Back to draft", publishedV: (v, when) => `Published version ${v} · ${when}`, withdrawnAt: (when, why) => `Withdrawn ${when}: ${why}`,
-  publishGrant: "Publication access", publishGrantHelp: "Members entrusted with publication access can give the second approval and withdraw public versions.",
+  publishGrant: "Publication access", publishGrantHelp: "Members with publication access (like managers and owners) can approve and publish on their own, and withdraw public versions.",
   policyNote: "Location policy (§12.4): finer than the default needs a reason and both approvals; some kinds of place can never be finer.",
   legacyBatch: "Memories already public on the old site", legacyWaiting: (n) => `${n} memories waiting`, makeBatch: "Create a publication batch",
   batchApprove: "Approve batch", batchPublished: "Batch published",
@@ -316,7 +338,167 @@ export function el(tag, attrs = {}, ...children) {
     else n.setAttribute(k, v === true ? "" : v);
   }
   for (const c of children.flat(Infinity)) if (c != null && c !== false && c !== "") n.append(c instanceof Node ? c : String(c));
+  if ((tag === "button" || (tag === "a" && /\bbtn\b/.test(attrs?.class || ""))) && !n.title) {
+    const tip = tipFor(n.textContent);
+    if (tip) n.title = tip;
+  }
   return n;
+}
+
+// ---- tooltips ----------------------------------------------------------------
+// Keyed by the string key of a button's label, so a button gets its tooltip wherever it appears.
+const TIPS = {
+  vi: {
+    update: "Đổi giá trị này; có thể ghi lý do, sẽ hiện trong bảng tin", follow: "Nhận thông báo khi vụ việc này thay đổi",
+    following: "Bạn đang nhận thông báo về vụ việc này. Bấm để bỏ theo dõi", recapture: "Chụp lại liên kết; bản cũ vẫn được giữ như một phiên bản",
+    sendWayback: "Gửi lên Wayback Machine của Internet Archive: bản sao CÔNG KHAI, không rút lại được",
+    newVersion: "Chụp lại liên kết đã lưu thành một phiên bản mới", attach: "Gán liên kết này vào vụ việc đã chọn",
+    detach: "Bỏ liên kết khỏi vụ việc này (bản lưu vẫn còn)", fileAnother: "Dùng cùng liên kết này làm tư liệu cho vụ việc khác",
+    exportCsv: "Tải bảng tính các vụ việc của dự án", saveDraft: "Lưu bản nháp; chưa công bố gì",
+    approvePublish: "Công bố bản này lên nguồn dữ liệu công khai (các trang cộng đồng sẽ hiển thị nó)",
+    requestReview: "Nhờ người khác xem trước khi công bố; họ nhận thông báo, và bạn không tự công bố được cho đến khi xong",
+    cancelReview: "Đóng yêu cầu xin ý kiến", withdrawIt: "Gỡ ngay khỏi nguồn công khai; các trang cộng đồng sẽ xoá nó",
+    backToDraft: "Mở lại bản đã rút để sửa và công bố lại", rotateKey: "Tạo khoá mới cho trang này; khoá cũ ngừng hoạt động ngay",
+    rebuild: "Dựng lại toàn bộ nguồn dữ liệu công khai", needsAction: "Chỉ hiện liên kết chưa gán vào vụ việc và bài gửi mới",
+    srcAll: "Mọi thứ đã vào, từ đội ngũ và cộng đồng", srcInternal: "Liên kết do đội ngũ lưu",
+    srcCommunity: "Bài gửi từ các trang cộng đồng (bản đồ, Hồ sơ Nhân quyền)",
+    createFromIt: "Tạo vụ việc mới, điền sẵn từ bài gửi; các liên kết được gán vào", rejectIt: "Không dùng bài gửi này (lý do chỉ lưu nội bộ)",
+    reopen: "Đưa bài gửi về trạng thái Mới", openContact: "Mở thông tin liên hệ đã niêm phong (được ghi lại)",
+    makeBatch: "Gom các ký ức đã công khai trên trang cũ thành một lô để duyệt một lần", batchApprove: "Công bố tất cả ký ức trong lô",
+    revoke: "Vô hiệu hoá liên kết mời này", newToken: "Cấp một mã đăng nhập mới (hiện một lần)",
+    revokeTokens: "Đăng xuất người này khỏi mọi thiết bị", disable: "Chặn tài khoản này đăng nhập",
+    startPublication: "Soạn bản công khai riêng cho vụ việc (chưa công bố gì)", publishMemory: "Soạn bản công khai cho ký ức này",
+    addMaterial: "Thêm tư liệu: chọn từ hộp thư hoặc dán liên kết mới", markAllRead: "Đánh dấu mọi thông báo là đã đọc",
+    unreadOnly: "Chỉ hiện thông báo chưa đọc", newInvite: "Tạo liên kết để người khác tham gia dự án với vai trò đã chọn",
+    leave: "Rời khỏi dự án này", saveLink: "Lưu một liên kết vào kho (từ bất kỳ trang nào)", copy: "Sao chép vào bộ nhớ tạm",
+    everyone: "Hiện liên kết của mọi người, không chỉ của bạn", unfiled: "Chỉ liên kết chưa gán vào vụ việc nào",
+    preview: "Kiểm tra tệp trước khi nhập; chưa tạo gì", downloadTemplate: "Tải tệp CSV mẫu với đúng tên cột",
+    refreshLocation: "Chép lại vị trí nội bộ hiện tại của vụ việc vào bản nháp",
+  },
+  en: {
+    update: "Change this value; you can add a reason, shown in the feed", follow: "Get notified when this incident changes",
+    following: "You get notifications about this incident. Click to unfollow", recapture: "Capture the link again; the old capture is kept as a version",
+    sendWayback: "Send to the Internet Archive's Wayback Machine: a PUBLIC copy that can't be withdrawn",
+    newVersion: "Capture the saved link again as a new version", attach: "File this link under the chosen incident",
+    detach: "Remove the link from this incident (its captures stay)", fileAnother: "Use the same link as material of another incident",
+    exportCsv: "Download a spreadsheet of the project's incidents", saveDraft: "Save the draft; nothing is published",
+    approvePublish: "Publish this version to the public feed (the community sites will show it)",
+    requestReview: "Ask someone to look before it's published; they get notified, and you can't publish alone until it's closed",
+    cancelReview: "Close the second-opinion request", withdrawIt: "Remove it from the public feed now; the community sites delete it",
+    backToDraft: "Reopen a withdrawn version to edit and publish again", rotateKey: "Make a new key for this site; the old one stops at once",
+    rebuild: "Rebuild the whole public feed", needsAction: "Only links not yet filed and new submissions",
+    srcAll: "Everything that came in, from the team and the community", srcInternal: "Links the team saved",
+    srcCommunity: "Submissions from the community sites (map, Hồ sơ Nhân quyền)",
+    createFromIt: "Create an incident prefilled from the submission; its links are filed under it", rejectIt: "Don't use this submission (the reason stays internal)",
+    reopen: "Set the submission back to New", openContact: "Open the sealed contact details (logged)",
+    makeBatch: "Group the memories already public on the old site into one batch to approve once", batchApprove: "Publish every memory in the batch",
+    revoke: "Disable this invite link", newToken: "Issue a new sign-in token (shown once)",
+    revokeTokens: "Sign this person out on every device", disable: "Stop this account from signing in",
+    startPublication: "Draft a separate public version of this incident (nothing is published yet)", publishMemory: "Draft the public version of this memory",
+    addMaterial: "Add material: pick from the inbox or paste new links", markAllRead: "Mark every notification as read",
+    unreadOnly: "Only unread notifications", newInvite: "Make a link to join the project with the chosen role",
+    leave: "Leave this project", saveLink: "Save a link to the archive (from any page)", copy: "Copy to the clipboard",
+    everyone: "Show everyone's links, not only yours", unfiled: "Only links not filed under any incident",
+    preview: "Check the file before importing; nothing is created yet", downloadTemplate: "Download a CSV template with the right columns",
+    refreshLocation: "Copy the incident's current internal location into the draft",
+  },
+};
+let tipIndex = { lang: null, map: null };
+function tipFor(label) {
+  const text = (label || "").replace(/\s+/g, " ").trim().replace(/^\+\s*/, "").replace(/\s*\(\d+\)$/, "");
+  if (!text || text.length > 60) return null;
+  if (tipIndex.lang !== state.lang) {
+    const map = new Map();
+    for (const [k, tip] of Object.entries(TIPS[state.lang])) {
+      const lbl = STR[state.lang][k];
+      if (typeof lbl === "string") map.set(lbl.replace(/^\+\s*/, "").trim(), tip);
+    }
+    tipIndex = { lang: state.lang, map };
+  }
+  return tipIndex.map.get(text) || null;
+}
+
+// ---- suggestions: pick values already used instead of retyping them -------------------------------------
+// `multi`: comma-separated list (tags); suggestions are offered for the part being typed.
+export function suggestInput({ value = "", suggestions = [], multi = false, placeholder = "", label = null, required = false } = {}) {
+  const input = el("input", { value: Array.isArray(value) ? value.join(", ") : value || "", placeholder, autocomplete: "off",
+    "aria-label": label, required, "aria-autocomplete": "list" });
+  const box = el("div", { class: "suggest-box", role: "listbox", hidden: true });
+  const parts = () => input.value.split(",").map((x) => x.trim());
+  const current = () => (multi ? parts().pop() : input.value.trim()).toLowerCase();
+  const show = () => {
+    const q = current();
+    const have = new Set(multi ? parts().slice(0, -1).map((x) => x.toLowerCase()) : []);
+    const list = [...new Set(suggestions)].filter((x) => x && !have.has(x.toLowerCase()) && (!q || x.toLowerCase().includes(q))
+      && x.toLowerCase() !== q).slice(0, 12);
+    box.replaceChildren(...list.map((x) => el("div", { class: "suggest-opt", role: "option", onmousedown: (e) => { e.preventDefault(); pick(x); } }, x)));
+    box.hidden = !list.length;
+  };
+  const pick = (x) => {
+    if (multi) { const ps = parts(); ps[ps.length - 1] = x; input.value = ps.filter(Boolean).join(", ") + ", "; }
+    else input.value = x;
+    input.dispatchEvent(new Event("change"));
+    show();
+  };
+  input.addEventListener("focus", show);
+  input.addEventListener("click", show);
+  input.addEventListener("input", show);
+  input.addEventListener("blur", () => setTimeout(() => { box.hidden = true; }, 120));
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") box.hidden = true;
+    if (e.key === "Enter" && !box.hidden && box.firstChild && e.target === input && current()) { e.preventDefault(); pick(box.firstChild.textContent); }
+  });
+  return { node: el("div", { class: "suggest" }, input, box), input,
+           get value() { return multi ? parts().filter(Boolean) : input.value.trim(); } };
+}
+
+// Values already used (tags, custom attribute values), cached briefly per project.
+const vocabCache = new Map();
+export async function loadVocab(projectId = "") {
+  const hit = vocabCache.get(projectId);
+  if (hit && Date.now() - hit.at < 60000) return hit.v;
+  let v = { tags: [], custom: {}, my_item_tags: [], public_tags: [] };
+  try { v = await api("/v1/vocab" + (projectId ? `?project_id=${projectId}` : "")); } catch { /* suggestions are optional */ }
+  vocabCache.set(projectId, { at: Date.now(), v });
+  return v;
+}
+
+// ---- @mentions: people and role tags, offered while typing "@" in a comment ----------------------------------
+export const ROLE_TAGS = ["reviewer", "manager", "editor", "owner", "all"];
+export function mentionAssist(textarea, projectId) {
+  let people = null;
+  const box = el("div", { class: "suggest-box mention-box", role: "listbox", hidden: true });
+  const wrap = el("div", { class: "suggest" });
+  textarea.replaceWith?.(wrap);
+  wrap.append(textarea, box);
+  const token = () => {
+    const before = textarea.value.slice(0, textarea.selectionStart);
+    const m = /(^|\s)@([^\s@]*)$/u.exec(before);
+    return m ? { q: m[2].toLowerCase(), start: before.length - m[2].length - 1 } : null;
+  };
+  const insert = (text, tk) => {
+    const end = textarea.selectionStart;
+    textarea.value = textarea.value.slice(0, tk.start) + "@" + text + " " + textarea.value.slice(end);
+    const pos = tk.start + text.length + 2;
+    textarea.setSelectionRange(pos, pos);
+    box.hidden = true;
+    textarea.focus();
+  };
+  const show = async () => {
+    const tk = token();
+    if (!tk) { box.hidden = true; return; }
+    if (!people) { try { people = await loadContributors(projectId); } catch { people = []; } }
+    const roles = ROLE_TAGS.filter((r) => r.startsWith(tk.q)).map((r) => ({ text: r, label: `@${r} — ${t("roleTagHelp")[r]}` }));
+    const names = people.filter((p) => p.name.toLowerCase().includes(tk.q)).slice(0, 8).map((p) => ({ text: p.name, label: "@" + p.name }));
+    const opts = [...roles, ...names];
+    box.replaceChildren(...opts.map((o) => el("div", { class: "suggest-opt", role: "option",
+      onmousedown: (e) => { e.preventDefault(); insert(o.text, tk); } }, o.label)));
+    box.hidden = !opts.length;
+  };
+  textarea.addEventListener("input", show);
+  textarea.addEventListener("keydown", (e) => { if (e.key === "Escape") box.hidden = true; });
+  textarea.addEventListener("blur", () => setTimeout(() => { box.hidden = true; }, 120));
+  return wrap;
 }
 export const $ = (id) => document.getElementById(id);
 // Replace a container's children; nested arrays and empty values are flattened away
@@ -377,7 +559,10 @@ export async function api(path, opts = {}) {
     headers: { Authorization: "Bearer " + state.token, ...(opts.body ? { "Content-Type": "application/json" } : {}) },
   });
   if (res.status === 401) { window.dispatchEvent(new Event("mlc:logout")); throw new Error(t("badToken")); }
-  const body = res.headers.get("content-type")?.includes("json") ? await res.json() : null;
+  // 204 / empty bodies (unfollow, deletes) have no JSON to parse.
+  const text = res.status === 204 ? "" : await res.text();
+  let body = null;
+  if (text && res.headers.get("content-type")?.includes("json")) { try { body = JSON.parse(text); } catch { body = null; } }
   if (!res.ok) {
     const d = body && body.detail;
     throw new Error(typeof d === "string" ? d : Array.isArray(d) ? d.map((x) => x.msg).join("; ") : res.statusText);

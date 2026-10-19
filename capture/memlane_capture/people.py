@@ -344,11 +344,15 @@ async def admin_revoke(cid: str, request: Request, p: Principal = Depends(requir
 async def notifications(request: Request, unread_only: bool = False, limit: int = 50,
                         p: Principal = Depends(current_principal)):
     async with request.app.state.pool.connection() as conn:
+        # An update belongs to an incident, or (a community memory's publication) only to the publication.
         rows = await (await conn.execute(
             "SELECT n.id, n.reason, n.read_at, n.created_at, u.kind, u.field, u.new_value, u.body, u.item_id,"
-            " c.display_name AS actor, i.id AS incident_id, i.description, p.code || '-' || i.number AS slug, p.color"
+            " c.display_name AS actor, i.id AS incident_id, i.description, pr.code || '-' || i.number AS slug,"
+            " pr.color, pb.id AS publication_id, pb.public_id, pb.draft->>'text_vi' AS pub_text"
             " FROM capture.notifications n JOIN capture.updates u ON u.id = n.update_id"
-            " JOIN capture.incidents i ON i.id = u.incident_id JOIN capture.projects p ON p.id = i.project_id"
+            " LEFT JOIN capture.incidents i ON i.id = u.incident_id"
+            " LEFT JOIN capture.publications pb ON pb.id = COALESCE(u.publication_id, (u.new_value->>'publication_id')::uuid)"
+            " JOIN capture.projects pr ON pr.id = COALESCE(i.project_id, pb.project_id)"
             " LEFT JOIN capture.contributors c ON c.id = u.contributor_id"
             " WHERE n.contributor_id = %s" + (" AND n.read_at IS NULL" if unread_only else "") +
             " ORDER BY n.created_at DESC LIMIT %s", (p.contributor_id, min(max(limit, 1), 200)))).fetchall()
@@ -358,7 +362,12 @@ async def notifications(request: Request, unread_only: bool = False, limit: int 
         {"id": str(r["id"]), "reason": r["reason"], "read": r["read_at"] is not None, "created_at": r["created_at"],
          "kind": r["kind"], "field": r["field"], "verdict": (r["new_value"] or {}).get("verdict") if r["kind"] == "capture" else None,
          "body": (r["body"] or "")[:280], "actor": r["actor"], "item_id": str(r["item_id"]) if r["item_id"] else None,
-         "incident": {"id": str(r["incident_id"]), "slug": r["slug"], "description": r["description"], "color": r["color"]}}
+         "action": (r["new_value"] or {}).get("action") if r["kind"] == "publication" else None,
+         "incident": None if not r["incident_id"] else
+         {"id": str(r["incident_id"]), "slug": r["slug"], "description": r["description"], "color": r["color"]},
+         "publication": None if not r["publication_id"] else
+         {"id": str(r["publication_id"]), "public_id": r["public_id"], "summary": (r["pub_text"] or "")[:120],
+          "color": r["color"]}}
         for r in rows]}
 
 

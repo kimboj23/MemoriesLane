@@ -2,6 +2,7 @@
 // (Attributes + Feed on the left; Source material, Location, Metadata on the right).
 import { mount, ago, api, atLeast, avatar, el, fmtDate, isSensitive, loadContributors, loadProjects, modal, patch, platformOf, poll,
   post, projectDot, sec, sensChips, SENSITIVE, state, STATUSES, statusChip, t, toast, verdictChip,
+  canReview, loadVocab, mentionAssist, suggestInput,
 } from "./core.js";
 import { incidentsMap, pickerMap, pointMap } from "./map.js";
 import { artifactGrid } from "./viewer.js";
@@ -94,11 +95,17 @@ function multiCheck(options, selected, labelOf) {
   return { node: el("div", { class: "checks" }, boxes), get value() { return boxes.map((b) => b.firstChild).filter((c) => c.checked).map((c) => c.value); } };
 }
 
+// Tags: a dropdown of the tags already used (this project's suggestions plus every tag in use).
 function tagInput(value, suggestions) {
-  const id = "tags-" + Math.random().toString(36).slice(2);
-  const input = el("input", { value: (value || []).join(", "), list: id, placeholder: t("tagsPh") });
-  return { node: el("div", {}, input, el("datalist", { id }, (suggestions || []).map((s) => el("option", { value: s })))),
-           get value() { return input.value.split(",").map((s) => s.trim()).filter(Boolean); } };
+  return suggestInput({ value: value || [], suggestions: suggestions || [], multi: true, placeholder: t("tagsPh") });
+}
+
+// A text attribute: free text, with the values already used one click away.
+function textWithSuggestions(cur, values) {
+  const ta = el("textarea", { rows: "3", value: cur || "" });
+  const chips = (values || []).filter((v) => v !== cur).slice(0, 12);
+  return { node: el("div", { class: "stack" }, ta, chips.length ? el("div", { class: "row used-values" }, el("span", { class: "meta" }, t("existingValues")),
+    chips.map((v) => el("button", { type: "button", class: "chip pick-value", onclick: () => { ta.value = v; } }, v))) : ""), ta };
 }
 
 // Editor for one attribute: returns {node, value()} where value() is the PATCH body fragment.
@@ -119,7 +126,8 @@ async function editorFor(field, inc, project, role) {
     return { node: m.node, value: () => ({ sensitive: m.value }) };
   }
   if (field === "tags") {
-    const ti = tagInput(inc.tags, project?.tag_options);
+    const [vocab, all] = await Promise.all([loadVocab(project?.id), loadVocab()]);
+    const ti = tagInput(inc.tags, [...(project?.tag_options || []), ...vocab.tags, ...all.tags]);
     return { node: ti.node, value: () => ({ tags: ti.value }) };
   }
   if (field === "event_date") {
@@ -163,8 +171,9 @@ async function editorFor(field, inc, project, role) {
       const d = el("input", { type: "date", value: cur || "" });
       return { node: d, value: () => ({ custom: { [attr.id]: d.value || null } }) };
     }
-    const ta = el("textarea", { rows: "3", value: cur || "" });
-    return { node: ta, value: () => ({ custom: { [attr.id]: ta.value.trim() || null } }) };
+    const vocab = await loadVocab(project?.id);
+    const tw = textWithSuggestions(cur, vocab.custom[attr.id]);
+    return { node: tw.node, value: () => ({ custom: { [attr.id]: tw.ta.value.trim() || null } }) };
   }
   throw new Error("unknown field " + field);
 }
@@ -229,7 +238,8 @@ export async function newIncidentPage(view, params) {
   let tagsIn, customEds = [];
   const renderProjectFields = async () => {
     const project = projects.find((p) => p.id === pSel.value);
-    tagsIn = tagInput([], project?.tag_options);
+    const [vocab, all] = await Promise.all([loadVocab(project?.id), loadVocab()]);
+    tagsIn = tagInput([], [...(project?.tag_options || []), ...vocab.tags, ...all.tags]);
     tagsBox.replaceChildren(tagsIn.node);
     customEds = [];
     customBox.replaceChildren();
@@ -323,6 +333,7 @@ export async function incidentPage(view, id) {
     const blur = isSensitive(inc.sensitive);
 
     const commentBox = el("textarea", { rows: "3", placeholder: t("commentPh") });
+    const commentWrap = mentionAssist(commentBox, project.id);
     const material = inc.material.map((m) => {
       const d = details[m.id];
       const cap = d?.captures?.find((c) => c.state === "done") || d?.captures?.[0];
@@ -369,10 +380,10 @@ export async function incidentPage(view, id) {
               if (!commentBox.value.trim()) return;
               try { await post(`/v1/incidents/${id}/comments`, { body: commentBox.value }); await reload(true); }
               catch (err) { toast(err.message, true); }
-            } }, commentBox, el("button", { type: "submit" }, t("comment"))))),
+            } }, commentWrap, el("p", { class: "meta" }, t("mentionHint")), el("button", { type: "submit" }, t("comment"))))),
         el("aside", { class: "inc-side" },
           el("section", { class: "card" }, sec(t("sourceMaterial"),
-            archived || !atLeast(role, "editor") ? "" : el("button", { type: "button", class: "link", onclick: () => addMaterial(id, reload) }, t("addMaterial"))),
+            archived || !atLeast(role, "editor") ? "" : el("button", { type: "button", class: "link", onclick: () => addMaterial(inc, reload) }, t("addMaterial"))),
             material.length ? material : el("p", { class: "muted" }, t("empty"))),
           inc.intake?.length ? el("section", { class: "card" }, sec(t("fromCommunity")),
             inc.intake.map((k) => el("div", { class: "material" },
@@ -382,7 +393,8 @@ export async function incidentPage(view, id) {
               k.files.filter((f) => f.url).length ? artifactGrid(k.files.filter((f) => f.url).map((f) => ({ ...f, role: "primary", label: t("providedByContributor") })), { blur }) : ""))) : "",
           role === "data_only_viewer" ? "" : el("section", { class: "card stack" }, sec(t("publication")),
             inc.publication ? [el("p", {}, el("span", { class: "chip" }, t("pubStates")[inc.publication.state]), " ",
-                el("code", {}, inc.publication.public_id), " ", el("span", { class: "meta" }, t("approvals")(inc.publication.approvals)),
+                el("code", {}, inc.publication.public_id), " ",
+                inc.publication.review_requested ? el("span", { class: "chip sens" }, t("reviewRequestedChip")) : "",
                 inc.publication.dirty && inc.publication.state === "published" ? el("span", { class: "chip sens" }, t("unpublishedChanges")) : ""),
                 el("a", { href: `#/publications/${inc.publication.id}` }, t("openPublication"))]
               : atLeast(role, "editor") && !archived ? el("button", { type: "button", onclick: async () => {
@@ -412,7 +424,42 @@ export async function incidentPage(view, id) {
   poll(() => reload(false).catch(() => {}), 5000);
 }
 
-function addMaterial(incidentId, reload) {
+// "+ Add material": pick links already in the inbox (yours; everyone's for reviewers), community submissions routed
+// to this project, and/or paste new links.
+async function addMaterial(inc, reload) {
+  const incidentId = inc.id;
+  const here = new Set(inc.material.map((m) => m.id));
+  const [mine, everyone, subs] = await Promise.all([
+    api("/v1/items?mine=true&limit=200").then((r) => r.items).catch(() => []),
+    canReview() ? api("/v1/items?mine=false&limit=200").then((r) => r.items).catch(() => []) : Promise.resolve([]),
+    atLeast(inc.my_role, "editor") ? api(`/v1/intake?project_id=${inc.project.id}&state=new&limit=100`).then((r) => r.intake).catch(() => []) : Promise.resolve([]),
+  ]);
+  const items = [...new Map([...mine, ...everyone].filter((i) => !here.has(i.id) && i.client !== "intake").map((i) => [i.id, i])).values()];
+  const filter = el("input", { type: "search", placeholder: t("filterPh"), "aria-label": t("filterPh") });
+  const rows = items.map((it) => {
+    const box = el("input", { type: "checkbox", value: it.id });
+    const label = it.title || it.latest_capture?.extracted?.title || it.canonical_url;
+    const node = el("label", { class: "check pick-row" }, box, verdictChip(it.status), el("span", { class: "pick-text" }, label,
+      el("span", { class: "meta" }, " ", it.canonical_url)), el("span", { class: "meta nowrap" }, ago(it.created_at)));
+    return { box, node, text: (label + " " + it.canonical_url).toLowerCase() };
+  });
+  const subRows = subs.map((k) => {
+    const box = el("input", { type: "checkbox", value: k.id });
+    return { box, node: el("label", { class: "check pick-row" }, box, el("span", { class: "chip src-community" }, t("srcCommunity")),
+      el("span", { class: "pick-text" }, k.summary || t("submission"), el("span", { class: "meta" }, " ", k.source.name))), text: (k.summary || "").toLowerCase() };
+  });
+  const count = el("span", { class: "count-label" });
+  const updateCount = () => { const n = [...rows, ...subRows].filter((r) => r.box.checked).length; count.textContent = n ? ` (${n})` : ""; };
+  [...rows, ...subRows].forEach((r) => r.box.addEventListener("change", updateCount));
+  filter.addEventListener("input", () => {
+    const q = filter.value.trim().toLowerCase();
+    for (const r of [...rows, ...subRows]) r.node.hidden = !!q && !r.text.includes(q);
+  });
+  const picker = el("details", { class: "inbox-picker", open: items.length > 0 || subs.length > 0 },
+    el("summary", {}, t("fromInbox"), count),
+    filter,
+    el("div", { class: "pick-list" }, rows.length ? rows.map((r) => r.node) : el("p", { class: "muted small" }, t("noInboxItems"))),
+    subRows.length ? [el("h4", {}, t("submissionsHere")), el("div", { class: "pick-list" }, subRows.map((r) => r.node))] : "");
   const input = el("textarea", { rows: "3", placeholder: t("sourceUrlsPh") });
   const btn = el("button", { type: "submit", class: "primary" }, t("save"));
   const notes = el("div", { class: "stack" });
@@ -423,6 +470,8 @@ function addMaterial(incidentId, reload) {
     // simply filed here too. Only a link that was already in *this* incident is worth mentioning.
     const already = [];
     try {
+      for (const r of rows.filter((x) => x.box.checked)) await post(`/v1/items/${r.box.value}/incidents`, { incident_id: incidentId });
+      for (const r of subRows.filter((x) => x.box.checked)) await post(`/v1/intake/${r.box.value}/attach`, { incident_id: incidentId });
       for (const line of input.value.split("\n").map((s) => s.trim()).filter(Boolean)) {
         const r = await post(`/v1/incidents/${incidentId}/material`, { text: line });
         if (r.duplicate && !r.linked) already.push(line);
@@ -433,5 +482,5 @@ function addMaterial(incidentId, reload) {
       input.value = "";
     } catch (err) { toast(err.message, true); }
     btn.disabled = false;
-  } }, input, notes, btn));
+  } }, picker, el("label", {}, t("newLinks"), input), notes, btn), { wide: true });
 }

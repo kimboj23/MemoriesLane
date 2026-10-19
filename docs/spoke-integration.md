@@ -244,4 +244,4 @@ Refresh every few minutes. The hub can also nudge you after each build (`FEED_WE
 3. Point your backend at `http://127.0.0.1:8700`, with feed `http://127.0.0.1:8700/feed` and the dev root public key
    (`root_public` in `capture/secrets/dev-feed-delegation.json`).
 4. To see the whole cycle: submit, then on the hub open Hộp thư → **Cộng đồng**, create an incident or a memory's
-   public version, and approve it with two different accounts. It then shows up in your feed.
+   public version, and approve it (one approval by a manager or a member with publication access). It then shows up in your feed.

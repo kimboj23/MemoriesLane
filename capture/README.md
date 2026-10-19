@@ -87,8 +87,9 @@ Then open **http://127.0.0.1:8700/** and paste the token (Vietnamese first, `EN`
   "Nhóm hồ sơ" group prefilled), reject it, or (managers) reroute, reopen, open a sealed contact (logged).
 - **Bản công khai / Public version** (incident page, a memory in the intake, a project's "Bản công khai" tab): the
   separate public record. Wording, kind of place → public precision (policy §12.4 enforced), date detail, which
-  material and files (published as cleaned copies), original links shown by default. A manager and a different
-  member with **Quyền công bố** (granted on the Access tab) approve; editing clears approvals; withdrawing is
+  material and files (published as cleaned copies), original links shown by default. **Duyệt và công bố**: one
+  approval by a manager or a member with **Quyền công bố** (granted on the Access tab) publishes. **Xin ý kiến thứ
+  hai** notifies people or a role (@reviewer…); while it is open, the requester can't publish alone. Withdrawing is
   immediate. The preview is exactly the record the feed will carry. Legacy memories are approved as one batch.
 - **🔔 / Thông báo**: notifications, mark read/unread, incidents you follow. **Quản trị / Admin** (admins): people,
   instance roles, issue/revoke tokens, disable accounts; community sites (sources: routing, keys shown once,
@@ -129,7 +130,7 @@ Stop with `docker compose down` (`down -v` also wipes the local DB and stored fi
 | What | Command | Needs |
 |---|---|---|
 | Unit (URLs, gate, embeds): offline, fast | `docker compose run --rm --no-deps api python -m pytest` | nothing |
-| End-to-end: signed intake (replay/wrong key refused) → triage in the UI → public version (policy, two people) → signed feed verified like a site would, GPS stripped → withdrawal | same command (`tests/e2e/test_intake_e2e.py`) | running stack with the intake + feed keys above |
+| End-to-end: signed intake (replay/wrong key refused) → triage in the UI → public version (policy; one approval; second-opinion request) → signed feed verified like a site would, GPS stripped → withdrawal | same command (`tests/e2e/test_intake_e2e.py`) | running stack with the intake + feed keys above |
 | End-to-end: project → incident → capture → update → comment → viewers → inbox filing; invite link → new account → roles → @mention notification; CSV import → map → Internet Archive → admin; desktop + phone (admin token) | `docker compose exec -e E2E_BASE_URL=http://api:8700 -e E2E_TOKEN=mlc_... worker python -m pytest tests/e2e` | running stack, network |
 | Canary: real links per platform still reach their expected verdict | `CAPTURE_TOKEN=mlc_... python tests/canary.py` (from the host) | running stack, network |
 
@@ -164,7 +165,7 @@ Run the canary before and after any dependency bump (yt-dlp, Playwright, base im
 | GET / POST | `/v1/intake[?project_id=&state=]`, `/v1/intake/{id}`, `…/attach`, `…/create`, `…/reject`, `…/reopen`, `…/route`, `…/contact` | viewer+ of the routed project (act: editor+; route/reopen/contact: manager+) | Triage |
 | GET | `/v1/intake-files/{id}` | as the submission, or its signed URL | A community file, sandboxed like artifacts |
 | POST | `/v1/incidents/{id}/publication`, `/v1/intake/{id}/publication` | editor+ | Start (or get) the public version |
-| GET / PATCH / POST | `/v1/publications[?project_id=]`, `/v1/publications/{id}`, `…/approve {role}`, `…/withdraw {reason}`, `…/republish` | read: viewer+; edit: editor+; approve: manager / publication access (two people); withdraw: either | Public versions; GET includes `problems` and the exact `preview` |
+| GET / PATCH / POST | `/v1/publications[?project_id=]`, `/v1/publications/{id}`, `…/approve`, `…/request-review {to, note}` (POST/DELETE), `…/withdraw {reason}`, `…/republish` | read: viewer+; edit and ask for a second opinion: editor+; approve and withdraw: manager+ or publication access | Public versions; GET includes `problems` and the exact `preview` |
 | GET / POST | `/v1/projects/{id}/publication-batches`, `/v1/publication-batches/{id}/approve` | as above | Legacy (already public) memories, approved once per batch |
 | GET / POST | `/v1/feed/status`, `/v1/feed/rebuild`; `/v1/admin/sources[/{id}[/rotate]]` | members / admin | Feed status; community sources (key shown on create and rotate only) |
 
@@ -196,7 +197,7 @@ memlane_capture/
   signing.py                short-lived signed artifact URLs for <img>/<video>/<iframe>
   serve.py                  serving stored files, always sandboxed, with byte ranges
   intake.py                 Intake API for the community sites (signed), triage, sources admin
-  publish.py                public versions: drafts, policy problems, two approvals, withdrawal, batches
+  publish.py                public versions: drafts, policy problems, approval, second-opinion requests, withdrawal, batches
   geo.py                    the public location policy (§12.4), deterministic snapping, date coarsening
   derive.py                 upload type sniffing; metadata-free public copies (Pillow re-encode, ffmpeg remux)
   feed.py                   the public record format and the signed static feed (local dir or B2)

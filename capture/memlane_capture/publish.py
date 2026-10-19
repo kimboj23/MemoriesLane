@@ -2,15 +2,17 @@
 
 A publication is a separate artifact, never the internal record: its own wording, a generalised location
 (geo.py, the §12.4 policy), a coarsened date if wanted, and only the media the reviewers chose, published as
-cleaned copies. Nothing is public until two different people approve the current draft:
+cleaned copies.
 
-  * a manager of the project (or an owner / instance admin), and
-  * a member entrusted with publication access ("Quyền công bố", project_members.can_publish).
+One approval publishes (decision 2026-10-19: the team is small; agility with a safety valve). It must come from
+someone entitled to publish: a manager or owner of the project, an instance admin, or a member entrusted with
+publication access ("Quyền công bố", project_members.can_publish). When in doubt, anyone editing a draft can
+**request a second opinion** from people or a role ("@reviewer"): they are notified, and while the request is open
+the requester can't publish alone, someone else has to approve.
 
-Editing the draft clears both approvals. Approving freezes what is shown about each piece of source material
-(verdict, capture time, manifest hash, Wayback link) so later re-captures can't change a published record
-silently. A manager or a publisher can withdraw a publication at once (no second approval: taking something
-down must be fast); the feed then carries a tombstone and deletes its files.
+Approving freezes what is shown about each piece of source material (verdict, capture time, manifest hash, Wayback
+link) so later re-captures can't change a published record silently. A manager or a publisher can withdraw a
+publication at once; the feed then carries a tombstone and deletes its files.
 """
 
 import secrets
@@ -78,7 +80,12 @@ class DraftPatch(BaseModel):
 
 
 class ApproveIn(BaseModel):
-    role: Literal["manager", "publisher"]
+    role: str | None = None        # ignored (kept so older clients still work): one approval publishes
+
+
+class ReviewRequestIn(BaseModel):
+    to: list[str] = Field(..., min_length=1, max_length=30)   # contributor ids and/or role tags ("@reviewer")
+    note: str | None = Field(None, max_length=2000)
 
 
 class WithdrawIn(BaseModel):
@@ -90,6 +97,11 @@ async def can_publish(conn, p: Principal, project_id) -> bool:
     r = await (await conn.execute("SELECT can_publish FROM capture.project_members WHERE project_id = %s"
                                   " AND contributor_id = %s", (project_id, p.contributor_id))).fetchone()
     return bool(r and r["can_publish"])
+
+
+async def entitled(conn, p: Principal, project_id) -> bool:
+    """May publish on their own: managers/owners (and admins), or members with publication access."""
+    return at_least(await project_role(conn, p, project_id), "manager") or await can_publish(conn, p, project_id)
 
 
 async def mark_feed_dirty(conn) -> None:
@@ -229,13 +241,16 @@ async def freeze(conn, pub_type: str, d: dict) -> dict:
 
 
 def _pub_json(r: dict, role: str | None, publisher: bool, names: dict) -> dict:
+    name = lambda i: names.get(str(i)) if i else None   # noqa: E731
     return {"id": str(r["id"]), "public_id": r["public_id"], "type": r["type"], "state": r["state"],
             "project_id": str(r["project_id"]), "incident_id": str(r["incident_id"]) if r["incident_id"] else None,
             "intake_id": str(r["intake_id"]) if r["intake_id"] else None,
             "batch_id": str(r["batch_id"]) if r["batch_id"] else None,
             "draft": r["draft"], "version": r["version"], "dirty": r["dirty"],
-            "approved_by_manager": names.get(str(r["approved_by_manager"])) if r["approved_by_manager"] else None,
-            "approved_by_publisher": names.get(str(r["approved_by_publisher"])) if r["approved_by_publisher"] else None,
+            "published_by": name(r["published_by"]),
+            "review_request": None if not r["review_requested_by"] else {
+                "by": name(r["review_requested_by"]), "by_id": str(r["review_requested_by"]),
+                "at": r["review_requested_at"], "note": r["review_request_note"], "to": r["review_request_to"]},
             "published_at": r["published_at"], "withdrawn_at": r["withdrawn_at"],
             "withdrawn_reason": r["withdrawn_reason"], "updated_at": r["updated_at"],
             "problems": problems(r["type"], r["draft"]),
@@ -253,23 +268,29 @@ async def _load(conn, pub_id: str, p: Principal, minimum: str = "viewer") -> tup
 
 
 async def _out(conn, r: dict, p: Principal, role: str) -> dict:
-    ids = [x for x in (r["approved_by_manager"], r["approved_by_publisher"]) if x]
+    ids = [x for x in (r["published_by"], r["review_requested_by"]) if x]
     names = {}
     if ids:
         rows = await (await conn.execute("SELECT id, display_name FROM capture.contributors WHERE id = ANY(%s::uuid[])",
                                          ([str(i) for i in ids],))).fetchall()
         names = {str(x["id"]): x["display_name"] for x in rows}
-    out = _pub_json(r, role, await can_publish(conn, p, r["project_id"]), names)
+    out = _pub_json(r, role, await entitled(conn, p, r["project_id"]), names)
     from .feed import public_record     # the same function the feed uses: the preview is what will be published
     snap = await freeze(conn, r["type"], r["draft"])
     out["preview"] = public_record(r["type"], r["public_id"], r["version"] + 1, None, snap, resolve=None)
     return out
 
 
-async def _log(conn, r: dict, p: Principal, action: str, body: str | None = None) -> None:
+async def _log(conn, r: dict, p: Principal, action: str, body: str | None = None) -> str:
+    """A feed entry: on the incident's feed, or (memories) a project-level entry tied to the publication."""
+    new = {"action": action, "public_id": r["public_id"], "version": r["version"], "publication_id": str(r["id"])}
     if r["incident_id"]:
-        await add_update(conn, incident_id=r["incident_id"], kind="publication", p=p,
-                         new={"action": action, "public_id": r["public_id"], "version": r["version"]}, body=body)
+        return await add_update(conn, incident_id=r["incident_id"], kind="publication", p=p, new=new, body=body)
+    row = await (await conn.execute(
+        "INSERT INTO capture.updates (incident_id, publication_id, contributor_id, kind, new_value, body)"
+        " VALUES (NULL, %s, %s, 'publication', %s, %s) RETURNING id",
+        (r["id"], p.contributor_id, Jsonb(new), body))).fetchone()
+    return str(row["id"])
 
 
 # ---- endpoints ---------------------------------------------------------------------------------------
@@ -299,7 +320,7 @@ async def list_publications(request: Request, project_id: str | None = None, sta
                               "intake_id": str(r["intake_id"]) if r["intake_id"] else None,
                               "batch_id": str(r["batch_id"]) if r["batch_id"] else None,
                               "title": (r["draft"].get("title_vi") or r["draft"].get("text_vi") or "")[:200],
-                              "approvals": int(bool(r["approved_by_manager"])) + int(bool(r["approved_by_publisher"])),
+                              "review_requested": bool(r["review_requested_by"]),
                               "published_at": r["published_at"], "updated_at": r["updated_at"]} for r in rows]}
 
 
@@ -370,20 +391,19 @@ async def edit_publication(pub_id: str, body: DraftPatch, request: Request, p: P
                 inc = await (await conn.execute("SELECT lat, lng FROM capture.incidents WHERE id = %s",
                                                 (r["incident_id"],))).fetchone()
                 d["lat"], d["lng"] = inc["lat"], inc["lng"]
-            # Any edit needs fresh approvals: what was approved is no longer what would be published.
             r = await (await conn.execute(
-                "UPDATE capture.publications SET draft = %s, dirty = true, approved_by_manager = NULL,"
-                " approved_by_publisher = NULL, updated_at = now() WHERE id = %s RETURNING *",
+                "UPDATE capture.publications SET draft = %s, dirty = true, updated_at = now() WHERE id = %s RETURNING *",
                 (Jsonb(d), pub_id))).fetchone()
         return await _out(conn, r, p, role)
 
 
-async def _publish_now(conn, r: dict) -> dict:
+async def _publish_now(conn, r: dict, p: Principal) -> dict:
     snap = await freeze(conn, r["type"], r["draft"])
     r = await (await conn.execute(
         "UPDATE capture.publications SET published = %s, version = version + 1, state = 'published', dirty = false,"
-        " published_at = now(), withdrawn_at = NULL, withdrawn_reason = NULL, approved_by_manager = NULL,"
-        " approved_by_publisher = NULL, updated_at = now() WHERE id = %s RETURNING *", (Jsonb(snap), r["id"]))).fetchone()
+        " published_at = now(), published_by = %s, withdrawn_at = NULL, withdrawn_reason = NULL,"
+        " review_requested_by = NULL, review_requested_at = NULL, review_request_note = NULL, review_request_to = '{}',"
+        " updated_at = now() WHERE id = %s RETURNING *", (Jsonb(snap), p.contributor_id, r["id"]))).fetchone()
     if r["intake_id"]:
         await conn.execute("UPDATE capture.intake SET state = 'published' WHERE id = %s AND state = 'new'",
                            (r["intake_id"],))
@@ -391,19 +411,9 @@ async def _publish_now(conn, r: dict) -> dict:
     return r
 
 
-async def _approval_slot(conn, p: Principal, project_id, role_name: str, other_approver) -> str:
-    if role_name == "manager":
-        if not at_least(await project_role(conn, p, project_id), "manager"):
-            raise HTTPException(403, "only managers of this project can give the manager approval")
-    elif not await can_publish(conn, p, project_id):
-        raise HTTPException(403, "you don't have publication access in this project")
-    if other_approver and str(other_approver) == p.contributor_id:
-        raise HTTPException(409, "the two approvals must come from two different people")
-    return "approved_by_manager" if role_name == "manager" else "approved_by_publisher"
-
-
 @router.post("/publications/{pub_id}/approve")
-async def approve(pub_id: str, body: ApproveIn, request: Request, p: Principal = Depends(current_principal)):
+async def approve(pub_id: str, request: Request, body: ApproveIn | None = None, p: Principal = Depends(current_principal)):
+    """Approve and publish (one approval). Not by the person who asked for a second opinion while it is open."""
     async with request.app.state.pool.connection() as conn:
         async with conn.transaction():
             r, role = await _load(conn, pub_id, p)
@@ -415,14 +425,64 @@ async def approve(pub_id: str, body: ApproveIn, request: Request, p: Principal =
                 raise HTTPException(409, "part of a batch: approve the batch")
             if probs := problems(r["type"], r["draft"]):
                 raise HTTPException(422, "; ".join(probs))
-            other = r["approved_by_publisher"] if body.role == "manager" else r["approved_by_manager"]
-            col = await _approval_slot(conn, p, r["project_id"], body.role, other)
-            r = await (await conn.execute(f"UPDATE capture.publications SET {col} = %s, updated_at = now()"
-                                          " WHERE id = %s RETURNING *", (p.contributor_id, pub_id))).fetchone()
-            await _log(conn, r, p, f"approved_{body.role}")
-            if r["approved_by_manager"] and r["approved_by_publisher"]:
-                r = await _publish_now(conn, r)
-                await _log(conn, r, p, "published", f"Đã công bố {r['public_id']} (phiên bản {r['version']})")
+            if not await entitled(conn, p, r["project_id"]):
+                raise HTTPException(403, "only managers or members with publication access can publish")
+            if r["review_requested_by"] and str(r["review_requested_by"]) == p.contributor_id:
+                raise HTTPException(409, "you asked for a second opinion: someone else approves, or cancel the request")
+            r = await _publish_now(conn, r, p)
+            await _log(conn, r, p, "published", f"Đã công bố {r['public_id']} (phiên bản {r['version']})")
+        return await _out(conn, r, p, role)
+
+
+async def resolve_recipients(conn, project_id, to: list[str]) -> set[str]:
+    """Contributor ids and role tags ("@reviewer", "@quanly", …) → members of the project (never data-only)."""
+    from .notify import ROLE_TAGS, members_for_tags
+    tags = {ROLE_TAGS[x.lstrip("@").lower()] for x in to if x.startswith("@") and x.lstrip("@").lower() in ROLE_TAGS}
+    ids = {x for x in to if not x.startswith("@")}
+    out = await members_for_tags(conn, project_id, tags)
+    if ids:
+        rows = await (await conn.execute(
+            "SELECT contributor_id FROM capture.project_members WHERE project_id = %s AND contributor_id = ANY(%s::uuid[])"
+            " AND role <> 'data_only_viewer'", (project_id, list(ids)))).fetchall()
+        out |= {str(x["contributor_id"]) for x in rows}
+    return out
+
+
+@router.post("/publications/{pub_id}/request-review")
+async def request_review(pub_id: str, body: ReviewRequestIn, request: Request, p: Principal = Depends(current_principal)):
+    """Ask for a second opinion before publishing: notifies the people / role tagged."""
+    from .notify import notify_people
+    async with request.app.state.pool.connection() as conn:
+        async with conn.transaction():
+            r, role = await _load(conn, pub_id, p, "editor")
+            if r["state"] == "withdrawn":
+                raise HTTPException(409, "withdrawn")
+            to = await resolve_recipients(conn, r["project_id"], body.to)
+            to.discard(p.contributor_id)
+            if not to:
+                raise HTTPException(422, "nobody to ask: choose people or a role that has members in this project")
+            r = await (await conn.execute(
+                "UPDATE capture.publications SET review_requested_by = %s, review_requested_at = now(),"
+                " review_request_note = %s, review_request_to = %s, updated_at = now() WHERE id = %s RETURNING *",
+                (p.contributor_id, (body.note or "").strip() or None, body.to, pub_id))).fetchone()
+            uid = await _log(conn, r, p, "review_requested", (body.note or "").strip() or None)
+            await notify_people(conn, update_id=uid, ids=to, reason="review_requested", actor_id=p.contributor_id,
+                                project_id=r["project_id"])
+        return await _out(conn, r, p, role)
+
+
+@router.delete("/publications/{pub_id}/request-review")
+async def cancel_review(pub_id: str, request: Request, p: Principal = Depends(current_principal)):
+    """Close a second-opinion request: the requester, or anyone entitled to publish."""
+    async with request.app.state.pool.connection() as conn:
+        r, role = await _load(conn, pub_id, p, "editor")
+        if r["review_requested_by"] and str(r["review_requested_by"]) != p.contributor_id \
+                and not await entitled(conn, p, r["project_id"]):
+            raise HTTPException(403, "only the requester or a publisher can close it")
+        r = await (await conn.execute(
+            "UPDATE capture.publications SET review_requested_by = NULL, review_requested_at = NULL,"
+            " review_request_note = NULL, review_request_to = '{}', updated_at = now() WHERE id = %s RETURNING *",
+            (pub_id,))).fetchone()
         return await _out(conn, r, p, role)
 
 
@@ -431,13 +491,13 @@ async def withdraw(pub_id: str, body: WithdrawIn, request: Request, p: Principal
     async with request.app.state.pool.connection() as conn:
         async with conn.transaction():
             r, role = await _load(conn, pub_id, p)
-            if not (at_least(role, "manager") or await can_publish(conn, p, r["project_id"])):
+            if not await entitled(conn, p, r["project_id"]):
                 raise HTTPException(403, "only managers or members with publication access can withdraw")
             if r["state"] != "published":
                 raise HTTPException(409, "not published")
             r = await (await conn.execute(
                 "UPDATE capture.publications SET state = 'withdrawn', withdrawn_at = now(), withdrawn_reason = %s,"
-                " approved_by_manager = NULL, approved_by_publisher = NULL, updated_at = now() WHERE id = %s RETURNING *",
+                " updated_at = now() WHERE id = %s RETURNING *",
                 (body.reason.strip(), pub_id))).fetchone()
             await mark_feed_dirty(conn)
             await _log(conn, r, p, "withdrawn", body.reason.strip())
@@ -446,7 +506,7 @@ async def withdraw(pub_id: str, body: WithdrawIn, request: Request, p: Principal
 
 @router.post("/publications/{pub_id}/republish")
 async def republish(pub_id: str, request: Request, p: Principal = Depends(current_principal)):
-    """Back to draft after a withdrawal; it needs both approvals again."""
+    """Back to draft after a withdrawal; it needs an approval again."""
     async with request.app.state.pool.connection() as conn:
         r, role = await _load(conn, pub_id, p, "editor")
         if r["state"] != "withdrawn":
@@ -468,10 +528,8 @@ async def list_batches(project_id: str, request: Request, p: Principal = Depends
         waiting = (await (await conn.execute(
             "SELECT count(*) AS n FROM capture.intake k WHERE k.project_id = %s AND k.legacy_public AND k.kind = 'memory'"
             " AND NOT EXISTS (SELECT 1 FROM capture.publications x WHERE x.intake_id = k.id)", (project_id,))).fetchone())["n"]
-        publisher = await can_publish(conn, p, project_id)
+        publisher = await entitled(conn, p, project_id)
     return {"batches": [{"id": str(b["id"]), "label": b["label"], "count": b["n"], "created_at": b["created_at"],
-                         "approved_by_manager": bool(b["approved_by_manager"]),
-                         "approved_by_publisher": bool(b["approved_by_publisher"]),
                          "published_at": b["published_at"]} for b in rows],
             "legacy_waiting": waiting, "can_publish": publisher}
 
@@ -497,7 +555,9 @@ async def create_legacy_batch(project_id: str, request: Request, p: Principal = 
 
 
 @router.post("/publication-batches/{batch_id}/approve")
-async def approve_batch(batch_id: str, body: ApproveIn, request: Request, p: Principal = Depends(current_principal)):
+async def approve_batch(batch_id: str, request: Request, body: ApproveIn | None = None,
+                        p: Principal = Depends(current_principal)):
+    """Publish every draft in a legacy batch with one approval."""
     async with request.app.state.pool.connection() as conn:
         async with conn.transaction():
             b = await (await conn.execute("SELECT * FROM capture.publication_batches WHERE id = %s FOR UPDATE",
@@ -507,23 +567,18 @@ async def approve_batch(batch_id: str, body: ApproveIn, request: Request, p: Pri
             await require_project(conn, p, b["project_id"], "viewer")
             if b["published_at"]:
                 raise HTTPException(409, "already published")
+            if not await entitled(conn, p, b["project_id"]):
+                raise HTTPException(403, "only managers or members with publication access can publish")
             pubs = await (await conn.execute("SELECT * FROM capture.publications WHERE batch_id = %s AND state = 'draft'",
                                              (batch_id,))).fetchall()
             bad = [f"{x['public_id']}: {'; '.join(pr)}" for x in pubs if (pr := problems(x["type"], x["draft"]))]
             if bad:
                 raise HTTPException(422, "fix these first: " + " | ".join(bad[:10]))
-            other = b["approved_by_publisher"] if body.role == "manager" else b["approved_by_manager"]
-            col = await _approval_slot(conn, p, b["project_id"], body.role, other)
-            b = await (await conn.execute(f"UPDATE capture.publication_batches SET {col} = %s WHERE id = %s RETURNING *",
-                                          (p.contributor_id, batch_id))).fetchone()
-            published = 0
-            if b["approved_by_manager"] and b["approved_by_publisher"]:
-                for x in pubs:
-                    await _publish_now(conn, x)
-                    published += 1
-                await conn.execute("UPDATE capture.publication_batches SET published_at = now() WHERE id = %s", (batch_id,))
-    return {"approved_by_manager": bool(b["approved_by_manager"]),
-            "approved_by_publisher": bool(b["approved_by_publisher"]), "published": published}
+            for x in pubs:
+                await _publish_now(conn, x, p)
+            await conn.execute("UPDATE capture.publication_batches SET published_at = now(), published_by = %s"
+                               " WHERE id = %s", (p.contributor_id, batch_id))
+    return {"published": len(pubs)}
 
 
 # ---- feed status ------------------------------------------------------------------------------------------

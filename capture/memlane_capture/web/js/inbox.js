@@ -1,8 +1,8 @@
 // The save sheet (same one the share button / extension will open), the project→incident picker,
 // and the inbox: everything that came in, from the team (saved links) or the community (submissions from the
 // public sites), filtered by source.
-import { mount, ago, api, atLeast, el, isAdmin, loadProjects, modal, onLeave, platformOf, poll, post, projectDot, state, t, toast,
-         verdictChip, VERDICTS } from "./core.js";
+import { mount, ago, api, atLeast, el, isAdmin, loadProjects, loadVocab, modal, onLeave, platformOf, poll, post, projectDot, state,
+         suggestInput, t, toast, verdictChip, VERDICTS } from "./core.js";
 import { INTAKE_STATES, intakeRow } from "./intake.js";
 
 // Project → incident dropdowns. Calls onChange(incidentId|null). `allowNew` adds "+ create incident".
@@ -37,9 +37,10 @@ export async function saveSheet({ prefill = "", projectId = null, incidentId = n
   const detected = el("span", { class: "badge", hidden: !platformOf(prefill) }, platformOf(prefill) || "");
   link.addEventListener("input", () => { const p = platformOf(link.value); detected.hidden = !p; detected.textContent = p || ""; });
   const note = el("textarea", { rows: "2", placeholder: t("notePh") });
-  const tags = el("input", { placeholder: t("tagsPh") });
+  const tagsIn = suggestInput({ multi: true, placeholder: t("tagsPh"), suggestions: (await loadVocab()).my_item_tags });
+  const tags = tagsIn.input;
   const sens = el("input", { type: "checkbox" });
-  const more = el("div", { hidden: true }, note, tags, el("label", { class: "check" }, sens, t("sensitiveItem")));
+  const more = el("div", { hidden: true }, note, tagsIn.node, el("label", { class: "check" }, sens, t("sensitiveItem")));
   const result = el("div", { class: "result", hidden: true });
   const btn = el("button", { type: "submit", class: "primary wide" }, t("save"));
   const picker = await incidentPicker({

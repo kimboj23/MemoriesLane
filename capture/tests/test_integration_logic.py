@@ -172,3 +172,11 @@ def test_files_that_could_not_be_cleaned_are_left_out():
     rec = public_record("memory", "km-1", 1, None, snap, resolve=lambda f: clean.get(f["source_sha256"]))
     assert [f["url"] for f in rec["files"]] == ["files/x.webp"]
     assert rec["files"][0]["provided_by"] == "contributor" and rec["location"] is None
+
+
+def test_role_tags_in_comments():
+    from memlane_capture.notify import find_role_tags
+    assert find_role_tags("@reviewer xem giúp") == {"reviewer"}
+    assert find_role_tags("nhờ @quanly và @BienTap, cả @tatca") == {"manager", "editor", "all"}
+    assert find_role_tags("email a@reviewer.org, @reviewers, @Lan Anh") == set()     # not tags
+    assert find_role_tags("(@nguoiduyet)") == {"reviewer"}

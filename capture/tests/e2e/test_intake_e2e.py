@@ -160,28 +160,60 @@ def test_intake_to_feed():
         expect(page.get_by_text("Hạn chế mạng xã hội").first).to_be_visible()      # the group attribute
         expect(page.get_by_role("heading", name="Từ cộng đồng")).to_be_visible()
         incident_id = page.url.rsplit("/", 1)[-1]
+        # Unfollow / follow (the 204 reply used to throw "Unexpected end of JSON input").
+        expect(page.locator("#follow")).to_have_text("Đang theo dõi ✓")
+        page.locator("#follow").click()
+        expect(page.locator("#follow")).to_have_text("Theo dõi")
+        expect(page.locator(".toast.error")).to_have_count(0)
+        page.locator("#follow").click()
+        expect(page.locator("#follow")).to_have_text("Đang theo dõi ✓")
+        # "+ Thêm tư liệu": pick a link already in the inbox (no retyping), next to pasting new ones.
+        n_before = page.locator(".inc-side .material").count()
+        page.get_by_role("button", name="+ Thêm tư liệu").click()
+        expect(page.locator(".modal .inbox-picker")).to_be_visible()
+        page.locator(".modal .inbox-picker .pick-row input").first.check()
+        page.locator(".modal").get_by_role("button", name="Lưu").click()
+        expect(page.locator(".modal")).to_have_count(0)
+        expect(page.locator(".inc-side .material").first).to_be_visible()
+        assert page.locator(".inc-side .material").count() >= n_before
+        # Comments: typing "@" offers role tags and people.
+        page.locator(".feed + form textarea, form textarea[placeholder='Viết bình luận…']").first.fill("@rev")
+        page.locator("form textarea[placeholder='Viết bình luận…']").first.dispatch_event("input")
+        expect(page.locator(".mention-box .suggest-opt").first).to_contain_text("@reviewer")
+        # Tooltips on unfamiliar buttons.
+        assert page.locator("#follow").get_attribute("title")
         b.close()
     assert not errors, errors
 
-    # the incident's public version: policy, two people
+    # the incident's public version: policy; then one approval by someone entitled publishes
+    s, ed = api("POST", "/v1/admin/contributors", {"name": f"Biên tập {tag}"})
+    api("POST", f"/v1/projects/{proj['id']}/members", {"contributor_id": ed["id"], "role": "editor"})
     wait_for(lambda: api("GET", f"/v1/incidents/{incident_id}")[1]["material"][0]["status"] in ("complete", "partial"))
     s, pub = api("POST", f"/v1/incidents/{incident_id}/publication")
     assert pub["draft"]["precision"] == "ward" and "10.7769" not in json.dumps(pub["preview"])
     s, pub = api("PATCH", f"/v1/publications/{pub['id']}", {"precision": "exact"})
     assert pub["problems"]
-    assert api("POST", f"/v1/publications/{pub['id']}/approve", {"role": "manager"})[0] == 422
+    assert api("POST", f"/v1/publications/{pub['id']}/approve", token=pubr["token"])[0] == 422
     api("PATCH", f"/v1/publications/{pub['id']}", {"precision": "ward", "place_label": "TP.HCM"})
-    assert api("POST", f"/v1/publications/{pub['id']}/approve", {"role": "manager"})[0] == 200
-    assert api("POST", f"/v1/publications/{pub['id']}/approve", {"role": "publisher"})[0] == 403   # no grant
-    s, done = api("POST", f"/v1/publications/{pub['id']}/approve", {"role": "publisher"}, token=pubr["token"])
-    assert done["state"] == "published"
+    assert api("POST", f"/v1/publications/{pub['id']}/approve", token=ed["token"])[0] == 403     # editor without the grant
+    s, done = api("POST", f"/v1/publications/{pub['id']}/approve", token=pubr["token"])          # one approval publishes
+    assert (s, done["state"], done["published_by"]) == (200, "published", f"Người công bố {tag}")
 
-    # the memory: the same person can't give both approvals
-    s, mp = api("POST", f"/v1/intake/{mem_id}/publication")
-    api("POST", f"/v1/publications/{mp['id']}/approve", {"role": "manager"})
+    # @reviewer in a comment reaches everyone who can approve (the publisher, not the plain editor)
+    api("POST", f"/v1/incidents/{incident_id}/comments", {"body": "@reviewer xem giúp bản công khai"})
+    notes = lambda tok: api("GET", "/v1/notifications?limit=20", token=tok)[1]["notifications"]   # noqa: E731
+    assert any(n["reason"] == "mentioned" and "xem giúp" in n["body"] for n in notes(pubr["token"]))
+    assert not any("xem giúp" in (n["body"] or "") for n in notes(ed["token"]))
+
+    # the memory: a second opinion is asked; the requester can't publish alone, someone else can
     api("PUT", f"/v1/projects/{proj['id']}/members/{me['id']}/publish", {"can_publish": True})
-    assert api("POST", f"/v1/publications/{mp['id']}/approve", {"role": "publisher"})[0] == 409
-    assert api("POST", f"/v1/publications/{mp['id']}/approve", {"role": "publisher"}, token=pubr["token"])[1]["state"] == "published"
+    s, mp = api("POST", f"/v1/intake/{mem_id}/publication")
+    s, mp = api("POST", f"/v1/publications/{mp['id']}/request-review", {"to": ["@reviewer"], "note": "Ảnh có lộ mặt ai không?"})
+    assert mp["review_request"]["note"] == "Ảnh có lộ mặt ai không?"
+    assert any(n["reason"] == "review_requested" and n["publication"]["public_id"] == mp["public_id"] for n in notes(pubr["token"]))
+    assert api("POST", f"/v1/publications/{mp['id']}/approve")[0] == 409                          # the requester
+    s, done = api("POST", f"/v1/publications/{mp['id']}/approve", token=pubr["token"])
+    assert done["state"] == "published" and done["review_request"] is None
     assert site.call("GET", f"/intake/v1/receipts/{receipt}").json()["status"] == "published"
 
     # the feed, verified against the root key in the server's delegation (a site pins it from the README)

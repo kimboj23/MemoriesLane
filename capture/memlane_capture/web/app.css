@@ -279,3 +279,21 @@ pre.json { white-space: pre-wrap; overflow-wrap: anywhere; font: .75rem/1.4 ui-m
 .source-bar .todo[aria-pressed=true] { background: var(--orange-bg); border-color: var(--orange); color: var(--ink); font-weight: 600; }
 .chip.src-internal { background: var(--soft); color: var(--muted); }
 .chip.src-community { background: var(--orange-bg); color: var(--ink); }
+
+/* suggestions (values already used, @mentions) */
+.suggest { position: relative; }
+.suggest-box { position: absolute; left: 0; right: 0; top: 100%; z-index: 50; margin-top: 2px; max-height: 240px; overflow: auto;
+  background: var(--card); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.14); padding: 4px; }
+.suggest-opt { padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: .9rem; color: var(--ink); }
+.suggest-opt:hover { background: var(--soft); }
+.used-values { flex-wrap: wrap; gap: 4px; }
+.chip.pick-value { cursor: pointer; border: 1px solid var(--line); background: var(--soft); color: var(--ink); }
+/* add material: pick from the inbox */
+.inbox-picker summary { cursor: pointer; font-weight: 600; margin-bottom: 6px; }
+.inbox-picker input[type=search] { margin: 4px 0 6px; }
+.pick-list { max-height: 300px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; padding: 4px; display: flex; flex-direction: column; gap: 2px; }
+.pick-row { padding: 6px; border-radius: 6px; align-items: flex-start; }
+.pick-row:hover { background: var(--soft); }
+.pick-row .pick-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.pick-row[hidden] { display: none !important; }
+input[type=date] { cursor: pointer; }

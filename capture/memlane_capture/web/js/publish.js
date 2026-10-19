@@ -1,7 +1,8 @@
 // The public version of an incident or a memory (publish.py): edit the draft, see exactly what will be
 // published, collect the two approvals (a manager + a member with publication access), withdraw.
 // Also the admin's feed status panel.
-import { ago, api, atLeast, el, fmtDate, isAdmin, mount, patch, post, sec, t, toast, verdictChip } from "./core.js";
+import { ago, api, atLeast, el, fmtDate, isAdmin, loadContributors, loadVocab, modal, mount, patch, post, ROLE_TAGS, sec,
+         state, suggestInput, t, toast, verdictChip } from "./core.js";
 import { artifactGrid } from "./viewer.js";
 
 const PLACE_KINDS = ["public_institution", "public_gathering", "private_city", "private_rural", "memory", "legacy_memory", "online"];
@@ -24,6 +25,15 @@ export async function publicationPage(view, id) {
     const k = await api(`/v1/intake/${pub.intake_id}`);
     communityFiles = k.files.filter((f) => f.url && ["image", "video"].includes(f.kind));
   }
+
+  const vocab = await loadVocab(pub.project_id);
+  let groupOptions = [];
+  try {
+    const proj = await api(`/v1/projects/${pub.project_id}`);
+    groupOptions = (proj.attributes.find((a) => a.name.trim().toLowerCase() === "nhóm hồ sơ") || {}).options || [];
+  } catch { /* no suggestions */ }
+  // A draft date may be a year or a month (memories); the calendar needs a day, the precision keeps it coarse.
+  const fullDate = (v) => !v ? "" : v.length === 4 ? v + "-01-01" : v.length === 7 ? v + "-01" : v;
 
   async function render() {
     const d = pub.draft;
@@ -78,15 +88,19 @@ export async function publicationPage(view, id) {
     };
 
     const form = el("form", { class: "card stack", onsubmit: act(async () => { const r = await patch(`/v1/publications/${id}`, collect()); toast(t("draftSaved")); return r; }) },
-      sec(t("publication")), el("p", { class: "meta" }, t("pubHelp")),
+      sec(t("publication")), el("p", { class: "meta" }, t("pubHelp1")),
       isInc ? [field(t("titleVi"), text("title_vi")), field(t("titleEn"), text("title_en")),
                field(t("summaryVi"), text("summary_vi", 6)), field(t("summaryEn"), text("summary_en", 4)),
-               el("div", { class: "row two" }, field(t("group"), text("group")),
+               el("div", { class: "row two" }, field(t("group"), (() => {
+                 const g = suggestInput({ value: d.group || "", suggestions: groupOptions.length ? groupOptions : Object.values(vocab.custom || {}).flat() });
+                 g.input.disabled = !editor; f.group = g.input; return g.node; })()),
                  field(t("publicStatus"), select("public_status", ["reported", "being_verified", "verified"], (v) => t("pubStatus")[v]))),
-               field(t("publicTags"), (f.tags = el("input", { value: (d.tags || []).join(", "), disabled: !editor })))]
+               field(t("publicTags"), (() => {
+                 const tg = suggestInput({ value: d.tags || [], multi: true, suggestions: [...vocab.public_tags, ...vocab.tags] });
+                 tg.input.disabled = !editor; f.tags = tg.input; return tg.node; })())]
         : [field(t("textVi"), text("text_vi", 6)), field(t("textEn"), text("text_en", 4)),
            field(t("category"), select("category", ["personal", "news", "community", "event"], (v) => t("cats")[v]))],
-      el("div", { class: "row two" }, field(t("publicDate"), (f.date = el("input", { value: d.date || "", placeholder: "YYYY-MM-DD", disabled: !editor }))),
+      el("div", { class: "row two" }, field(t("publicDate"), (f.date = el("input", { type: "date", value: fullDate(d.date), disabled: !editor }))),
         field(t("datePrecision"), select("date_precision", ["day", "month", "year"], (v) => t("datePrec")[v]))),
       el("h4", {}, t("location")), el("p", { class: "meta" }, t("policyNote")),
       el("div", { class: "row two" }, field(t("placeKind"), select("place_kind", PLACE_KINDS, (v) => t("placeKinds")[v])),
@@ -101,22 +115,26 @@ export async function publicationPage(view, id) {
           artifactGrid([{ ...cf, role: "primary", label: t("providedByContributor") }], {}))))] : "",
       editor ? el("button", { type: "submit", class: "primary" }, t("saveDraft")) : "");
 
-    const approved = (who) => who || el("span", { class: "muted" }, t("waiting"));
-    const canWithdraw = pub.state === "published" && (atLeast(role, "manager") || pub.can_publish);
+    const canWithdraw = pub.state === "published" && pub.can_publish;
+    const rq = pub.review_request;
+    const mineRequest = rq && rq.by_id === state.me.id;
+    const pending = pub.state !== "withdrawn" && (pub.dirty || pub.state === "draft") && !pub.batch_id;
     const side = el("aside", { class: "inc-side" },
-      el("section", { class: "card stack" }, sec(t("approvals")(Number(!!pub.approved_by_manager) + Number(!!pub.approved_by_publisher))),
+      el("section", { class: "card stack" }, sec(t("publication")),
         el("p", {}, el("span", { class: "chip" }, t("pubStates")[pub.state]), " ", el("code", {}, pub.public_id),
           pub.dirty && pub.state === "published" ? el("span", { class: "chip sens" }, t("unpublishedChanges")) : ""),
-        pub.published_at && pub.state === "published" ? el("p", { class: "meta" }, t("publishedV")(pub.version, fmtDate(pub.published_at))) : "",
+        pub.published_at && pub.state === "published" ? el("p", { class: "meta" }, t("publishedV")(pub.version, fmtDate(pub.published_at)),
+          pub.published_by ? " · " + t("publishedBy")(pub.published_by) : "") : "",
         pub.state === "withdrawn" ? el("p", { class: "notice" }, t("withdrawnAt")(fmtDate(pub.withdrawn_at), pub.withdrawn_reason)) : "",
-        el("dl", { class: "kv" }, el("dt", {}, t("roles").manager), el("dd", {}, approved(pub.approved_by_manager)),
-          el("dt", {}, t("publishGrant")), el("dd", {}, approved(pub.approved_by_publisher))),
+        rq ? el("div", { class: "notice" }, el("strong", {}, t("reviewOpen")(rq.by, ago(rq.at))),
+          rq.to?.length ? el("p", { class: "meta" }, rq.to.map((x) => x.startsWith("@") ? x : "").filter(Boolean).join(", ")) : "",
+          rq.note ? el("p", { class: "pre" }, rq.note) : "", mineRequest ? el("p", { class: "meta" }, t("reviewWaiting")) : "",
+          mineRequest || pub.can_publish ? el("button", { type: "button", class: "link", onclick: act(() => api(`/v1/publications/${id}/request-review`, { method: "DELETE" })) }, t("cancelReview")) : "") : "",
         pub.problems.length ? el("div", { class: "notice" }, el("strong", {}, t("problems")), el("ul", {}, pub.problems.map((p) => el("li", {}, p)))) : "",
-        pub.state !== "withdrawn" && (pub.dirty || pub.state === "draft") && !pub.batch_id ? el("div", { class: "row" },
-          atLeast(role, "manager") && !pub.approved_by_manager ? el("button", { type: "button", class: "primary", disabled: pub.problems.length > 0,
-            onclick: act(() => post(`/v1/publications/${id}/approve`, { role: "manager" })) }, t("approveManager")) : "",
-          pub.can_publish && !pub.approved_by_publisher ? el("button", { type: "button", class: "primary", disabled: pub.problems.length > 0,
-            onclick: act(() => post(`/v1/publications/${id}/approve`, { role: "publisher" })) }, t("approvePublisher")) : "") : "",
+        pending ? el("div", { class: "row" },
+          pub.can_publish ? el("button", { type: "button", class: "primary", id: "approve-publish", disabled: pub.problems.length > 0 || mineRequest,
+            onclick: act(() => post(`/v1/publications/${id}/approve`)) }, t("approvePublish")) : "",
+          atLeast(role, "editor") && !rq ? el("button", { type: "button", id: "request-review", onclick: () => askReview(pub, (r) => { pub = r; render(); }) }, t("requestReview")) : "") : "",
         canWithdraw ? el("button", { type: "button", class: "danger", onclick: act(async () => {
           if (!confirm(t("confirmWithdraw"))) return pub;
           const reason = prompt(t("withdrawReason"));
@@ -132,6 +150,27 @@ export async function publicationPage(view, id) {
       el("div", { class: "inc-grid" }, el("div", { class: "inc-main" }, form), side));
   }
   await render();
+}
+
+// "Ask for a second opinion": a role tag (@reviewer…) and/or people in the project, and what to look at.
+async function askReview(pub, done) {
+  let people = [];
+  try { people = (await loadContributors(pub.project_id)).filter((p) => p.id !== state.me.id); } catch { /* roles only */ }
+  const roleBoxes = ROLE_TAGS.filter((r) => r !== "owner").map((r) => ({ v: "@" + r, box: el("input", { type: "checkbox", checked: r === "reviewer" }) }));
+  const peopleBoxes = people.map((p) => ({ v: p.id, box: el("input", { type: "checkbox" }), name: p.name }));
+  const note = el("textarea", { rows: "3", placeholder: t("reviewNote") });
+  const close = modal(t("requestReview"), el("form", { class: "stack", onsubmit: async (e) => {
+    e.preventDefault();
+    const to = [...roleBoxes, ...peopleBoxes].filter((x) => x.box.checked).map((x) => x.v);
+    try { const r = await post(`/v1/publications/${pub.id}/request-review`, { to, note: note.value.trim() || null }); close(); done(r); }
+    catch (err) { toast(err.message, true); }
+  } },
+    el("h4", {}, t("reviewAsk")),
+    el("p", { class: "meta" }, t("rolesGroup")),
+    roleBoxes.map((x) => el("label", { class: "check" }, x.box, `${x.v} — ${t("roleTagHelp")[x.v.slice(1)]}`)),
+    peopleBoxes.length ? [el("p", { class: "meta" }, t("peopleGroup")), el("div", { class: "pick-list" },
+      peopleBoxes.map((x) => el("label", { class: "check pick-row" }, x.box, x.name)))] : "",
+    note, el("button", { type: "submit", class: "primary" }, t("sendRequest"))));
 }
 
 // The public record as readers of the community sites will see it (text only).
@@ -180,24 +219,21 @@ export async function publicationsPanel(project) {
       api(`/v1/projects/${project.id}/publication-batches`)]);
     const manager = atLeast(project.my_role, "manager");
     mount(box,
-      el("p", { class: "meta" }, t("pubHelp")),
+      el("p", { class: "meta" }, t("pubHelp1")),
       publications.filter((x) => !x.batch_id).length ? el("div", { class: "table-wrap" }, el("table", { class: "inc-table" },
         el("tbody", {}, publications.filter((x) => !x.batch_id).map((x) => el("tr", {},
           el("td", {}, el("a", { href: `#/publications/${x.id}` }, x.title || x.public_id), el("div", { class: "meta" }, `${x.public_id}${x.incident ? " · " + x.incident : ""}`)),
           el("td", {}, el("span", { class: "chip" }, t("pubStates")[x.state]), x.dirty && x.state === "published" ? el("span", { class: "chip sens" }, t("unpublishedChanges")) : ""),
-          el("td", { class: "small" }, t("approvals")(x.approvals)),
+          el("td", { class: "small" }, x.review_requested ? el("span", { class: "chip sens" }, t("reviewRequestedChip")) : ""),
           el("td", { class: "small nowrap" }, ago(x.updated_at))))))) : el("p", { class: "muted" }, t("empty")),
       el("section", { class: "card stack" }, sec(t("legacyBatch")),
         b.legacy_waiting ? el("p", {}, t("legacyWaiting")(b.legacy_waiting)) : "",
         b.legacy_waiting && atLeast(project.my_role, "editor") ? el("button", { type: "button", onclick: async () => {
           try { await post(`/v1/projects/${project.id}/publication-batches`); await draw(); } catch (e) { toast(e.message, true); } } }, t("makeBatch")) : "",
         b.batches.map((x) => el("div", { class: "row" }, el("strong", {}, x.label),
-          x.published_at ? el("span", { class: "chip" }, t("batchPublished")) : [
-            el("span", { class: "meta" }, `${t("roles").manager}: ${x.approved_by_manager ? "✓" : "—"} · ${t("publishGrant")}: ${x.approved_by_publisher ? "✓" : "—"}`),
-            manager && !x.approved_by_manager ? el("button", { type: "button", onclick: async () => {
-              try { await post(`/v1/publication-batches/${x.id}/approve`, { role: "manager" }); await draw(); } catch (e) { toast(e.message, true); } } }, t("approveManager")) : "",
-            b.can_publish && !x.approved_by_publisher ? el("button", { type: "button", onclick: async () => {
-              try { await post(`/v1/publication-batches/${x.id}/approve`, { role: "publisher" }); await draw(); } catch (e) { toast(e.message, true); } } }, t("approvePublisher")) : ""]))));
+          x.published_at ? el("span", { class: "chip" }, t("batchPublished")) :
+            b.can_publish ? el("button", { type: "button", onclick: async () => {
+              try { await post(`/v1/publication-batches/${x.id}/approve`); await draw(); } catch (e) { toast(e.message, true); } } }, t("batchApprove")) : ""))));
   }
   await draw();
   return box;

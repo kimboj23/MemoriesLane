@@ -1,6 +1,6 @@
 // One saved link (source material): verdict, what was extracted, its capture versions, and every
 // artifact viewable in the browser.
-import { mount, api, el, fmtDate, patch, platformOf, poll, post, projectDot, sec, state, t, toast, verdictChip } from "./core.js";
+import { mount, api, el, fmtDate, patch, platformOf, poll, post, projectDot, sec, state, t, toast, verdictChip, loadVocab, suggestInput } from "./core.js";
 import { incidentPicker } from "./inbox.js";
 import { artifactGrid } from "./viewer.js";
 
@@ -53,7 +53,8 @@ export async function itemPage(view, id) {
         `v${caps.length - i} · ${c.state === "done" ? t("status_")[c.verdict] : t("status_").capturing} · ${fmtDate(c.created_at)}`))) : "";
 
     const note = el("textarea", { rows: "2", value: item.note || "" });
-    const tags = el("input", { value: (item.tags || []).join(", ") });
+    const tagsIn = suggestInput({ value: item.tags || [], multi: true, suggestions: (await loadVocab()).my_item_tags });
+    const tags = tagsIn.input;
 
     mount(view, 
       el("a", { class: "link", href: item.incidents?.length === 1 ? `#/incidents/${item.incidents[0].id}` : "#/inbox" }, t("back")),
@@ -84,7 +85,7 @@ export async function itemPage(view, id) {
                                           tags: tags.value.split(",").map((s) => s.trim()).filter(Boolean) });
           toast(t("saved"));
         } catch (err) { toast(err.message, true); }
-      } }, sec(t("details")), el("label", {}, t("noteLabel"), note), el("label", {}, t("tagsLabel"), tags),
+      } }, sec(t("details")), el("label", {}, t("noteLabel"), note), el("label", {}, t("tagsLabel"), tagsIn.node),
          el("button", { type: "submit" }, t("saveEdits"))));
     lastKey = key();
   }

@@ -41,7 +41,7 @@ Publication is a **signed static feed** (JSON plus files on a public bucket and 
  │ INTERNAL PLATFORM (capture/, private: VPS behind Cloudflare Access/tunnel)                     │
  │  intake queue ─▶ triage (Hộp tiếp nhận) ─▶ incidents / items ─▶ captures (sealed, hashed)      │
  │                        │                         │                                             │
- │                        └──── review & publish (bản công khai, two-person rule) ────────────────┘
+ │                        └──── review & publish (bản công khai, one approval + optional 2nd opinion) ────────────────┘
  └────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -51,7 +51,7 @@ Publication is a **signed static feed** (JSON plus files on a public bucket and 
 2. **Write-only inbound, read-only outbound.** A spoke's credential can create intake records and nothing more. The feed is public data by construction.
 3. **The public version is a separate artifact.** Like the mockup's "chuẩn bị bản công khai riêng", publishing never exposes the internal record. It creates a reviewed projection with its own text, its own location precision and its own cleaned media.
 4. **Minimum data.** No IP addresses (the existing HMAC rate-limit approach), no submitter identity published, optional contact details encrypted. Submitters never become platform accounts unless they choose to.
-5. **Safety before speed.** Nothing is published automatically. Publication needs two different people: a project manager, plus a member entrusted with publication access (§6.1). Sensitive incidents default to coarser locations (§12).
+5. **Safety before speed.** Nothing is published automatically. Publication needs an approval by someone entitled to publish: a project manager, or a member entrusted with publication access (§6.1); a second opinion can be requested when in doubt. Sensitive incidents default to coarser locations (§12).
 6. **Survivable.** The feed is static, signed and mirrorable (existing `mirror/` + Tor onion). A spoke can be rebuilt from it. Withdrawals propagate as tombstones.
 
 ## 5. Inbound: the Intake API
@@ -133,7 +133,7 @@ A **publication** is a reviewed, versioned projection of one hub record:
 
 **Publication access** is a per-project grant ("Quyền công bố"). Owners and managers give it to trusted editors on the project's Access tab, and taking it away takes effect immediately.
 
-**Workflow:** draft (editor) → approved (a manager **and** a different member with publication access; managers can hold the grant too, but one person never supplies both approvals) → published → (corrected = new version) → withdrawn. The reason for each step is in the incident feed. A withdrawal publishes a tombstone, so every spoke and mirror deletes the record.
+**Workflow:** draft (editor) → optional second-opinion request (to people or a role such as @reviewer; the requester then can't publish alone) → approved by one entitled person (a manager or a member with publication access) → published → (corrected = new version) → withdrawn. The reason for each step is in the incident feed. A withdrawal publishes a tombstone, so every spoke and mirror deletes the record.
 
 ### 6.2 The feed
 
@@ -203,7 +203,7 @@ Contributor files live in `intake_files`, not as capture artifacts, and cleaned 
 | Spoke compromised | Its key can only create intake records; it holds no internal data; rotate the key; per-source quotas cap flooding |
 | Feed tampered (or a hostile mirror) | Ed25519-signed index; spokes and readers verify; files are content-addressed |
 | De-anonymising contributors | No IPs; no accounts needed; contact sealed to the hub; EXIF/GPS stripped from public files; no contributor names in the feed |
-| Exposing people in posts | Public version written separately; original URL shown by default but can be withheld per record; optional blurring; two-person approval |
+| Exposing people in posts | Public version written separately; original URL shown by default but can be withheld per record; optional blurring; an entitled approver, and a second opinion when in doubt |
 | Exposing locations | Exact location stays internal; published precision follows the policy in §12 and is snapped deterministically, never jittered |
 | Signing key stolen | Two-tier keys (§13): the online key expires and can be revoked by the offline root |
 | Malicious uploads | Quarantine, type sniffing, re-encoding, optional ClamAV; never served from the hub's own origin |
@@ -232,7 +232,7 @@ Contributor files live in `intake_files`, not as capture artifacts, and cleaned 
 | # | Question | Decision | Effect on the design |
 |---|---|---|---|
 | 1 | Where moderation lives | **In the hub only** | The spokes' moderation screens retire (§5.4.6) |
-| 2 | Publication approval | **A manager plus any member entrusted with publication access**, two different people | New per-project grant `can_publish` (§6.1, §7) |
+| 2 | Publication approval | ~~A manager plus a member with publication access, two people~~ → **revised 2026-10-19: one approval** by a manager or a member with publication access, with an optional **second-opinion request** (the team is small; agility with a safety valve) | Per-project grant `can_publish` (§6.1, §7); migration 007 |
 | 3 | Location precision policy | **The starting policy in §12.4, accepted** | Defaults and override rules as in the table; snapping, never jitter (§12.3) |
 | 4 | Original URLs shown publicly by default | **Yes** | Shown unless the reviewer withholds it for a record (§6.1) |
 | 5 | Feed hosting and signing key | **B2** (behind Cloudflare); **option C**: offline root key + short-lived online key | §6.2, §13 |
@@ -300,7 +300,7 @@ Notes specific to Vietnam:
 | Online-only events (account restrictions, takedowns) | `none` | `province` if the person has publicly said where they are |
 | Where submitters or witnesses are | never published | nobody |
 
-Anyone drafting a public version can always choose **coarser** without approval. **Finer** than the default needs both approvers and a recorded reason. Since publication already needs two people, this adds no extra step, only a visible justification.
+Anyone drafting a public version can always choose **coarser** without approval. **Finer** than the default needs a recorded reason, visible to whoever approves (ask for a second opinion when unsure).
 
 **Decided 2026-10-18:** this table is the policy. The population rule and the "exact not recorded" option were skipped.
 
@@ -340,7 +340,7 @@ All five phases of §10, on branch `feat/capture-platform`.
 |---|---|---|
 | Intake API, sources, triage | `capture/memlane_capture/intake.py`, UI Hộp thư → **Cộng đồng** | The team's saved links and community submissions share one inbox, filtered by source (Tất cả / Nội bộ / Cộng đồng, plus "Cần xử lý") |
 | Uploads | `intake.py` (sniffing, storage), `derive.py` (clean copies) | No ClamAV yet; PDFs and text are reviewed internally, never published |
-| Public versions, two approvals, batches | `publish.py`, UI "Bản công khai" | Policy enforced by `geo.py`; the preview is the exact record |
+| Public versions, approval and second opinions, batches | `publish.py`, UI "Bản công khai" | Policy enforced by `geo.py`; the preview is the exact record |
 | Feed and keys | `feed.py`, `feedkeys.py` | Local dir (dev) or B2 (`FEED_STORE=s3`). Index-only (no `changes/` files: records are fetched only when their hash changes) |
 | Community map | `backend/hub.js`, `backend/routes/hub.js`, `app/*.jsx` | Off unless `HUB_*` is set; `PUBLIC_SOURCE` = db / both / feed |
 | Migration | `backend/scripts/export-to-hub.js` | Legacy memories published as one batch; cases and archives for review |

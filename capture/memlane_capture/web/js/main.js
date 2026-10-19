@@ -74,6 +74,7 @@ function renderShell() {
     el("a", { href: "#/projects" }, t("navProjects")),
     isAdmin() ? el("a", { href: "#/admin" }, t("admin")) : "");
   $("quick-save").textContent = "+ " + t("saveLink");
+  $("quick-save").title = state.lang === "vi" ? "Lưu một liên kết vào kho (từ bất kỳ trang nào)" : "Save a link to the archive (from any page)";
   $("bell").title = t("notifications");
   $("connect-title").textContent = t("connectTitle");
   $("connect-help").textContent = t("connectHelp");
@@ -128,6 +129,11 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
   window.addEventListener("hashchange", route);
+  // Date fields open their calendar when clicked anywhere, not only on the small icon.
+  document.addEventListener("click", (e) => {
+    const d = e.target.closest?.('input[type="date"]');
+    if (d && !d.disabled && !d.readOnly) { try { d.showPicker(); } catch { /* not supported: the icon still works */ } }
+  });
   window.addEventListener("mlc:logout", logout);
   window.addEventListener("mlc:notif", refreshBell);
   if (state.token) connect(state.token).catch(logout); else logout();

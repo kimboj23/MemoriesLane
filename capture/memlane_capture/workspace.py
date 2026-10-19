@@ -423,8 +423,8 @@ async def get_incident(incident_id: str, request: Request, p: Principal = Depend
                                "summary": (pl.get("title") or pl.get("text") or pl.get("note") or pl.get("url") or "")[:300],
                                "files": await intake_files(conn, k["id"])})
         pub = await (await conn.execute(
-            "SELECT id, public_id, state, version, dirty, approved_by_manager IS NOT NULL AS m,"
-            " approved_by_publisher IS NOT NULL AS pb FROM capture.publications WHERE incident_id = %s",
+            "SELECT id, public_id, state, version, dirty, review_requested_by IS NOT NULL AS rq"
+            " FROM capture.publications WHERE incident_id = %s",
             (incident_id,))).fetchone()
     thumb_by_item = {str(t["item_id"]): artifact_url(t["id"]) for t in thumbs}
     copy_by_item = {str(c["item_id"]): {"state": c["state"], "url": c["copy_url"], "error": c["error"]} for c in copies}
@@ -448,7 +448,7 @@ async def get_incident(incident_id: str, request: Request, p: Principal = Depend
     out["intake"] = intake_out
     out["publication"] = None if not pub else {
         "id": str(pub["id"]), "public_id": pub["public_id"], "state": pub["state"], "version": pub["version"],
-        "dirty": pub["dirty"], "approvals": int(pub["m"]) + int(pub["pb"])}
+        "dirty": pub["dirty"], "review_requested": pub["rq"]}
     return out
 
 
@@ -555,3 +555,42 @@ async def bulk_import(project_id: str, body: ImportIn, request: Request, p: Prin
                                                         rate_limit=False)
                 result["created"].append(incident_id)
     return result
+
+
+# ---- vocabulary: values already used, for suggestion dropdowns -----------------------------------------------
+@router.get("/vocab")
+async def vocab(request: Request, project_id: str | None = None, p: Principal = Depends(current_principal)):
+    """Tags and attribute values already used, so repeated values are picked rather than retyped.
+
+    Incident tags and custom text values come from projects you can see (or just `project_id`). Your own saved
+    links' tags are yours only (never other people's: they are private notes). Public tags come from public
+    versions' drafts in your projects.
+    """
+    cond, args = visible_projects_sql(p, "pr")
+    async with request.app.state.pool.connection() as conn:
+        if project_id:
+            await require_project(conn, p, project_id)
+            cond, args = "pr.id = %s", [project_id]
+        tags = await (await conn.execute(
+            "SELECT DISTINCT t FROM capture.incidents i JOIN capture.projects pr ON pr.id = i.project_id,"
+            f" unnest(i.tags) t WHERE NOT i.deleted AND {cond}"
+            " UNION SELECT DISTINCT t FROM capture.projects pr, unnest(pr.tag_options) t WHERE " + cond,
+            (*args, *args))).fetchall()
+        custom = await (await conn.execute(
+            "SELECT kv.key, kv.value #>> '{}' AS v, count(*) AS n FROM capture.incidents i"
+            " JOIN capture.projects pr ON pr.id = i.project_id, jsonb_each(i.custom) kv"
+            f" WHERE NOT i.deleted AND jsonb_typeof(kv.value) = 'string' AND {cond}"
+            " GROUP BY 1, 2 ORDER BY 3 DESC, 2 LIMIT 2000", tuple(args))).fetchall()
+        mine = await (await conn.execute(
+            "SELECT DISTINCT t FROM capture.items i, unnest(i.tags) t WHERE i.submitted_by = %s",
+            (p.contributor_id,))).fetchall()
+        public = await (await conn.execute(
+            "SELECT DISTINCT t FROM capture.publications pb JOIN capture.projects pr ON pr.id = pb.project_id,"
+            f" jsonb_array_elements_text(coalesce(pb.draft->'tags', '[]')) t WHERE {cond}", tuple(args))).fetchall()
+    by_attr: dict[str, list[str]] = {}
+    for r in custom:
+        if r["v"] and len(r["v"]) <= 200:
+            by_attr.setdefault(r["key"], []).append(r["v"])
+    return {"tags": sorted({r["t"] for r in tags}, key=str.lower), "custom": by_attr,
+            "my_item_tags": sorted({r["t"] for r in mine}, key=str.lower),
+            "public_tags": sorted({r["t"] for r in public}, key=str.lower)}
