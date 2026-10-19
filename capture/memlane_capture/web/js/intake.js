@@ -1,7 +1,7 @@
 // Community submissions forwarded by the public sites (intake.py): their rows in the inbox, the detail page
 // (triage), and the admin's Sources panel.
 // Everything a submitter wrote is hostile text: it is inserted only with el() (textContent), never as HTML.
-import { ago, api, atLeast, copyText, el, fmtDate, isAdmin, loadProjects, modal, mount, patch, post, projectDot, sec, t, toast,
+import { ago, api, atLeast, copyText, el, fmtDate, infoButton, isAdmin, loadProjects, modal, mount, patch, post, projectDot, sec, t, toast,
          verdictChip } from "./core.js";
 import { artifactGrid } from "./viewer.js";
 
@@ -158,12 +158,14 @@ export async function sourcesPanel() {
       for (const kd of KINDS) { const n = projectName(s.routing[kd]) || t("notRoutedShort"); (groups[n] = groups[n] || []).push(t("intakeKinds")[kd].toLowerCase()); }
       return Object.entries(groups).map(([proj, kinds]) => t("srcRouteSentence")(kinds.join(", "), proj)).join(" ");
     };
-    mount(box, sec(t("sources")),
+    const explain = () => [
       el("p", {}, t("srcIntro")),
-      el("div", { class: "src-flow", "aria-label": t("srcFlowLabel") },
-        t("srcFlow").map(([h, p], k) => [k ? el("span", { class: "arrow", "aria-hidden": "true" }, "→") : "",
-          el("div", { class: "box" }, el("strong", {}, h), p)])),
-      el("details", {}, el("summary", {}, t("srcMoreTitle")), el("ul", {}, t("srcMore").map((x) => el("li", {}, x)))),
+      el("h4", {}, t("srcFlowLabel")),
+      el("ol", { class: "steps" }, t("srcFlow").map(([h, p]) => el("li", {}, el("strong", {}, h), el("span", {}, p)))),
+      el("h4", {}, t("srcMoreTitle")),
+      el("ul", {}, t("srcMore").map((x) => el("li", {}, x))),
+      el("h4", {}, t("newSource")), el("p", {}, t("newSourceHelp"))];
+    mount(box, sec([t("sources"), infoButton(t("sources"), explain)]),
       configured ? "" : el("p", { class: "notice" }, t("intakeNotConfigured")), keyBox,
       sources.length ? el("div", { class: "table-wrap" }, el("table", { class: "inc-table" },
         el("thead", {}, el("tr", {}, [[t("srcSite"), t("srcSiteHelp")], [t("routing"), t("routingHelp")], [t("submissionsCount"), t("submissionsHelp")], ["", ""]]
@@ -190,7 +192,7 @@ export async function sourcesPanel() {
         e.preventDefault();
         try { const r = await post("/v1/admin/sources", { slug: slug.value, name: name.value, routing: routingOf(sel) }); await draw(); showKey(r.key); }
         catch (err) { toast(err.message, true); }
-      } }, el("h4", {}, t("newSource")), el("p", { class: "meta" }, t("newSourceHelp")),
+      } }, el("h4", {}, t("newSource")),
         el("div", { class: "row two" }, el("label", {}, t("slug"), slug, el("span", { class: "meta" }, t("slugHelp"))),
           el("label", {}, t("name"), name, el("span", { class: "meta" }, t("srcNameHelp")))),
         el("dl", { class: "kv" }, KINDS.map((kd) => [el("dt", {}, t("intakeKinds")[kd]), el("dd", {}, sel[kd])])),

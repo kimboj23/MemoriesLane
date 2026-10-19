@@ -35,7 +35,7 @@ const VI = {
   details: "Chi tiết", noteLabel: "Ghi chú", tagsLabel: "Chủ đề", saveEdits: "Lưu thay đổi", saved: "Đã lưu.",
   submittedBy: "Người gửi", client: "Gửi từ", fileUnder: "Thuộc các vụ việc", attach: "Gán", detach: "Bỏ gán",
   restrictionNotice: "Thông báo hạn chế của nền tảng", reveal: "Hiện nội dung nhạy cảm",
-  fit: "Vừa khung", actual: "Kích thước thật", close: "Đóng", prev: "‹", next: "›", loading: "Đang tải…",
+  fit: "Vừa khung", actual: "Kích thước thật", close: "Đóng", moreInfo: "Giải thích", prev: "‹", next: "›", loading: "Đang tải…",
   htmlNote: "HTML đã lưu, hiển thị không tải tài nguyên bên ngoài (không chạy script).",
   // incidents (Atlos-style)
   attributes: "Thuộc tính", feed: "Bảng tin", metadata: "Siêu dữ liệu", sourceMaterial: "Tư liệu nguồn",
@@ -215,7 +215,7 @@ const EN = {
   noteLabel: "Note", tagsLabel: "Topics", saveEdits: "Save changes", saved: "Saved.", submittedBy: "Submitted by",
   client: "Sent from", fileUnder: "Incidents using this link", attach: "File", detach: "Unfile",
   restrictionNotice: "Platform restriction notice", reveal: "Show sensitive content", fit: "Fit", actual: "Actual size",
-  close: "Close", prev: "‹", next: "›", loading: "Loading…",
+  close: "Close", moreInfo: "Explanation", prev: "‹", next: "›", loading: "Loading…",
   htmlNote: "Saved HTML, shown without loading anything external (no scripts).",
   attributes: "Attributes", feed: "Feed", metadata: "Metadata", sourceMaterial: "Source material", addMaterial: "+ Add material",
   location: "Location", update: "Update", reasonPh: "Explain the change (optional)", postUpdate: "Post update",
@@ -670,3 +670,9 @@ export function modal(title, body, { wide = false } = {}) {
 }
 
 export function sec(title, ...right) { return el("div", { class: "sec-row" }, el("h3", { class: "sec-head" }, title), ...right); }
+
+// A small ⓘ beside a section title: longer explanations open in a popup instead of filling the page.
+export function infoButton(title, body) {
+  return el("button", { type: "button", class: "info-btn", title: t("moreInfo"), "aria-label": `${t("moreInfo")}: ${title}`,
+    onclick: () => modal(title, el("div", { class: "info-body" }, typeof body === "function" ? body() : body), { wide: true }) }, "i");
+}

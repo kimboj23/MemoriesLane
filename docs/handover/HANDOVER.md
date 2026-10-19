@@ -16,6 +16,7 @@ Newest first. One entry per session that commits: who, which assistant, what cha
 - Local `capture/` stack: 106 unit tests and 8 e2e tests pass, including a new tour test.
 - Chromium screenshots at 1280 and 390 px.
 
+- **Community sites explanation moved into a popup** (ⓘ beside the section title), with the flow shown as numbered steps; the page itself stays compact.
 - **Hub UI cache fix:** Cloudflare kept browsers on the old UI for up to 4 hours after a deploy. Scripts and styles now load from build-versioned URLs (`/app/b/<build>/`).
 
 **Status:** done. Deployed to the demo hub.

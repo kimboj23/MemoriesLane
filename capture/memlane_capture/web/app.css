@@ -316,14 +316,20 @@ input[type=date] { cursor: pointer; }
 .tour-dots span { width: 7px; height: 7px; border-radius: 50%; background: var(--line); }
 .tour-dots span.on { background: var(--accent); width: 18px; border-radius: 4px; }
 .tour-lit { position: relative; z-index: 2001; box-shadow: 0 0 0 3px var(--accent), 0 0 0 8px rgba(37,99,235,.25) !important; border-radius: 8px; }
-/* community sites (sources) explainer */
-.src-flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 6px; margin: 10px 0 14px; }
-.src-flow .box { flex: 1 1 150px; background: var(--soft); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font-size: .86rem; }
-.src-flow .box strong { display: block; margin-bottom: 3px; font-size: .9rem; }
-.src-flow .arrow { align-self: center; color: var(--muted); font-size: 1.2rem; }
+/* numbered steps (explanation popups) */
+.steps { list-style: none; counter-reset: step; padding: 0; margin: 4px 0 8px; }
+.steps li { counter-increment: step; position: relative; padding: 0 0 12px 38px; }
+.steps li::before { content: counter(step); position: absolute; left: 0; top: 0; width: 24px; height: 24px; border-radius: 50%;
+  background: var(--soft); border: 1px solid var(--line); color: var(--accent); font-weight: 700; font-size: .8rem;
+  display: flex; align-items: center; justify-content: center; }
+.steps li:not(:last-child)::after { content: ""; position: absolute; left: 12px; top: 26px; bottom: 2px; border-left: 1px dashed var(--line); }
+.steps strong { display: block; }
+.steps span { color: var(--muted); font-size: .9rem; }
 .src-route { font-size: .84rem; color: var(--muted); margin: 6px 0 0; }
-@media (max-width: 640px) {
-  .src-flow { flex-direction: column; }
-  .src-flow .box { flex: none; }
-  .src-flow .arrow { transform: rotate(90deg); line-height: 1; }
-}
+/* ⓘ beside a section title; the explanation opens in a popup */
+.info-btn { width: 18px; height: 18px; margin-left: 6px; vertical-align: 1px; border-radius: 50%; border: 1.3px solid var(--muted); background: transparent;
+  color: var(--muted); font: italic 700 11px/1 Georgia, serif; cursor: pointer; padding: 0; display: inline-flex; align-items: center; justify-content: center;
+  text-transform: none; letter-spacing: 0; }
+.info-btn:hover, .info-btn:focus-visible { color: var(--accent); border-color: var(--accent); }
+.info-body p, .info-body li { line-height: 1.55; }
+.info-body h4 { margin: 16px 0 6px; }
