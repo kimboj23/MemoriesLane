@@ -61,6 +61,10 @@ def gps_jpeg() -> bytes:
     return buf.getvalue()
 
 
+class StaleIndex(Exception):
+    pass
+
+
 def load_feed(root_pub):
     keys = httpx.get(BASE + "/feed/keys.json").json()
     index = httpx.get(BASE + "/feed/index.json").content
@@ -70,7 +74,10 @@ def load_feed(root_pub):
     idx = json.loads(index)
     recs = {}
     for e in idx["records"]:
-        data = httpx.get(BASE + "/feed/" + e["path"]).content
+        r = httpx.get(BASE + "/feed/" + e["path"])
+        if r.status_code == 404:
+            raise StaleIndex(e["path"])     # the feed moved on two generations while we read; read it again
+        data = r.content
         assert hashlib.sha256(data).hexdigest() == e["sha256"]
         recs[e["public_id"]] = json.loads(data)
     return recs, idx["tombstones"]
@@ -79,7 +86,10 @@ def load_feed(root_pub):
 def wait_for(fn, timeout=90):
     end = time.time() + timeout
     while time.time() < end:
-        v = fn()
+        try:
+            v = fn()
+        except StaleIndex:
+            v = None
         if v:
             return v
         time.sleep(2)
