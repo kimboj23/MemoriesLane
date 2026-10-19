@@ -2,6 +2,19 @@
 
 Newest first. One entry per session that commits: who, which assistant, what changed and why, status, how it was tested, follow-ups with an owner, commit hashes. Details belong in the commit messages. This repo is public; see CLAUDE.md for what must never go here.
 
+## 2026-10-19 (evening) · kimboj23 with Claude Code (Opus 5.5)
+
+**What:**
+- Public versions read the incident's live location, and the precision menu only offers what the policy allows (`26e13c2`).
+- On the map: a receipt-check panel, list ↔ map switching, and the materials panel and area circle removed (`fb02b4b`).
+- Community notes: a published case's submissions are its dots on the map, and a note opens the case (`9b0087d`, `e3a64b0`).
+- Notes and links added to an already-published case join its public version, flagged "unpublished changes" until one approval.
+- Feed records are content-addressed, keeping one previous generation (migration 008).
+
+**Tested:** 106 unit and 7 e2e tests (twice); local map dev setup.
+
+**Follow-ups:** none new; same pending ops.
+
 ## 2026-10-19 (later) · kimboj23 with Claude Code (Opus 5.5)
 
 **What:** changes from the user's hands-on testing.
