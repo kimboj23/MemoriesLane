@@ -25,6 +25,8 @@ const intakeOn = !!(env.HUB_URL && env.HUB_SOURCE && env.HUB_INTAKE_KEY);
 const feedOn = !!(env.HUB_FEED_URL && env.HUB_FEED_ROOT_KEY);
 const PUBLIC_SOURCE = ["db", "both", "feed"].includes(env.PUBLIC_SOURCE) ? env.PUBLIC_SOURCE : "db";
 const PURGE = env.HUB_PURGE_AFTER_FORWARD !== "false";
+// Optional: only these hub collections (project codes), e.g. "KYUC"; empty = everything published.
+const COLLECTIONS = new Set((env.HUB_FEED_COLLECTIONS || "").split(",").map((s) => s.trim()).filter(Boolean));
 const hub = intakeOn ? intakeClient({ baseUrl: env.HUB_URL, source: env.HUB_SOURCE, key: env.HUB_INTAKE_KEY }) : null;
 const feed = feedOn ? feedReader({ feedUrl: env.HUB_FEED_URL, rootPublicKey: env.HUB_FEED_ROOT_KEY }) : null;
 
@@ -310,6 +312,7 @@ async function refreshFeed() {
       cache = records;
       const memories = [], cases = [];
       for (const { record } of records.values()) {
+        if (COLLECTIONS.size && !COLLECTIONS.has(record.collection)) continue;
         if (record.type === "memory") memories.push(memoryRow(record));
         else if (record.type === "incident") {
           const c = caseRow(record);

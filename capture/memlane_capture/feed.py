@@ -70,7 +70,8 @@ def _note(n: dict) -> dict:
             "location": loc, "credit": n.get("credit") or None}
 
 
-def public_record(pub_type: str, public_id: str, version: int, published_at, snap: dict, resolve) -> dict:
+def public_record(pub_type: str, public_id: str, version: int, published_at, snap: dict, resolve,
+                  collection: str | None = None) -> dict:
     """The public JSON for one publication. `resolve(frozen_file) -> {path, sha256, bytes, mime, kind}` gives the
     cleaned copy (None in previews). Only fields listed here ever leave the hub."""
     loc = geo.snap(snap.get("lat"), snap.get("lng"), snap.get("precision") or "none")
@@ -78,7 +79,8 @@ def public_record(pub_type: str, public_id: str, version: int, published_at, sna
         loc["label"] = snap.get("place_label")
     elif snap.get("place_label") and snap.get("precision") != "none":
         loc = {"label": snap["place_label"], "precision": snap.get("precision")}
-    base = {"schema": RECORD_SCHEMA, "type": pub_type, "public_id": public_id, "version": version,
+    # `collection`: the project's code, so each public site shows only its own collections (FEED_COLLECTIONS)
+    base = {"schema": RECORD_SCHEMA, "type": pub_type, "public_id": public_id, "version": version, "collection": collection,
             "published_at": published_at.isoformat() if isinstance(published_at, datetime) else published_at,
             "date": geo.coarsen_date(snap.get("date"), snap.get("date_precision") or "day")
             if snap.get("date") and len(str(snap["date"])) == 10 else
@@ -234,6 +236,7 @@ async def build(pool) -> dict:
             " ORDER BY published_at")).fetchall()
         prev = (await (await conn.execute("SELECT live_paths FROM capture.feed_state WHERE id = 1")).fetchone())["live_paths"]
         records, tombstones, used_files, paths_by_id = [], [], set(), {}
+        codes = {str(r["id"]): r["code"] for r in await (await conn.execute("SELECT id, code FROM capture.projects")).fetchall()}
         for pb in pubs:
             if pb["state"] == "withdrawn":
                 tombstones.append({"type": pb["type"], "public_id": pb["public_id"],
@@ -252,13 +255,14 @@ async def build(pool) -> dict:
                     cleaned[f["source_sha256"]] = {"path": path, "sha256": c["sha256"], "bytes": c["bytes"],
                                                    "mime": c["mime"], "kind": c["kind"]}
             rec = public_record(pb["type"], pb["public_id"], pb["version"], pb["published_at"], pb["published"],
-                                resolve=lambda f, cl=cleaned: cl.get(f["source_sha256"]))
+                                resolve=lambda f, cl=cleaned: cl.get(f["source_sha256"]), collection=codes.get(str(pb["project_id"])))
             data = _dump(rec)
             digest = hashlib.sha256(data).hexdigest()
             # Content-addressed: a new version is a new file, so the previous index still points at intact bytes.
             path = f"records/{pb['public_id']}.{digest[:16]}.json"
             await asyncio.to_thread(store.put, path, data, "application/json")
             records.append({"type": pb["type"], "public_id": pb["public_id"], "version": pb["version"],
+                            "collection": codes.get(str(pb["project_id"])),
                             "updated_at": pb["published_at"].isoformat(), "path": path,
                             "sha256": digest})
             paths_by_id[pb["public_id"]] = [path, *mine]

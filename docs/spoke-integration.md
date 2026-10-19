@@ -174,7 +174,7 @@ Refresh every few minutes. The hub can also nudge you after each build (`FEED_WE
 
 ```json
 {
-  "schema": "memlane-feed-record/1", "type": "incident", "public_id": "hs-7kq2m4x", "version": 2,
+  "schema": "memlane-feed-record/1", "type": "incident", "public_id": "hs-7kq2m4x", "version": 2, "collection": "HSNQ",
   "published_at": "2026-10-19T08:00:00+00:00",
   "title": {"vi": "…", "en": "…"}, "summary": {"vi": "…", "en": null},
   "group": "Hạn chế mạng xã hội", "tags": [], "public_status": "being_verified",
@@ -202,6 +202,8 @@ Refresh every few minutes. The hub can also nudge you after each build (`FEED_WE
 | Incidents | Materials |
 |---|---|
 | `reported`, `being_verified`, `verified` | `archived`, `partially_archived`, `restricted` (the platform withholds it; the notice is a file), `login_wall`, `unavailable` |
+
+`collection` is the hub project the record belongs to (its code). A site shows only its own collections, e.g. Hồ sơ Nhân quyền `FEED_COLLECTIONS=HSNQ`.
 
 ### 3.3 What a site must do with them
 
