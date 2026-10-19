@@ -151,17 +151,32 @@ export async function sourcesPanel() {
     const name = el("input", { required: true, maxlength: "120" });
     const sel = routingSelects();
     const routingOf = (s) => Object.fromEntries(Object.entries(s).map(([kd, n]) => [kd, n.value || null]));
-    mount(box, sec(t("sources")), configured ? "" : el("p", { class: "notice" }, t("intakeNotConfigured")), keyBox,
+    const projectName = (id) => { const p = projects.find((x) => x.id === id); return p ? `${p.code} · ${p.name}` : null; };
+    // One sentence per site: where its submissions go, in plain words.
+    const routeSummary = (s) => {
+      const groups = {};
+      for (const kd of KINDS) { const n = projectName(s.routing[kd]) || t("notRoutedShort"); (groups[n] = groups[n] || []).push(t("intakeKinds")[kd].toLowerCase()); }
+      return Object.entries(groups).map(([proj, kinds]) => t("srcRouteSentence")(kinds.join(", "), proj)).join(" ");
+    };
+    mount(box, sec(t("sources")),
+      el("p", {}, t("srcIntro")),
+      el("div", { class: "src-flow", "aria-label": t("srcFlowLabel") },
+        t("srcFlow").map(([h, p], k) => [k ? el("span", { class: "arrow", "aria-hidden": "true" }, "→") : "",
+          el("div", { class: "box" }, el("strong", {}, h), p)])),
+      el("details", {}, el("summary", {}, t("srcMoreTitle")), el("ul", {}, t("srcMore").map((x) => el("li", {}, x)))),
+      configured ? "" : el("p", { class: "notice" }, t("intakeNotConfigured")), keyBox,
       sources.length ? el("div", { class: "table-wrap" }, el("table", { class: "inc-table" },
-        el("thead", {}, el("tr", {}, [t("name"), t("routing"), t("submissionsCount"), ""].map((h) => el("th", {}, h)))),
+        el("thead", {}, el("tr", {}, [[t("srcSite"), t("srcSiteHelp")], [t("routing"), t("routingHelp")], [t("submissionsCount"), t("submissionsHelp")], ["", ""]]
+          .map(([h, help]) => el("th", { title: help || null }, h)))),
         el("tbody", {}, sources.map((s) => {
           const rs = routingSelects(s.routing);
           for (const n of Object.values(rs)) n.onchange = async () => {
             try { await patch(`/v1/admin/sources/${s.id}`, { routing: routingOf(rs) }); toast(t("saved")); } catch (err) { toast(err.message, true); }
           };
           return el("tr", { class: s.disabled ? "muted" : "" },
-            el("td", {}, s.name, el("div", { class: "meta" }, s.slug)),
-            el("td", {}, el("dl", { class: "kv" }, KINDS.map((kd) => [el("dt", {}, t("intakeKinds")[kd]), el("dd", {}, rs[kd])]))),
+            el("td", {}, s.name, el("div", { class: "meta" }, s.slug), s.disabled ? el("div", { class: "chip" }, t("disabled")) : ""),
+            el("td", {}, el("dl", { class: "kv" }, KINDS.map((kd) => [el("dt", { title: t("kindHelp")[kd] }, t("intakeKinds")[kd]), el("dd", {}, rs[kd])])),
+              el("p", { class: "src-route" }, routeSummary(s))),
             el("td", { class: "small" }, String(s.submissions), s.last_received_at ? el("div", { class: "meta" }, ago(s.last_received_at)) : ""),
             el("td", { class: "row" },
               el("button", { type: "button", class: "link", onclick: async () => {
@@ -175,7 +190,9 @@ export async function sourcesPanel() {
         e.preventDefault();
         try { const r = await post("/v1/admin/sources", { slug: slug.value, name: name.value, routing: routingOf(sel) }); await draw(); showKey(r.key); }
         catch (err) { toast(err.message, true); }
-      } }, el("h4", {}, t("newSource")), el("div", { class: "row two" }, el("label", {}, t("slug"), slug), el("label", {}, t("name"), name)),
+      } }, el("h4", {}, t("newSource")), el("p", { class: "meta" }, t("newSourceHelp")),
+        el("div", { class: "row two" }, el("label", {}, t("slug"), slug, el("span", { class: "meta" }, t("slugHelp"))),
+          el("label", {}, t("name"), name, el("span", { class: "meta" }, t("srcNameHelp")))),
         el("dl", { class: "kv" }, KINDS.map((kd) => [el("dt", {}, t("intakeKinds")[kd]), el("dd", {}, sel[kd])])),
         el("button", { type: "submit" }, t("add"))));
   }

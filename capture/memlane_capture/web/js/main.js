@@ -8,6 +8,7 @@ import { notificationsPage } from "./notifications.js";
 import { adminPage, invitePage } from "./people.js";
 import { projectManagePage, projectsPage } from "./projects.js";
 import { publicationPage } from "./publish.js";
+import { maybeStartTour, tourButton } from "./tour.js";
 
 const ROUTES = [
   [/^#\/incidents\/([\w-]+)$/, (v, m) => incidentPage(v, m[1])],
@@ -79,6 +80,7 @@ function renderShell() {
   $("connect-title").textContent = t("connectTitle");
   $("connect-help").textContent = t("connectHelp");
   $("connect-btn").textContent = t("connect");
+  tourButton();
 }
 
 async function connect(token) {
@@ -92,7 +94,7 @@ async function connect(token) {
   localSet("token", token);
   $("who").textContent = state.me.name;
   $("connect").hidden = true;
-  for (const id of ["logout", "nav", "quick-save", "bell"]) $(id).hidden = false;
+  for (const id of ["logout", "nav", "quick-save", "bell", "tour-btn"]) $(id).hidden = false;
   renderShell();
   // A share target / bookmarklet entry (?url= or ?text=) goes straight to the save sheet.
   const q = new URLSearchParams(location.search);
@@ -103,13 +105,14 @@ async function connect(token) {
   clearInterval(bellTimer);
   bellTimer = setInterval(refreshBell, 30000);
   await route();
+  maybeStartTour();   // first sign-in in this browser: the introduction
 }
 
 function logout() {
   localSet("token", null);
   state.token = null; state.me = null; state.projects = []; state.contributors = [];
   clearInterval(bellTimer);
-  for (const id of ["logout", "nav", "quick-save", "bell"]) $(id).hidden = true;
+  for (const id of ["logout", "nav", "quick-save", "bell", "tour-btn"]) $(id).hidden = true;
   $("who").textContent = "";
   $("view").replaceChildren();
   if (INVITE.test(location.hash.split("?")[0])) { route(); return; }

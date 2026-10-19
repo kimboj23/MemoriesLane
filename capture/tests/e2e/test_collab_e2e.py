@@ -31,6 +31,7 @@ def signed_in(browser, token=TOKEN):
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.goto(BASE + "/app/")
+    page.evaluate("localStorage.setItem('mlc.onboarded', '1')")  # skip the introduction tour
     page.fill("#token", token)
     page.click("#connect-btn")
     expect(page.locator("nav.main")).to_be_visible()
@@ -75,6 +76,7 @@ def test_invite_roles_notifications(browser):
     expect(guest.locator("#new-token")).to_have_text(re.compile(r"^mlc_"))
     guest.get_by_role("button", name="Tiếp tục").click()
     expect(guest.locator("nav.main")).to_be_visible()
+    guest.locator(".tour-card").get_by_role("button", name="Bỏ qua").click()   # a newcomer gets the introduction
     expect(guest.get_by_role("link", name="+ Vụ việc mới")).to_have_count(0)   # viewers can't create
 
     # A viewer can comment; mentioning the owner notifies them.

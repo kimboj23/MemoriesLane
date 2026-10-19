@@ -37,6 +37,7 @@ def connect(page, token=TOKEN):
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.goto(BASE + "/app/")
+    page.evaluate("localStorage.setItem('mlc.onboarded', '1')")  # skip the introduction tour
     page.fill("#token", token)
     page.click("#connect-btn")
     return errors
@@ -54,6 +55,28 @@ def test_bad_token_is_rejected(browser):
     connect(page, "mlc_not-a-real-token")
     expect(page.locator("#connect-error")).to_be_visible()
     expect(page.locator("nav.main")).to_be_hidden()
+
+
+def test_introduction_tour(browser):
+    # First sign-in in a browser opens the tour once; the ⓘ button replays it.
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.goto(BASE + "/app/")
+    page.fill("#token", TOKEN)
+    page.click("#connect-btn")
+    expect(page.locator(".tour-card")).to_be_visible()
+    expect(page.locator(".tour-card p").first).not_to_contain_text("[object")
+    page.keyboard.press("ArrowRight")
+    expect(page.locator("#quick-save")).to_have_class(re.compile("tour-lit"))
+    page.keyboard.press("Escape")
+    expect(page.locator(".tour-wrap")).to_have_count(0)
+    page.reload()
+    expect(page.locator("nav.main")).to_be_visible()
+    expect(page.locator(".tour-wrap")).to_have_count(0)
+    page.click("#tour-btn")
+    expect(page.locator(".tour-card")).to_be_visible()
+    assert not errors, errors
 
 
 def test_project_incident_material_feed_and_viewers(browser):

@@ -2,6 +2,22 @@
 
 Newest first. One entry per session that commits: who, which assistant, what changed and why, status, how it was tested, follow-ups with an owner, commit hashes. Details belong in the commit messages. This repo is public; see CLAUDE.md for what must never go here.
 
+## 2026-10-19 (late night) · kimboj23 with Claude Code (Opus 5.5)
+
+**What:**
+- **Hub onboarding tour:** 9 steps (VI/EN). It opens once after a person's first sign-in in a browser, and the ⓘ button in the top bar replays it.
+- **Admin → Community sites explained:**
+  - a plain intro and a 5-step flow (submit → forward → Inbox · Community → approve → shown);
+  - a collapsible "routing, keys and safety" section;
+  - one sentence per site saying where its submissions go;
+  - help text on the column headers and the "add a site" form.
+
+**Tested:**
+- Local `capture/` stack: 106 unit tests and 8 e2e tests pass, including a new tour test.
+- Chromium screenshots at 1280 and 390 px.
+
+**Status:** done. Deployed to the demo hub.
+
 ## 2026-10-19 (night) · kimboj23 with Claude Code (Opus 5.5)
 
 **What:**

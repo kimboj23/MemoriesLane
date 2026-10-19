@@ -140,6 +140,7 @@ def test_intake_to_feed():
         errors = []
         page.on("pageerror", lambda e: errors.append(str(e)))
         page.goto(BASE + "/app/")
+        page.evaluate("localStorage.setItem('mlc.onboarded', '1')")  # skip the introduction tour
         page.fill("#token", TOKEN)
         page.click("#connect-btn")
         # One inbox, filtered by source: the submission is under "Cộng đồng" and "Tất cả", not "Nội bộ".
