@@ -44,7 +44,6 @@ export async function publicationPage(view, id) {
     const text = (k, rows) => (f[k] = rows ? el("textarea", { rows: String(rows), value: d[k] || "", disabled: !editor })
       : el("input", { value: d[k] || "", disabled: !editor }));
     const select = (k, list, label) => (f[k] = el("select", { disabled: !editor }, opts(list, d[k], label)));
-    const refresh = el("input", { type: "checkbox" });
 
     // materials: include?, show original link?, summary, files
     const mats = (d.materials || []).map((m) => {
@@ -67,6 +66,42 @@ export async function publicationPage(view, id) {
     const chosenCommunity = new Set(isInc ? d.community_files || [] : d.files || []);
     const cfs = communityFiles.map((cf) => ({ cf, box: el("input", { type: "checkbox", checked: chosenCommunity.has(cf.id), disabled: !editor }) }));
 
+    // Location: the internal point comes from the incident (always current) or the submission; here the reviewer
+    // only chooses how it is shown. The menu offers only what the policy allows for the kind of place, so a
+    // choice can't be refused; the reason field appears only when the choice is finer than the default.
+    function locationSection() {
+      const loc = pub.internal_location;
+      const kindSel = f.place_kind = el("select", { disabled: !editor }, opts(PLACE_KINDS, d.place_kind, (v) => t("placeKinds")[v]));
+      const precSel = f.precision = el("select", { disabled: !editor });
+      const reason = f.precision_reason = el("input", { value: d.precision_reason || "", disabled: !editor });
+      const reasonField = field(t("precisionReason"), reason);
+      const fill = (keepCurrent) => {
+        const options = pub.precision_options[kindSel.value] || [];
+        const def = pub.place_kind_defaults[kindSel.value];
+        const cur = keepCurrent && options.some((o) => o.level === d.precision) ? d.precision : def;
+        precSel.replaceChildren(...options.map((o) => el("option", { value: o.level, selected: o.level === cur },
+          t("levels")[o.level] + (o.level === def ? " — " + t("defaultWord") : o.needs_reason ? " — " + t("needsReasonWord") : ""))));
+        sync();
+      };
+      const sync = () => {
+        const o = (pub.precision_options[kindSel.value] || []).find((x) => x.level === precSel.value);
+        reasonField.hidden = !(o && o.needs_reason);
+      };
+      kindSel.onchange = () => fill(false);
+      precSel.onchange = sync;
+      fill(true);
+      return el("div", { class: "stack" },
+        loc && loc.lat != null
+          ? el("p", { class: "meta" }, t("internalLoc"), " ", el("strong", {}, [loc.place, `${loc.lat}, ${loc.lng}`].filter(Boolean).join(" · ")),
+              " — ", loc.from === "incident" ? t("fromIncident") : t("fromSubmission"))
+          : el("p", { class: "notice small" }, t("noLocationNote"), " ",
+              pub.incident_id ? el("a", { href: `#/incidents/${pub.incident_id}` }, t("addLocationOnIncident")) : ""),
+        el("div", { class: "row two" }, field(t("placeKind"), kindSel), field(t("publicPrecision"), precSel)),
+        reasonField,
+        field(t("placeLabel"), text("place_label"), t("placeLabelHelp")),
+        el("p", { class: "meta" }, t("policyNote")));
+    }
+
     const collect = () => {
       const out = {};
       for (const [k, n] of Object.entries(f)) out[k] = n.value.trim() === "" ? null : n.value.trim();
@@ -76,7 +111,6 @@ export async function publicationPage(view, id) {
           show_original_url: r.orig.checked, summary_vi: r.summary.value.trim() || null, summary_en: r.m.summary_en || null,
           files: r.files.filter((x) => x.box.checked).map((x) => x.a.id) }));
         out.community_files = cfs.filter((x) => x.box.checked).map((x) => x.cf.id);
-        out.refresh_location = refresh.checked;
       } else {
         out.files = cfs.filter((x) => x.box.checked).map((x) => x.cf.id);
       }
@@ -102,12 +136,8 @@ export async function publicationPage(view, id) {
            field(t("category"), select("category", ["personal", "news", "community", "event"], (v) => t("cats")[v]))],
       el("div", { class: "row two" }, field(t("publicDate"), (f.date = el("input", { type: "date", value: fullDate(d.date), disabled: !editor }))),
         field(t("datePrecision"), select("date_precision", ["day", "month", "year"], (v) => t("datePrec")[v]))),
-      el("h4", {}, t("location")), el("p", { class: "meta" }, t("policyNote")),
-      el("div", { class: "row two" }, field(t("placeKind"), select("place_kind", PLACE_KINDS, (v) => t("placeKinds")[v])),
-        field(t("publicPrecision"), select("precision", LEVELS, (v) => t("levels")[v]))),
-      field(t("precisionReason"), text("precision_reason")),
-      field(t("placeLabel"), text("place_label"), t("placeLabelHelp")),
-      isInc && editor ? el("label", { class: "check" }, refresh, " ", t("refreshLocation")) : "",
+      el("h4", {}, t("location")),
+      locationSection(),
       field(t("credit"), text("credit")),
       isInc ? [el("h4", {}, t("materialsToShow")), mats.length ? mats.map((r) => r.node) : el("p", { class: "muted" }, t("empty"))] : "",
       cfs.length ? [el("h4", {}, t("communityFiles")), el("p", { class: "meta" }, t("providedByContributor")),
@@ -130,7 +160,9 @@ export async function publicationPage(view, id) {
           rq.to?.length ? el("p", { class: "meta" }, rq.to.map((x) => x.startsWith("@") ? x : "").filter(Boolean).join(", ")) : "",
           rq.note ? el("p", { class: "pre" }, rq.note) : "", mineRequest ? el("p", { class: "meta" }, t("reviewWaiting")) : "",
           mineRequest || pub.can_publish ? el("button", { type: "button", class: "link", onclick: act(() => api(`/v1/publications/${id}/request-review`, { method: "DELETE" })) }, t("cancelReview")) : "") : "",
-        pub.problems.length ? el("div", { class: "notice" }, el("strong", {}, t("problems")), el("ul", {}, pub.problems.map((p) => el("li", {}, p)))) : "",
+        pub.problems.length ? el("div", { class: "notice" }, el("strong", {}, t("problems")),
+          el("ul", {}, pub.problems.map((p) => el("li", {}, problemText(p))))) : "",
+        pub.notices?.length ? el("p", { class: "meta info-note" }, "ℹ ", pub.notices.map((n) => t("noticeCodes")[n.code] || n.message).join(" ")) : "",
         pending ? el("div", { class: "row" },
           pub.can_publish ? el("button", { type: "button", class: "primary", id: "approve-publish", disabled: pub.problems.length > 0 || mineRequest,
             onclick: act(() => post(`/v1/publications/${id}/approve`)) }, t("approvePublish")) : "",
@@ -150,6 +182,12 @@ export async function publicationPage(view, id) {
       el("div", { class: "inc-grid" }, el("div", { class: "inc-main" }, form), side));
   }
   await render();
+}
+
+function problemText(p) {
+  const m = t("problemCodes")[p.code];
+  if (typeof m === "function") return m(p.params || {});
+  return m || p.message || String(p);
 }
 
 // "Ask for a second opinion": a role tag (@reviewer…) and/or people in the project, and what to look at.

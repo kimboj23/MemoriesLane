@@ -31,28 +31,48 @@ PLACE_KINDS: dict[str, dict] = {
 
 
 class PolicyError(ValueError):
-    pass
+    """`code` (+ params) lets the UI say it in the user's language; str() is the English message."""
+
+    def __init__(self, code: str, message: str, **params):
+        super().__init__(message)
+        self.code, self.params = code, params
+
+
+def options(place_kind: str, submitter_max: str | None = None, submitter_allows_exact: bool = False) -> list[dict]:
+    """The precision levels a reviewer may pick for this kind of place, finest first: [{level, needs_reason}].
+    The UI offers only these, so a policy error can't happen by choosing from the menu."""
+    rule = PLACE_KINDS.get(place_kind)
+    if not rule:
+        return []
+    out = []
+    for lvl in LEVELS:
+        try:
+            check(place_kind, lvl, "x", submitter_max, submitter_allows_exact)
+        except PolicyError:
+            continue
+        out.append({"level": lvl, "needs_reason": RANK[lvl] < RANK[rule["default"]]})
+    return out
 
 
 def check(place_kind: str, precision: str, reason: str | None = None, submitter_max: str | None = None,
           submitter_allows_exact: bool = False) -> None:
     """Raise PolicyError if `precision` isn't allowed for this kind of place."""
     if place_kind not in PLACE_KINDS:
-        raise PolicyError(f"unknown place kind {place_kind!r}")
+        raise PolicyError("unknown_kind", f"unknown place kind {place_kind!r}")
     if precision not in RANK:
-        raise PolicyError(f"unknown precision {precision!r}")
+        raise PolicyError("unknown_precision", f"unknown precision {precision!r}")
     # The submitter's choice is a ceiling: never finer than what they agreed to.
     if submitter_max and RANK[precision] < RANK[submitter_max]:
-        raise PolicyError(f"the submitter asked for no finer than {submitter_max}")
+        raise PolicyError("submitter_ceiling", f"the submitter asked for no finer than {submitter_max}", max=submitter_max)
     rule = PLACE_KINDS[place_kind]
     if RANK[precision] >= RANK[rule["default"]]:
         return
     if precision not in rule["finer"]:
-        raise PolicyError(f"{place_kind}: {precision} is finer than allowed (at most {rule['default']})")
+        raise PolicyError("not_allowed", f"{place_kind}: {precision} is finer than allowed (at most {rule['default']})", max=rule["default"])
     if place_kind == "memory" and not submitter_allows_exact:
-        raise PolicyError("memory: finer than ward only if the submitter allowed an exact location")
+        raise PolicyError("needs_consent", "memory: finer than ward only if the submitter allowed an exact location")
     if not (reason or "").strip():
-        raise PolicyError(f"{place_kind}: {precision} is finer than the default {rule['default']}; give a reason")
+        raise PolicyError("needs_reason", f"{place_kind}: {precision} is finer than the default {rule['default']}; give a reason", default=rule["default"])
 
 
 def snap(lat: float | None, lng: float | None, precision: str) -> dict | None:

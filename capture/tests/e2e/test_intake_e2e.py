@@ -191,8 +191,18 @@ def test_intake_to_feed():
     wait_for(lambda: api("GET", f"/v1/incidents/{incident_id}")[1]["material"][0]["status"] in ("complete", "partial"))
     s, pub = api("POST", f"/v1/incidents/{incident_id}/publication")
     assert pub["draft"]["precision"] == "ward" and "10.7769" not in json.dumps(pub["preview"])
-    s, pub = api("PATCH", f"/v1/publications/{pub['id']}", {"precision": "exact"})
-    assert pub["problems"]
+    # The location is the incident's current one, read live: moving it on the incident moves the draft too, and
+    # an incident without a location is published without a map point (a notice, not an error).
+    assert pub["internal_location"]["lat"] == 10.7769
+    api("PATCH", f"/v1/incidents/{incident_id}", {"lat": None, "lng": None})
+    s, pub = api("GET", f"/v1/publications/{pub['id']}")
+    assert pub["internal_location"]["lat"] is None and pub["problems"] == [] and pub["notices"][0]["code"] == "no_location"
+    api("PATCH", f"/v1/incidents/{incident_id}", {"lat": 10.7769, "lng": 106.7009})
+    s, pub = api("GET", f"/v1/publications/{pub['id']}")
+    assert pub["internal_location"]["lat"] == 10.7769 and pub["notices"] == [] and pub["preview"]["location"]["precision"] == "ward"
+    assert [o["level"] for o in pub["precision_options"]["private_city"]] == ["ward", "province", "none"]
+    s, pub = api("PATCH", f"/v1/publications/{pub['id']}", {"precision": "exact"})     # not offered by the menu; still refused
+    assert pub["problems"][0]["code"] == "not_allowed"
     assert api("POST", f"/v1/publications/{pub['id']}/approve", token=pubr["token"])[0] == 422
     api("PATCH", f"/v1/publications/{pub['id']}", {"precision": "ward", "place_label": "TP.HCM"})
     assert api("POST", f"/v1/publications/{pub['id']}/approve", token=ed["token"])[0] == 403     # editor without the grant

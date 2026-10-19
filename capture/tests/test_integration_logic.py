@@ -180,3 +180,16 @@ def test_role_tags_in_comments():
     assert find_role_tags("nhờ @quanly và @BienTap, cả @tatca") == {"manager", "editor", "all"}
     assert find_role_tags("email a@reviewer.org, @reviewers, @Lan Anh") == set()     # not tags
     assert find_role_tags("(@nguoiduyet)") == {"reviewer"}
+
+
+def test_precision_menu_offers_only_allowed_levels():
+    lv = lambda kind, **kw: [(o["level"], o["needs_reason"]) for o in geo.options(kind, **kw)]   # noqa: E731
+    assert lv("private_city") == [("ward", False), ("province", False), ("none", False)]       # never finer
+    assert lv("public_gathering")[:2] == [("exact", True), ("street", False)]                  # finer: with a reason
+    assert ("exact", True) not in lv("memory")                                                  # no consent
+    assert ("exact", True) in lv("memory", submitter_allows_exact=True)
+    assert lv("memory", submitter_max="province") == [("province", False), ("none", False)]    # the submitter's ceiling
+    try:
+        geo.check("public_gathering", "exact")
+    except geo.PolicyError as e:
+        assert e.code == "needs_reason" and e.params == {"default": "street"}

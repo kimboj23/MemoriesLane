@@ -72,7 +72,7 @@ class DraftPatch(BaseModel):
     precision: Precision | None = None
     precision_reason: str | None = Field(None, max_length=1000)
     place_label: str | None = Field(None, max_length=200)
-    refresh_location: bool = False          # copy the incident's current (internal) location into the draft
+    refresh_location: bool = False          # ignored: an incident's public version always uses its current location
     materials: list[MaterialDraft] | None = Field(None, max_length=100)
     community_files: list[str] | None = Field(None, max_length=50)    # intake file ids
     files: list[str] | None = Field(None, max_length=10)              # memories: intake file ids
@@ -153,7 +153,6 @@ async def incident_draft(conn, inc: dict) -> dict:
         "date": inc["event_date"].isoformat() if inc["event_date"] else None, "date_precision": "day",
         # Safe default (§12.4 "private home, city"): reviewers pick the kind of place and may go coarser.
         "place_kind": "private_city", "precision": "ward", "precision_reason": None, "place_label": None,
-        "lat": inc["lat"], "lng": inc["lng"],
         "materials": materials, "community_files": [str(f["id"]) for f in files], "credit": None,
     }
 
@@ -181,21 +180,40 @@ def memory_draft(k: dict, file_ids: list[str]) -> dict:
     }
 
 
-def problems(pub_type: str, d: dict) -> list[str]:
-    """What blocks approval of this draft."""
+def problems(pub_type: str, d: dict) -> list[dict]:
+    """What blocks approval: [{code, message, params}]. The UI only offers allowed precisions, so in practice
+    this is a missing title/text, or a reason not yet written for a finer-than-default precision."""
     out = []
     try:
         geo.check(d.get("place_kind") or "", d.get("precision") or "", d.get("precision_reason"),
                   d.get("submitter_max"), bool(d.get("submitter_allows_exact")))
     except geo.PolicyError as e:
-        out.append(str(e))
+        out.append({"code": e.code, "message": str(e), "params": e.params})
     if pub_type == "incident" and not (d.get("title_vi") or "").strip():
-        out.append("a public title (VI) is required")
+        out.append({"code": "title_required", "message": "a public title (VI) is required", "params": {}})
     if pub_type == "memory" and not (d.get("text_vi") or "").strip():
-        out.append("the memory text (VI) is required")
-    if d.get("precision") != "none" and (d.get("lat") is None or d.get("lng") is None):
-        out.append("no internal location to generalise: choose precision 'none' or add a location")
+        out.append({"code": "text_required", "message": "the memory text (VI) is required", "params": {}})
     return out
+
+
+def notices(d: dict) -> list[dict]:
+    """Not blocking, but worth knowing before publishing."""
+    if d.get("precision") != "none" and (d.get("lat") is None or d.get("lng") is None):
+        return [{"code": "no_location", "message": "no location yet: it will be published without a map point"}]
+    return []
+
+
+async def live(conn, r: dict) -> tuple[dict, dict | None]:
+    """The draft with the location it would be published with. An incident's public version always uses the
+    incident's *current* location (never a copy that goes stale); a memory uses the submitted point."""
+    d = dict(r["draft"])
+    if r["incident_id"]:
+        inc = await (await conn.execute("SELECT lat, lng, place FROM capture.incidents WHERE id = %s",
+                                        (r["incident_id"],))).fetchone()
+        d["lat"], d["lng"] = (inc["lat"], inc["lng"]) if inc else (None, None)
+        return d, (None if not inc else {"lat": inc["lat"], "lng": inc["lng"], "place": inc["place"], "from": "incident"})
+    return d, (None if d.get("lat") is None else {"lat": d["lat"], "lng": d["lng"], "place": d.get("place_label"),
+                                                   "from": "submission"})
 
 
 async def freeze(conn, pub_type: str, d: dict) -> dict:
@@ -240,7 +258,8 @@ async def freeze(conn, pub_type: str, d: dict) -> dict:
     return snap
 
 
-def _pub_json(r: dict, role: str | None, publisher: bool, names: dict) -> dict:
+def _pub_json(r: dict, role: str | None, publisher: bool, names: dict, d: dict | None = None) -> dict:
+    d = d if d is not None else r["draft"]
     name = lambda i: names.get(str(i)) if i else None   # noqa: E731
     return {"id": str(r["id"]), "public_id": r["public_id"], "type": r["type"], "state": r["state"],
             "project_id": str(r["project_id"]), "incident_id": str(r["incident_id"]) if r["incident_id"] else None,
@@ -253,7 +272,11 @@ def _pub_json(r: dict, role: str | None, publisher: bool, names: dict) -> dict:
                 "at": r["review_requested_at"], "note": r["review_request_note"], "to": r["review_request_to"]},
             "published_at": r["published_at"], "withdrawn_at": r["withdrawn_at"],
             "withdrawn_reason": r["withdrawn_reason"], "updated_at": r["updated_at"],
-            "problems": problems(r["type"], r["draft"]),
+            "problems": problems(r["type"], d), "notices": notices(d),
+            # what the precision menu may offer for the chosen kind of place (§12.4), so a choice is never refused
+            "precision_options": {k: geo.options(k, d.get("submitter_max"), bool(d.get("submitter_allows_exact")))
+                                  for k in geo.PLACE_KINDS},
+            "place_kind_defaults": {k: v["default"] for k, v in geo.PLACE_KINDS.items()},
             "my_role": role, "can_publish": publisher, "feed_url": settings.feed_public_url or None}
 
 
@@ -274,9 +297,11 @@ async def _out(conn, r: dict, p: Principal, role: str) -> dict:
         rows = await (await conn.execute("SELECT id, display_name FROM capture.contributors WHERE id = ANY(%s::uuid[])",
                                          ([str(i) for i in ids],))).fetchall()
         names = {str(x["id"]): x["display_name"] for x in rows}
-    out = _pub_json(r, role, await entitled(conn, p, r["project_id"]), names)
+    d, internal = await live(conn, r)
+    out = _pub_json(r, role, await entitled(conn, p, r["project_id"]), names, d)
+    out["internal_location"] = internal
     from .feed import public_record     # the same function the feed uses: the preview is what will be published
-    snap = await freeze(conn, r["type"], r["draft"])
+    snap = await freeze(conn, r["type"], d)
     out["preview"] = public_record(r["type"], r["public_id"], r["version"] + 1, None, snap, resolve=None)
     return out
 
@@ -377,7 +402,8 @@ async def _memory_publication(conn, k: dict, p: Principal, batch_id=None) -> dic
 @router.patch("/publications/{pub_id}")
 async def edit_publication(pub_id: str, body: DraftPatch, request: Request, p: Principal = Depends(current_principal)):
     ch = body.model_dump(exclude_unset=True)
-    refresh = ch.pop("refresh_location", False)
+    ch.pop("refresh_location", None)
+    ch.pop("lat", None), ch.pop("lng", None)
     async with request.app.state.pool.connection() as conn:
         async with conn.transaction():
             r, role = await _load(conn, pub_id, p, "editor")
@@ -387,10 +413,6 @@ async def edit_publication(pub_id: str, body: DraftPatch, request: Request, p: P
             if "materials" in ch:
                 for m in d["materials"]:
                     m["public_id"] = m.get("public_id") or new_public_id("mt")
-            if refresh and r["incident_id"]:
-                inc = await (await conn.execute("SELECT lat, lng FROM capture.incidents WHERE id = %s",
-                                                (r["incident_id"],))).fetchone()
-                d["lat"], d["lng"] = inc["lat"], inc["lng"]
             r = await (await conn.execute(
                 "UPDATE capture.publications SET draft = %s, dirty = true, updated_at = now() WHERE id = %s RETURNING *",
                 (Jsonb(d), pub_id))).fetchone()
@@ -398,7 +420,8 @@ async def edit_publication(pub_id: str, body: DraftPatch, request: Request, p: P
 
 
 async def _publish_now(conn, r: dict, p: Principal) -> dict:
-    snap = await freeze(conn, r["type"], r["draft"])
+    d, _ = await live(conn, r)
+    snap = await freeze(conn, r["type"], d)
     r = await (await conn.execute(
         "UPDATE capture.publications SET published = %s, version = version + 1, state = 'published', dirty = false,"
         " published_at = now(), published_by = %s, withdrawn_at = NULL, withdrawn_reason = NULL,"
@@ -423,8 +446,8 @@ async def approve(pub_id: str, request: Request, body: ApproveIn | None = None, 
                 raise HTTPException(409, "nothing new to approve: the current draft is what is published")
             if r["batch_id"] and r["state"] == "draft":
                 raise HTTPException(409, "part of a batch: approve the batch")
-            if probs := problems(r["type"], r["draft"]):
-                raise HTTPException(422, "; ".join(probs))
+            if probs := problems(r["type"], (await live(conn, r))[0]):
+                raise HTTPException(422, "; ".join(x["message"] for x in probs))
             if not await entitled(conn, p, r["project_id"]):
                 raise HTTPException(403, "only managers or members with publication access can publish")
             if r["review_requested_by"] and str(r["review_requested_by"]) == p.contributor_id:
@@ -571,7 +594,7 @@ async def approve_batch(batch_id: str, request: Request, body: ApproveIn | None 
                 raise HTTPException(403, "only managers or members with publication access can publish")
             pubs = await (await conn.execute("SELECT * FROM capture.publications WHERE batch_id = %s AND state = 'draft'",
                                              (batch_id,))).fetchall()
-            bad = [f"{x['public_id']}: {'; '.join(pr)}" for x in pubs if (pr := problems(x["type"], x["draft"]))]
+            bad = [f"{x['public_id']}: {'; '.join(y['message'] for y in pr)}" for x in pubs if (pr := problems(x["type"], x["draft"]))]
             if bad:
                 raise HTTPException(422, "fix these first: " + " | ".join(bad[:10]))
             for x in pubs:
