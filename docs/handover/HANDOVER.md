@@ -2,6 +2,26 @@
 
 Newest first. One entry per session that commits: who, which assistant, what changed and why, status, how it was tested, follow-ups with an owner, commit hashes. Details belong in the commit messages. This repo is public; see CLAUDE.md for what must never go here.
 
+## 2026-10-19 (later) · kimboj23 with Claude Code (Opus 5.5)
+
+**What:** changes from the user's hands-on testing.
+- **Platform:**
+  - one approval publishes, with an optional "Xin ý kiến thứ hai" (second-opinion) request; decision 2 revised;
+  - @role tags in comments (@reviewer, @manager…) and @-autocomplete;
+  - the unfollow error fixed;
+  - "+ Thêm tư liệu" picks from the inbox and from community submissions;
+  - calendar pickers on every date field;
+  - suggestions from values already used;
+  - tooltips on unfamiliar buttons;
+  - no save form on the inbox page.
+- **Community map:** the archive admin is removed, a location-consent choice is added, and the privacy note is corrected.
+
+**Status:** done; still local only (same pending ops).
+
+**Tested:** capture/ stack: 105 unit and 7 e2e tests. Local map dev setup: consent forwarded correctly, published materials served, no page errors.
+
+**Commits:** `d04ca9f`, `e5f5e6d`, `eedac7f`, and this entry.
+
 ## 2026-10-19 · kimboj23 with Claude Code (Opus 5.5)
 
 **What:** built the whole integration design (docs/integration-design.md §14):
