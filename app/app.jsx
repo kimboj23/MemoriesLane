@@ -430,10 +430,10 @@ function App() {
 
   const nearby = React.useMemo(() => {
     if (!placePoint) return [];
-    return scopeMemories.filter((m) => !m.mine)
+    return mapMemories.filter((m) => !m.mine)
       .map((m) => ({ m, d: dist(placePoint, m) })).sort((a, b) => a.d - b.d)
       .slice(0, 3).map((x) => x.m);
-  }, [placePoint, scopeMemories]);
+  }, [placePoint, mapMemories]);
 
   const pickCity = (k) => { setCity(k); setCityOpen(false); setSelected(null); setComposing(false); setPlacePoint(null); setQueryShape(null); setQueryMode(null); if (k === "all") setListView(false); };
   const openCompose = () => { if (city === "all") setCity("hanoi"); setSelected(null); setAboutOpen(false); setLayersOpen(false); setComposing(true); setPlacePoint(null); };
@@ -466,9 +466,10 @@ function App() {
     openMemory(m);
   };
 
+  // "Next" walks among the dots the map shows (this city, the time range and filters), nearest first.
   const wanderNext = () => setSelected((cur) => {
     if (!cur) return cur;
-    const others = memories.filter((x) => x.id !== cur.id);
+    const others = mapMarkers.filter((x) => x.id !== cur.id);
     const near = others.sort((a, b) => dist(cur, a) - dist(cur, b)).slice(0, 6);
     const pick = near[Math.floor(Math.random() * Math.min(4, near.length))] || others[0];
     if (pick && wanderHist.current.length < 100) wanderHist.current.push(cur);
