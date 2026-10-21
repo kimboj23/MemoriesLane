@@ -11,6 +11,7 @@ replayed page's requests from the archive, so opening a capture never contacts t
 The hub links here as  REPLAY_URL/#src=<artifact id>?exp=…&sig=…&url=<page>  (a fragment: never sent to a server).
 """
 
+import hashlib
 import os
 import re
 
@@ -31,7 +32,7 @@ PAGE_CSP = ("default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src
             "img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self'; "
             "frame-src 'self'; worker-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
 
-INDEX = f"""<!doctype html>
+INDEX_TEMPLATE = """<!doctype html>
 <html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MemoryLane · bản lưu tương tác</title>
 <style>
@@ -49,8 +50,8 @@ INDEX = f"""<!doctype html>
 <header><b>Bản lưu tương tác</b>
  <button id="popups" type="button" aria-pressed="true" title="Chỉ ẩn trên màn hình; tệp lưu trữ không thay đổi. Bấm để tải lại trang đúng như đã lưu.">Ẩn cửa sổ bật lên</button><small>Phát lại từ tệp lưu trữ (WACZ) của lần lưu này; không kết nối tới nền tảng.
  Trình phát: <a href="https://github.com/webrecorder/replayweb.page" target="_blank" rel="noopener">ReplayWeb.page</a> {RWP_VERSION} (AGPL-3.0).</small></header>
-<script src="/start.js"></script>
-<script src="/popups.js"></script>
+<script src="/start.js?v={ASSET_V}"></script>
+<script src="/popups.js?v={ASSET_V}"></script>
 </body></html>"""
 
 # The fragment carries the artifact and the page; nothing in it reaches a server log. ReplayWeb.page's app
@@ -141,6 +142,12 @@ POPUPS = r"""
 """
 
 
+# Versioned script URLs: a CDN in front caches .js by URL, so a deploy must change the URL (seen 2026-10-21: the
+# demo kept serving the previous start.js).
+ASSET_V = hashlib.sha256((START + POPUPS + IN_PAGE).encode()).hexdigest()[:10]
+INDEX = INDEX_TEMPLATE.replace("{ASSET_V}", ASSET_V).replace("{RWP_VERSION}", RWP_VERSION).replace("{{", "{").replace("}}", "}")
+
+
 def _secure(resp):
     resp.headers.update({"X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer",
                          "Cross-Origin-Opener-Policy": "same-origin"})
@@ -169,12 +176,16 @@ async def replay_app():
 
 @app.get("/start.js", include_in_schema=False)
 async def start():
-    return _secure(HTMLResponse(START, media_type="text/javascript"))
+    r = HTMLResponse(START, media_type="text/javascript")
+    r.headers["Cache-Control"] = "no-cache"
+    return _secure(r)
 
 
 @app.get("/popups.js", include_in_schema=False)
 async def popups():
-    return _secure(HTMLResponse(POPUPS, media_type="text/javascript"))
+    r = HTMLResponse(POPUPS, media_type="text/javascript")
+    r.headers["Cache-Control"] = "no-cache"
+    return _secure(r)
 
 
 @app.get("/replay/ruffle/ruffle.js", include_in_schema=False)
