@@ -284,6 +284,7 @@ function feedEntry(u, inc, project, names) {
   else if (u.kind === "comment") action = t("feedComment");
   else if (u.kind === "material_added") action = t("feedMaterialAdded");
   else if (u.kind === "material_removed") action = t("feedMaterialRemoved");
+  else if (u.kind === "material_corrected") action = t("feedMaterialCorrected");
   else if (u.kind === "capture") action = t("feedCaptureVerb");
   else if (u.kind === "intake") action = t("feedIntake");
   else if (u.kind === "publication") action = (t("feedPub")[u.new?.action] || u.new?.action || "") + (u.new?.public_id ? ` ${u.new.public_id}` : "");

@@ -105,12 +105,13 @@ export function itemRow(it) {
 }
 
 const SOURCES = ["all", "internal", "community"];
+let filtersOpen = false;   // the filter panel stays as the person left it while they move between filters
 
 export async function inboxPage(view, params) {
   const f = {
     source: SOURCES.includes(params.get("source")) ? params.get("source") : "all",
     todo: params.get("todo") === "1",                                  // needs action: unfiled links, new submissions
-    status: params.get("status") || "", unfiled: params.get("unfiled") === "1", all: params.get("all") === "1",
+    status: params.get("status") || "", unfiled: params.get("unfiled") === "1", all: params.get("all") !== "0",
     project: params.get("project") || "", state: params.get("state") || "new",
   };
   const showInternal = f.source !== "community";
@@ -120,10 +121,10 @@ export async function inboxPage(view, params) {
     const q = new URLSearchParams();
     if (v.source !== "all") q.set("source", v.source);
     if (v.todo) q.set("todo", "1");
+    if (!v.all) q.set("all", "0");
     if (v.source === "internal") {
       if (v.status) q.set("status", v.status);
       if (v.unfiled) q.set("unfiled", "1");
-      if (v.all) q.set("all", "1");
     }
     if (v.source === "community") {
       if (v.project) q.set("project", v.project);
@@ -153,7 +154,7 @@ export async function inboxPage(view, params) {
       ["", ...VERDICTS].map((v) => el("button", { type: "button", "aria-pressed": String(f.status === v), onclick: () => go({ status: v }) },
         v ? t("status_")[v] : t("all"))),
       f.todo ? "" : el("button", { type: "button", "aria-pressed": String(f.unfiled), onclick: () => go({ unfiled: !f.unfiled }) }, t("unfiled")),
-      reviewer ? el("button", { type: "button", "aria-pressed": String(f.all), onclick: () => go({ all: !f.all }) }, t("everyone")) : "");
+      "");
   } else if (f.source === "community") {
     secondary = el("div", { class: "row filters" },
       el("select", { "aria-label": t("project"), onchange: (e) => go({ project: e.target.value }) },
@@ -170,7 +171,7 @@ export async function inboxPage(view, params) {
     const rows = [];
     let busy = false;
     if (showInternal) {
-      const q = new URLSearchParams({ limit: "100", mine: String(!(f.source === "internal" && f.all)) });
+      const q = new URLSearchParams({ limit: "100", mine: String(!(reviewer && f.all)) });
       if (f.source === "internal" && f.status) q.set("status", f.status);
       if (f.todo || (f.source === "internal" && f.unfiled)) q.set("unfiled", "true");
       const { items } = await api("/v1/items?" + q);
@@ -193,7 +194,26 @@ export async function inboxPage(view, params) {
   const onSaved = () => refresh().catch(() => {});
   window.addEventListener("mlc:saved", onSaved);
   onLeave(() => window.removeEventListener("mlc:saved", onSaved));
-  mount(view, el("h1", {}, t("navInbox")), sourceBar, srcHelp, secondary, list, empty);
+  const whose = reviewer ? el("div", { class: "seg", role: "group" },
+    [[true, t("everyone")], [false, t("mine")]].map(([v, label]) =>
+      el("button", { type: "button", "aria-pressed": String(f.all === v), onclick: () => go({ all: v }) }, label))) : "";
+  const on = [
+    f.source !== "all" ? t({ internal: "srcInternal", community: "srcCommunity" }[f.source]) : "",
+    f.todo ? t("needsAction") : "",
+    reviewer && !f.all ? t("mine") : "",
+    f.source === "internal" && f.status ? t("status_")[f.status] : "",
+    f.source === "internal" && f.unfiled ? t("unfiled") : "",
+    f.source === "community" && f.project ? (projects.find((p) => p.id === f.project)?.code || t("unrouted")) : "",
+    f.source === "community" && f.state !== "new" ? t("intakeStates")[f.state] : "",
+  ].filter(Boolean);
+  const panel = el("div", { class: "filter-panel", id: "filter-panel", hidden: !filtersOpen }, sourceBar, srcHelp, whose, secondary);
+  const toggle = el("button", { type: "button", class: "filter-toggle", "aria-expanded": String(filtersOpen), "aria-controls": "filter-panel",
+    title: t("filtersTip"), onclick: () => {
+      filtersOpen = !filtersOpen; panel.hidden = !filtersOpen; toggle.setAttribute("aria-expanded", String(filtersOpen));
+    } }, "☰ ", t("filters"), on.length ? el("span", { class: "count" }, String(on.length)) : "", " ▾");
+  const summary = el("span", { class: "meta" }, [on.join(" · ") || (reviewer ? t("everyone") : ""),
+    newCount ? el("a", { href: "#/inbox?source=community&todo=1" }, " · " + t("newSubs")(newCount)) : ""]);
+  mount(view, el("h1", {}, t("navInbox")), el("div", { class: "row filter-row" }, toggle, summary), panel, list, empty);
   await refresh();
   // A share target / bookmarklet (?url= or ?text=) opens the same save dialog, prefilled, once.
   const shared = params.get("url") || params.get("text");

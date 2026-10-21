@@ -1,6 +1,7 @@
 // One saved link (source material): verdict, what was extracted, its capture versions, and every
 // artifact viewable in the browser.
-import { mount, api, el, fmtDate, patch, platformOf, poll, post, projectDot, sec, state, t, toast, verdictChip, loadVocab, suggestInput } from "./core.js";
+import { mount, api, el, fmtDate, modal, patch, platformOf, poll, post, projectDot, sec, state, t, toast, verdictChip, loadVocab, suggestInput,
+         VERDICTS } from "./core.js";
 import { incidentPicker } from "./inbox.js";
 import { artifactGrid } from "./viewer.js";
 
@@ -13,7 +14,12 @@ export async function itemPage(view, id) {
     const caps = item.captures;
     const cap = caps.find((c) => c.id === versionId) || caps.find((c) => c.state === "done") || caps[0] || {};
     const ex = cap.extracted || {};
-    const status = cap.state === "done" ? cap.verdict : item.status;
+    const machine = cap.state === "done" ? cap.verdict : item.machine_status;
+    // A person's correction (status and metadata) wins; the machine's result stays visible beside it.
+    const corr = item.correction || {};
+    const cf = corr.fields || {};
+    const status = corr.status || machine;
+    const mark = (v) => (v ? [v, " ", el("span", { class: "corr-mark", title: t("correctedTip")(corr.by, fmtDate(corr.at)) }, "✎")] : "");
     const blur = !!item.sensitive;
     const arts = cap.artifacts || [];
     const primary = arts.filter((a) => a.role === "primary");
@@ -23,8 +29,8 @@ export async function itemPage(view, id) {
 
     const kv = el("dl", { class: "kv" });
     const add = (k, v) => { if (v) kv.append(el("dt", {}, k), el("dd", {}, v)); };
-    add(t("author"), ex.author);
-    add(t("published"), fmtDate(ex.published_at) || ex.upload_date);
+    add(t("author"), cf.author ? mark(cf.author) : ex.author);
+    add(t("published"), cf.published_at ? mark(cf.published_at) : fmtDate(ex.published_at) || ex.upload_date);
     add(t("submittedBy"), item.submitted_by?.name);
     add(t("client"), item.client);
     add("URL", item.resolved_url && item.resolved_url !== item.canonical_url ? `${item.canonical_url} → ${item.resolved_url}` : item.canonical_url);
@@ -68,10 +74,13 @@ export async function itemPage(view, id) {
         el("div", { class: "row" }, verdictChip(status), el("span", { class: "badge" }, platformOf(item.canonical_url) || item.platform),
           (item.incidents || []).map((x) => el("a", { class: "badge inc", href: `#/incidents/${x.id}` }, projectDot({ color: x.color }), x.slug)),
           el("span", { class: "spacer" }),
+          !item.can_edit ? "" : el("button", { type: "button", id: "correct", title: t("correctTip"), onclick: () => correctForm(item, ex, machine, async (next) => { item = { ...item, ...next }; await render(); }) }, t("correct")),
           !item.can_edit ? "" : el("button", { type: "button", id: "recapture", disabled: ["queued", "capturing"].includes(item.status),
             onclick: async () => {
               try { await post(`/v1/items/${id}/recapture`); versionId = null; await reload(true); } catch (e) { toast(e.message, true); }
             } }, t("recapture"))),
+        corr.status ? el("p", { class: "meta" }, t("statusCorrected")(t("status_")[machine] || machine || "—", corr.by, fmtDate(corr.at)),
+          corr.reason ? [" · ", el("em", {}, corr.reason)] : "") : "",
         el("h1", {}, item.title || ex.title || item.canonical_url),
         el("a", { class: "url", href: item.url, target: "_blank", rel: "noopener noreferrer" }, t("openOriginal")),
         item.status === "rate_limited" ? el("p", { class: "notice" },
@@ -79,9 +88,13 @@ export async function itemPage(view, id) {
         cap.verdict_reasons?.length ? [sec(t("reasons")), el("ul", { class: "reasons" }, cap.verdict_reasons.map((r) => el("li", {}, r)))] : "",
         ex.restriction_notice ? el("div", { class: "notice" }, el("strong", {}, t("restrictionNotice")), el("p", {}, ex.restriction_notice)) : "",
         kv,
-        ex.text ? [sec(t("text")), el("div", { class: "text" }, ex.text)] : "",
+        cf.text || ex.text ? [sec(t("text")), el("div", { class: "text" }, cf.text || ex.text), cf.text ? el("p", { class: "meta" }, mark(t("textCorrected"))) : ""] : "",
         versions),
       el("div", { class: "card" }, sec(t("fileUnder")), fileRow),
+      (item.corrections_log || []).length ? el("details", { class: "card" }, el("summary", {}, t("correctionsLog"), ` (${item.corrections_log.length})`),
+        el("ul", { class: "plain" }, item.corrections_log.map((h) => el("li", {}, el("span", { class: "meta" }, `${fmtDate(h.at)} · ${h.by || "—"}: `),
+          Object.entries(h.changes).map(([k, v]) => `${t("corrField")[k] || k}: ${fieldVal(k, v.old)} → ${fieldVal(k, v.new)}`).join("; "),
+          h.reason ? [" · ", el("em", {}, h.reason)] : "")))) : "",
       waybackBlock(),
       primary.length ? [sec(t("content")), artifactGrid(primary, { blur })] : "",
       sec(t("evidence")), artifactGrid(context, { blur }),
@@ -121,4 +134,36 @@ export async function itemPage(view, id) {
   poll(() => {
     if (["queued", "capturing"].includes(item.status) || ["queued", "running"].includes(item.wayback?.state)) reload(false).catch(() => {});
   }, 4000);
+}
+
+const fieldVal = (k, v) => (k === "status" ? t("status_")[v] || v : v) || "—";
+
+// Correct what the machine got wrong. The sealed capture is never changed; this sits beside it, logged.
+function correctForm(item, ex, machine, onDone) {
+  const cf = item.correction?.fields || {};
+  const title = el("input", { maxlength: "500", value: cf.title || "", placeholder: item.title && !cf.title ? item.title : ex.title || "" });
+  const author = el("input", { maxlength: "300", value: cf.author || "", placeholder: ex.author || "" });
+  const date = el("input", { type: "date", value: cf.published_at || "" });
+  const text = el("textarea", { rows: "4", maxlength: "10000", placeholder: (ex.text || "").slice(0, 200) }, cf.text || "");
+  const status = el("select", {},
+    el("option", { value: "" }, t("statusByMachine")(t("status_")[machine] || machine || "—")),
+    VERDICTS.filter((v) => !["capturing", "rate_limited"].includes(v)).map((v) =>
+      el("option", { value: v, selected: item.correction?.status === v }, t("status_")[v])));
+  const reason = el("textarea", { rows: "2", maxlength: "2000", placeholder: t("correctReasonPh") });
+  const close = modal(t("correct"), el("form", { class: "stack", onsubmit: async (e) => {
+    e.preventDefault();
+    if (status.value && status.value !== (item.correction?.status || "") && !reason.value.trim()) { reason.focus(); toast(t("correctReasonNeeded"), true); return; }
+    try {
+      const next = await patch(`/v1/items/${item.id}/corrections`, {
+        title: title.value, author: author.value, published_at: date.value, text: text.value, status: status.value, reason: reason.value });
+      toast(t("saved")); close(); await onDone(next);
+    } catch (err) { toast(err.message, true); }
+  } },
+    el("p", { class: "meta" }, t("correctHelp")),
+    el("label", {}, t("corrField").status, status, el("span", { class: "meta" }, t("statusHelp"))),
+    el("label", {}, t("corrField").title, title),
+    el("div", { class: "row two" }, el("label", {}, t("corrField").author, author), el("label", {}, t("corrField").published_at, date)),
+    el("label", {}, t("corrField").text, text),
+    el("label", {}, t("correctReason"), reason),
+    el("button", { type: "submit", class: "primary" }, t("save"))), { wide: true });
 }

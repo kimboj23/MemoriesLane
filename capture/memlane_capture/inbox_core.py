@@ -16,7 +16,7 @@ from .notify import fan_out
 from .urls import canonicalize, classify, extract_url
 
 ITEM_SELECT = """
-SELECT i.*, c.display_name AS submitted_by_name,
+SELECT i.*, c.display_name AS submitted_by_name, cb.display_name AS corrected_by_name,
        lc.state AS capture_state, lc.verdict, lc.verdict_reasons, lc.extracted, lc.finished_at AS captured_at,
        lc.manifest_sha256, lc.run_after AS retry_at,
        (SELECT coalesce(json_agg(json_build_object(
@@ -26,6 +26,7 @@ SELECT i.*, c.display_name AS submitted_by_name,
           JOIN capture.projects pr ON pr.id = inc.project_id WHERE ii.item_id = i.id) AS incidents
   FROM capture.items i
   LEFT JOIN capture.contributors c ON c.id = i.submitted_by
+  LEFT JOIN capture.contributors cb ON cb.id = i.corrected_by
   LEFT JOIN capture.captures lc ON lc.id = i.latest_capture_id
 """
 
@@ -42,8 +43,13 @@ def item_json(r: dict, p: Principal | None = None, visible_projects: set[str] | 
                  if visible_projects is None or str(x["project_id"]) in visible_projects]
     return {
         "id": str(r["id"]), "url": r["submitted_url"], "canonical_url": r["canonical_url"],
-        "resolved_url": r["resolved_url"], "platform": r["platform"], "kind": r["kind"], "status": r["status"],
-        "title": r["title"], "note": r["note"] if own else None, "case_ref": r["case_ref"] if own else None,
+        "resolved_url": r["resolved_url"], "platform": r["platform"], "kind": r["kind"],
+        # A person's correction wins over the machine's verdict; both are shown (machine_status, correction).
+        "status": r.get("status_override") or r["status"], "machine_status": r["status"],
+        "title": (r.get("corrections") or {}).get("title") or r["title"],
+        "correction": None if not (r.get("status_override") or r.get("corrections")) else {
+            "status": r.get("status_override"), "fields": r.get("corrections") or {}, "reason": r.get("correction_reason"),
+            "by": r.get("corrected_by_name"), "at": r.get("corrected_at")}, "note": r["note"] if own else None, "case_ref": r["case_ref"] if own else None,
         "tags": r["tags"] if own else [], "sensitive": r["sensitive"], "client": r["client"],
         "created_at": r["created_at"],
         "submitted_by": {"id": str(r["submitted_by"]) if r["submitted_by"] else None,

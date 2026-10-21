@@ -20,8 +20,12 @@ Newest first. One entry per session that commits: who, which assistant, what cha
 - A real capture against a local always-429 server: the item shows `rate_limited` with the next try in 30 min, and another queued link on the platform is held back.
 - e2e: 8 passed in 4 of 6 runs; `test_intake_to_feed` failed twice with a bare `assert False` and passed alone (no 429 involved; not investigated).
 
+- **Inbox:** reviewers and admins see the whole team's links by default ("Của tôi" narrows it); all filters sit behind one "Bộ lọc" button.
+- **Corrections:** "Sửa thông tin" on a link: status (dropdown), title, author, post date, text, with a reason. Kept beside the sealed capture and logged. Migration `010_item_corrections.sql`.
+- **Facebook "removed" mislabel:** logged out, Facebook's "may have been removed" (and a 404) now gives `walled` with an explanation, and the embed uses the post URL instead of the share link.
+
 **Follow-ups:**
-- The `feat/intake-references` branch also has a `009_` migration: rename it to `010_` when rebasing. Owner: kimboj23.
+- The `feat/intake-references` branch also has a `009_` migration: rename it to `011_` when rebasing. Owner: kimboj23.
 - Capture egress is still the root cause (pending ops). Owner: maintainers.
 
 ## 2026-10-19 (late night) · kimboj23 with Claude Code (Opus 5.5)

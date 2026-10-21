@@ -142,7 +142,8 @@ async def incident_draft(conn, inc: dict) -> dict:
     """A first draft from an incident. Nothing internal is copied into public text except the description,
     which the reviewers rewrite; the internal 'place' text is never copied (it can be an address)."""
     items = await (await conn.execute(
-        "SELECT ii.item_id, c.verdict FROM capture.item_incidents ii JOIN capture.items i ON i.id = ii.item_id"
+        "SELECT ii.item_id, COALESCE(i.status_override, c.verdict) AS verdict FROM capture.item_incidents ii"
+        " JOIN capture.items i ON i.id = ii.item_id"
         " LEFT JOIN capture.captures c ON c.id = i.latest_capture_id WHERE ii.incident_id = %s ORDER BY ii.added_at",
         (inc["id"],))).fetchall()
     materials = []
@@ -198,7 +199,8 @@ async def sync_materials(conn, incident_id, materials: list[dict] | None, exclud
     materials = list(materials or [])
     have = {m["item_id"] for m in materials} | set(excluded or [])
     rows = await (await conn.execute(
-        "SELECT ii.item_id, c.verdict FROM capture.item_incidents ii JOIN capture.items i ON i.id = ii.item_id"
+        "SELECT ii.item_id, COALESCE(i.status_override, c.verdict) AS verdict FROM capture.item_incidents ii"
+        " JOIN capture.items i ON i.id = ii.item_id"
         " LEFT JOIN capture.captures c ON c.id = i.latest_capture_id AND c.state = 'done'"
         " WHERE ii.incident_id = %s ORDER BY ii.added_at", (incident_id,))).fetchall()
     for it in rows:
@@ -301,7 +303,8 @@ async def freeze(conn, pub_type: str, d: dict) -> dict:
         mats = []
         for m in d.get("materials") or []:
             it = await (await conn.execute(
-                "SELECT i.id, i.canonical_url, i.platform, i.kind, i.title, c.verdict, c.finished_at, c.manifest_sha256"
+                "SELECT i.id, i.canonical_url, i.platform, i.kind, COALESCE(i.corrections->>'title', i.title) AS title,"
+                " COALESCE(i.status_override, c.verdict) AS verdict, c.finished_at, c.manifest_sha256"
                 " FROM capture.items i LEFT JOIN capture.captures c ON c.id = i.latest_capture_id WHERE i.id = %s",
                 (m["item_id"],))).fetchone()
             if not it:

@@ -158,6 +158,7 @@ def test_intake_to_feed():
         page.click("#connect-btn")
         # One inbox, filtered by source: the submission is under "Cộng đồng" and "Tất cả", not "Nội bộ".
         page.goto(BASE + "/app/#/inbox")
+        page.locator(".filter-toggle").click()          # the filters sit behind one button
         item = page.get_by_text(f"Tài khoản bị hạn chế {tag}")
         expect(item).to_be_visible()
         page.locator(".source-bar [data-source=internal]").click()

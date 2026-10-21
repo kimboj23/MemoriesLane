@@ -14,6 +14,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from psycopg.types.json import Jsonb
 from pydantic import BaseModel, Field
 
 from . import __version__, intake, people, publish, workspace
@@ -22,7 +23,7 @@ from .config import settings
 from .db import make_pool, migrate
 from .access import project_role, require_project
 from .external import queue_wayback
-from .inbox_core import (ITEM_SELECT, can_see_item, intake_role, item_json, item_json_for, link_item, new_capture,
+from .inbox_core import (ITEM_SELECT, add_update, can_see_item, intake_role, item_json, item_json_for, link_item, new_capture,
                          project_ids, save_link, unlink_item)
 from .serve import stored_response
 from .signing import artifact_url, verify
@@ -136,6 +137,16 @@ class ItemPatch(BaseModel):
     sensitive: bool | None = None
 
 
+class CorrectionIn(BaseModel):
+    """Fields left out stay as they are; an empty string clears a correction (back to what the machine found)."""
+    title: str | None = Field(None, max_length=500)
+    author: str | None = Field(None, max_length=300)
+    published_at: str | None = Field(None, pattern=r"^$|^\d{4}-\d{2}-\d{2}$")
+    text: str | None = Field(None, max_length=10000)
+    status: Literal["", "complete", "partial", "walled", "restricted", "unavailable", "failed"] | None = None
+    reason: str | None = Field(None, max_length=2000)
+
+
 class LinkIn(BaseModel):
     incident_id: str
 
@@ -217,7 +228,7 @@ async def list_items(request: Request, p: Principal = Depends(current_principal)
         where.append("i.submitted_by = %s")
         args.append(p.contributor_id)
     if status:
-        where.append("i.status = %s")
+        where.append("COALESCE(i.status_override, i.status) = %s")   # a person's correction wins
         args.append(status)
     if unfiled:
         where.append("NOT EXISTS (SELECT 1 FROM capture.item_incidents ii WHERE ii.item_id = i.id)")
@@ -233,7 +244,7 @@ async def list_items(request: Request, p: Principal = Depends(current_principal)
 @app.get("/v1/items/{item_id}")
 async def get_item(item_id: str, request: Request, p: Principal = Depends(current_principal)):
     async with request.app.state.pool.connection() as conn:
-        item = await item_json_for(conn, p, await _get_item(conn, item_id, p))
+        item = await _item_out(conn, p, item_id)
         caps = await (await conn.execute(
             "SELECT id, state, verdict, verdict_reasons, attempts, created_at, started_at, finished_at, final_url,"
             " extracted, witnesses, tool_versions, manifest_sha256, error FROM capture.captures WHERE item_id = %s"
@@ -252,6 +263,64 @@ async def get_item(item_id: str, request: Request, p: Principal = Depends(curren
         item["wayback"] = await _wayback(conn, item_id)
         item["can_edit"] = await _can_edit_material(conn, p, await _get_item(conn, item_id, p))
     return item
+
+
+@app.patch("/v1/items/{item_id}/corrections")
+async def correct_item(item_id: str, body: CorrectionIn, request: Request, p: Principal = Depends(current_principal)):
+    """A person corrects what the machine got wrong: the status (a dropdown in the UI) and the metadata. The sealed
+    captures are untouched; the correction is kept beside them, with who, when and why, and every change is logged."""
+    sent = body.model_dump(exclude_unset=True)
+    reason = (sent.pop("reason", None) or "").strip() or None
+    async with request.app.state.pool.connection() as conn:
+        async with conn.transaction():
+            r = await _get_item(conn, item_id, p)
+            if not await _can_edit_material(conn, p, r):
+                raise HTTPException(403, "only the submitter or the project's editors can correct this")
+            fields = dict(r["corrections"] or {})
+            status = r["status_override"]
+            changes = {}
+            if "status" in sent:
+                new = sent.pop("status") or None
+                if new != status:
+                    if new and not reason:
+                        raise HTTPException(422, "say why the status is corrected")
+                    changes["status"] = {"old": status or r["status"], "new": new or r["status"]}
+                    status = new
+            for k, v in sent.items():
+                v = (v or "").strip() or None
+                if v != fields.get(k):
+                    changes[k] = {"old": fields.get(k), "new": v}
+                    if v:
+                        fields[k] = v
+                    else:
+                        fields.pop(k, None)
+            if not changes:
+                return await _item_out(conn, p, item_id)
+            await conn.execute(
+                "UPDATE capture.items SET status_override = %s, corrections = %s, corrected_by = %s, corrected_at = now(),"
+                " correction_reason = COALESCE(%s, correction_reason), updated_at = now() WHERE id = %s",
+                (status, Jsonb(fields), p.contributor_id, reason, item_id))
+            await conn.execute("INSERT INTO capture.item_corrections (item_id, by_id, changes, reason) VALUES (%s,%s,%s,%s)",
+                               (item_id, p.contributor_id, Jsonb(changes), reason))
+            links = await (await conn.execute("SELECT incident_id FROM capture.item_incidents WHERE item_id = %s",
+                                              (item_id,))).fetchall()
+            for link in links:
+                await add_update(conn, incident_id=link["incident_id"], kind="material_corrected", p=p, item_id=item_id,
+                                 new={k: v["new"] for k, v in changes.items()}, body=reason)
+            if links:
+                from .publish import refresh_for_incidents   # a corrected status can change what a public version shows
+                await refresh_for_incidents(conn, [x["incident_id"] for x in links])
+        return await _item_out(conn, p, item_id)
+
+
+async def _item_out(conn, p: Principal, item_id: str) -> dict:
+    out = await item_json_for(conn, p, await _get_item(conn, item_id, p))
+    hist = await (await conn.execute(
+        "SELECT h.at, h.changes, h.reason, c.display_name AS by FROM capture.item_corrections h"
+        " LEFT JOIN capture.contributors c ON c.id = h.by_id WHERE h.item_id = %s ORDER BY h.at DESC LIMIT 50",
+        (item_id,))).fetchall()
+    out["corrections_log"] = [dict(h) for h in hist]
+    return out
 
 
 @app.post("/v1/items/{item_id}/wayback", status_code=202)

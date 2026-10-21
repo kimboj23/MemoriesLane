@@ -334,3 +334,10 @@ input[type=date] { cursor: pointer; }
 .info-btn:hover, .info-btn:focus-visible { color: var(--accent); border-color: var(--accent); }
 .info-body p, .info-body li { line-height: 1.55; }
 .info-body h4 { margin: 16px 0 6px; }
+
+/* a person's correction beside the machine's value */
+.corr-mark { color: var(--accent); cursor: help; font-size: .85em; }
+/* inbox: filters behind one button */
+.filter-row { align-items: center; gap: 10px; flex-wrap: wrap; }
+.filter-toggle .count { margin-left: 6px; background: var(--accent); color: #fff; border-radius: 9px; padding: 0 6px; font-size: .75rem; }
+.filter-panel { border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin: 8px 0 12px; display: grid; gap: 10px; }
