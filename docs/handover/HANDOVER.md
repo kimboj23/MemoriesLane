@@ -33,7 +33,7 @@ Newest first. One entry per session that commits: who, which assistant, what cha
 
 **Follow-ups:**
 - Set a monthly traffic limit in the DataImpulse dashboard. Owner: kimboj23.
-- yt-dlp sends media through the proxy too (most of Instagram's 2.25 MB): download media direct from Meta's file servers after extracting through the proxy. Owner: whoever works on capture/.
+- Done: yt-dlp now downloads media direct from Meta's file servers after extracting through the proxy. Instagram went from 2.25 to 0.59 MB billed, still complete with its video.
 - The `feat/intake-references` branch also has a `009_` migration: rename it to `011_` when rebasing. Owner: kimboj23.
 - Capture egress is still the root cause (pending ops). Owner: maintainers.
 

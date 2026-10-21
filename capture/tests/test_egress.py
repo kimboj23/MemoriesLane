@@ -27,6 +27,20 @@ def test_only_chosen_platforms_and_a_sticky_port_per_capture(monkeypatch):
     assert (pw["username"], pw["password"]) == ("user__cr.vn", "p@ss") and pw["bypass"] == ".cdninstagram.com,.fbcdn.net"
 
 
+def test_media_files_on_metas_file_servers_go_direct():
+    from memlane_capture.witnesses.media import files_bypass_proxy
+    bypass = ".cdninstagram.com,.fbcdn.net"
+    ig = {"formats": [{"url": "https://instagram.fsgn8-4.fna.fbcdn.net/v/t50/video.mp4?oh=x"}],
+          "thumbnails": [{"url": "https://scontent.cdninstagram.com/v/t51/thumb.jpg"}]}
+    assert files_bypass_proxy(ig, bypass)
+    carousel = {"entries": [ig, {"url": "https://instagram.fsgn8-3.fna.fbcdn.net/v/t51/photo.jpg"}]}
+    assert files_bypass_proxy(carousel, bypass)
+    # One file elsewhere (or nothing to fetch): keep the proxy for all of it.
+    assert not files_bypass_proxy({**ig, "url": "https://video.example.org/x.mp4"}, bypass)
+    assert not files_bypass_proxy({}, bypass) and not files_bypass_proxy(ig, "")
+    assert not files_bypass_proxy({"url": "https://evilfbcdn.net/x.mp4"}, bypass)      # a suffix, not a substring
+
+
 def test_all_platforms_when_the_list_is_empty(monkeypatch):
     with_settings(monkeypatch, http_proxy="http://u:p@gw.example.org:823", proxy_platforms="")
     assert egress.for_capture("web").url == "http://u:p@gw.example.org:823"

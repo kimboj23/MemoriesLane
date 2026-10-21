@@ -12,7 +12,9 @@ Two deliberate differences from how yt-dlp ran under ArchiveBox/auto-archiver:
 
 import json
 import os
+import shutil
 import time
+from urllib.parse import urlsplit
 
 import yt_dlp
 
@@ -52,6 +54,33 @@ def _classify_error(msg: str) -> dict:
     if "429" in m or "rate" in m and "limit" in m:
         return {"rate_limited": True}
     return {}
+
+
+def _file_urls(info: dict) -> list[str]:
+    """Every file yt-dlp would fetch for this result: chosen formats, all formats, thumbnails, playlist entries."""
+    out = []
+    for f in (info.get("requested_formats") or []) + (info.get("formats") or []) + (info.get("thumbnails") or []):
+        if f.get("url"):
+            out.append(f["url"])
+    if info.get("url"):
+        out.append(info["url"])
+    for e in info.get("entries") or []:
+        if e:
+            out.extend(_file_urls(e))
+    return out
+
+
+def files_bypass_proxy(info: dict, bypass: str) -> bool:
+    """True if every file is on a host that goes direct (Meta's file servers): then download without the proxy."""
+    suffixes = [s.strip().lstrip(".") for s in bypass.split(",") if s.strip()]
+    urls = _file_urls(info)
+    if not urls or not suffixes:
+        return False
+    for u in urls:
+        host = (urlsplit(u).hostname or "").lower()
+        if not any(host == s or host.endswith("." + s) for s in suffixes):
+            return False
+    return True
 
 
 def _sanitise(info: dict) -> dict:
@@ -125,7 +154,25 @@ def run(url: str, platform: str, kind: str, work_dir: str, proxy: str | None = N
     started = time.monotonic()
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(url, download=True)
+            if proxy and settings.proxy_bypass:
+                # Through the proxy only what the platform limits: the extraction (pages, data). The files are on
+                # Meta's file servers, which serve this server fine: fetch them direct (they are most of the bytes).
+                info = ydl.extract_info(url, download=False)
+                if info and files_bypass_proxy(info, settings.proxy_bypass):
+                    try:
+                        with yt_dlp.YoutubeDL({k: v for k, v in opts.items() if k != "proxy"}) as direct:
+                            info = direct.process_ie_result(info, download=True)
+                        res.signals["media_direct"] = True
+                    except yt_dlp.utils.DownloadError:
+                        # e.g. file URLs tied to the proxy's IP: the evidence matters more than the bytes
+                        shutil.rmtree(out_dir, ignore_errors=True)
+                        os.makedirs(out_dir, exist_ok=True)
+                        info = ydl.process_ie_result(info, download=True)
+                        res.signals["media_direct"] = False
+                elif info:
+                    info = ydl.process_ie_result(info, download=True)
+            else:
+                info = ydl.extract_info(url, download=True)
             info = ydl.sanitize_info(info) if info else {}
     except yt_dlp.utils.DownloadError as e:
         res.error = str(e).replace("\x1b[0;31mERROR:\x1b[0m ", "").strip()[:500]
