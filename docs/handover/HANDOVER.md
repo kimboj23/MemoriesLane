@@ -41,6 +41,7 @@ Newest first. One entry per session that commits: who, which assistant, what cha
   - Not yet reachable on the demo: the viewer needs its own HTTPS hostname.
 
 **Follow-ups:**
+- **Viewer pop-up toggle** ("Ẩn cửa sổ bật lên", on by default): it hides platform login prompts on screen. The script reaches the replayed page through ReplayWeb.page's "ruffle" injection slot. Off, it reloads exactly as served (a preference cookie; that script is `no-store`, because Cloudflare rewrites `no-cache`). The viewer's scripts have versioned URLs because Cloudflare caches `.js`. Checked on the demo on a Threads post.
 - Done: the demo's replay viewer has its own HTTPS hostname (a cloudflared ingress rule and DNS record, config backed up on the server), with REPLAY_URL set in demo hub.env. A Facebook capture replays there over HTTPS with no outside request. The viewer sends `no-transform`, because Cloudflare had injected its analytics beacon.
 - Set a monthly traffic limit in the DataImpulse dashboard. Owner: kimboj23.
 - Done: yt-dlp now downloads media direct from Meta's file servers after extracting through the proxy. Instagram went from 2.25 to 0.59 MB billed, still complete with its video.
