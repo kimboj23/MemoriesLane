@@ -193,7 +193,10 @@ async def in_page(request: Request):
     """The slot ReplayWeb.page injects into replayed pages (IN_PAGE above); empty when "as served" is chosen."""
     off = request.cookies.get("ml_popups") == "off"
     r = HTMLResponse("/* shown as served */" if off else IN_PAGE, media_type="text/javascript")
-    r.headers["Cache-Control"] = "no-cache"
+    # no-store: its body depends on the cookie, and a CDN's browser-cache override (Cloudflare turns no-cache into
+    # max-age=14400) would keep the first version in the browser, so the toggle would do nothing.
+    r.headers["Cache-Control"] = "no-store"
+    r.headers["Vary"] = "Cookie"
     return _secure(r)
 
 

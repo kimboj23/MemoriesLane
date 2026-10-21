@@ -36,6 +36,6 @@ def test_popup_hider_slot():
     # ReplayWeb.page injects /replay/ruffle/ruffle.js into replayed pages: our pop-up hider, unless the viewer chose
     # "as served" (a preference cookie), when nothing of ours runs in the page.
     on = httpx.get(BASE + "/replay/ruffle/ruffle.js", timeout=10)
-    assert on.status_code == 200 and "data-ml-hidden" in on.text and "no-cache" in on.headers["cache-control"]
+    assert on.status_code == 200 and "data-ml-hidden" in on.text and "no-store" in on.headers["cache-control"]
     off = httpx.get(BASE + "/replay/ruffle/ruffle.js", cookies={"ml_popups": "off"}, timeout=10)
     assert off.status_code == 200 and "data-ml-hidden" not in off.text
