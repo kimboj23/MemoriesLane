@@ -115,19 +115,26 @@ IN_PAGE = r"""
       if ((parseInt(cs.zIndex, 10) || 0) > 0 || translucent(cs.backgroundColor)) mark(el);
     });
     [d.documentElement, d.body].forEach(function (el) { el.style.setProperty("overflow", "auto", "important"); });
-    // A dialog's own layer stays behind, empty and transparent, on top of the page: it would catch every scroll and
-    // click (Threads, narrow layout). Let events pass through big fixed/absolute layers with nothing visible left.
-    d.querySelectorAll("body *").forEach(function (el) {
-      if (el.hasAttribute("data-ml-hidden") || el.hasAttribute("data-ml-through")) return;
-      var cs = getComputedStyle(el);
-      if (cs.position !== "fixed" && cs.position !== "absolute") return;
-      var r = el.getBoundingClientRect();
-      if (r.width * r.height <= 0.3 * vw * vh) return;
-      if ((el.innerText || "").trim()) return;           // innerText skips what we hid (display: none)
+    // A dialog's own layer stays behind, empty and transparent, on top of the page: it catches every scroll and
+    // click (Threads, narrow layout: plain divs raised with z-index). Whatever is on top at a few points of the
+    // screen: if it is a big layer with nothing visible in it, let events pass through to the page below.
+    var empty = function (el) {
+      if ((el.innerText || "").trim()) return false;      // innerText skips what we hid (display: none)
       var media = el.querySelectorAll("img, video, canvas, svg, iframe");
-      for (var i = 0; i < media.length; i++) if (media[i].getClientRects().length) return;   // something still shows
-      el.setAttribute("data-ml-through", "");
-      el.style.setProperty("pointer-events", "none", "important");
+      for (var i = 0; i < media.length; i++) if (media[i].getClientRects().length) return false;
+      return true;
+    };
+    [[0.5, 0.5], [0.3, 0.4], [0.7, 0.6], [0.5, 0.85]].forEach(function (pt) {
+      var el = d.elementFromPoint(vw * pt[0], vh * pt[1]), top = null;
+      for (; el && el !== d.body && el !== d.documentElement; el = el.parentElement) {
+        var r = el.getBoundingClientRect();
+        if (r.width * r.height <= 0.3 * vw * vh || !empty(el)) break;
+        top = el;                                          // the outermost big empty layer at this point
+      }
+      if (top && !top.hasAttribute("data-ml-through")) {
+        top.setAttribute("data-ml-through", "");
+        top.style.setProperty("pointer-events", "none", "important");
+      }
     });
   }
   setInterval(function () { try { hide(); } catch (err) {} }, 1500);   // prompts re-open on scroll
