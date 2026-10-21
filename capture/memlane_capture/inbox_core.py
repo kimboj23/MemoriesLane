@@ -18,7 +18,7 @@ from .urls import canonicalize, classify, extract_url
 ITEM_SELECT = """
 SELECT i.*, c.display_name AS submitted_by_name,
        lc.state AS capture_state, lc.verdict, lc.verdict_reasons, lc.extracted, lc.finished_at AS captured_at,
-       lc.manifest_sha256,
+       lc.manifest_sha256, lc.run_after AS retry_at,
        (SELECT coalesce(json_agg(json_build_object(
                  'id', inc.id, 'slug', pr.code || '-' || inc.number, 'description', inc.description,
                  'project_id', pr.id, 'color', pr.color, 'added_at', ii.added_at) ORDER BY ii.added_at), '[]')
@@ -51,6 +51,7 @@ def item_json(r: dict, p: Principal | None = None, visible_projects: set[str] | 
         "incidents": incidents,
         "latest_capture": None if not r.get("capture_state") else {
             "id": str(r["latest_capture_id"]), "state": r["capture_state"], "verdict": r["verdict"],
+            "retry_at": r["retry_at"] if r["capture_state"] == "queued" else None,
             "reasons": r["verdict_reasons"], "extracted": r["extracted"], "captured_at": r["captured_at"],
             "manifest_sha256": r["manifest_sha256"],
         },

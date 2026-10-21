@@ -96,6 +96,7 @@ button.chip { cursor: pointer; }
 .v-restricted { background: var(--orange-bg); color: var(--orange); }
 .v-unavailable { background: var(--violet-bg); color: var(--violet); }
 .v-queued, .v-capturing { background: var(--blue-bg); color: var(--blue); }
+.v-rate_limited { background: var(--yellow-bg); color: var(--yellow); border: 1px dashed var(--yellow); }
 .chip.sens { background: var(--red-bg); color: var(--red); }
 .badge { display: inline-flex; align-items: center; gap: 5px; font-size: .76rem; padding: 2px 8px; border-radius: 6px;
   background: var(--soft); border: 1px solid var(--line); color: var(--muted); }

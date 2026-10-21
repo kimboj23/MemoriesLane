@@ -187,6 +187,12 @@ def judge(platform: str, kind: str, results: dict[str, WitnessResult]) -> Verdic
             return Verdict("unavailable", reasons, merged)
         return Verdict(content, ["primary content captured"] + reasons if content == "complete" else reasons, merged)
 
+    # HTTP 429: the platform refuses requests from this server for now (Meta does this to datacenter addresses).
+    # Nothing was seen, so it is not a result: "failed" with a flag, and the worker retries much later.
+    if (view and view.signals.get("http_status") == 429) or (media and media.signals.get("rate_limited")):
+        return Verdict("failed", reasons + [f"rate-limited by {platform} (HTTP 429): the platform is refusing requests"
+                                            " from this server for now"], merged, rate_limited=True)
+
     if restricted:
         legal = _has(notice + " " + served, LEGAL_PHRASES)
         why = ("restricted after a legal request (platform notice captured)" if legal

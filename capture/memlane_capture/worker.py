@@ -38,6 +38,24 @@ RETURNING c.*
 """
 
 
+# HTTP 429 from a platform: retrying within minutes only prolongs the limit. Wait 30 min, 2 h, 6 h, 12 h, 12 h.
+RATE_LIMIT_BACKOFF_MIN = (30, 120, 360, 720, 720)
+RATE_LIMIT_MAX_ATTEMPTS = 6
+
+
+def retry_plan(verdict, attempts: int, max_attempts: int) -> tuple[bool, int, str]:
+    """(retry?, minutes until the next attempt, item status meanwhile) after attempt number `attempts`."""
+    if verdict.verdict != "failed":
+        return False, 0, verdict.verdict
+    if verdict.rate_limited:
+        if attempts < max(max_attempts, RATE_LIMIT_MAX_ATTEMPTS):
+            return True, RATE_LIMIT_BACKOFF_MIN[min(attempts, len(RATE_LIMIT_BACKOFF_MIN)) - 1], "rate_limited"
+        return False, 0, "failed"
+    if attempts < max_attempts:
+        return True, 2 ** attempts, "queued"
+    return False, 0, "failed"
+
+
 async def recover_stuck(pool) -> int:
     async with pool.connection() as conn:
         cur = await conn.execute(
@@ -61,7 +79,7 @@ async def _claim(pool) -> tuple[dict, dict] | None:
 
 async def _finish(pool, cap: dict, item: dict, outcome) -> None:
     v = outcome.verdict
-    retry = v.verdict == "failed" and cap["attempts"] < cap["max_attempts"]
+    retry, delay, status = retry_plan(v, cap["attempts"], cap["max_attempts"])
     extracted = public_extracted(v.extracted)
     async with pool.connection() as conn:
         async with conn.transaction():
@@ -82,12 +100,19 @@ async def _finish(pool, cap: dict, item: dict, outcome) -> None:
                  outcome.sealed["finished_at"], outcome.final_url, Jsonb(extracted),
                  Jsonb([r.summary() for r in outcome.results.values()]), Jsonb(tool_versions(outcome.results)),
                  None if retry else outcome.sealed["manifest_key"], None if retry else outcome.sealed["manifest_sha256"],
-                 retry, 2 ** cap["attempts"], cap["id"]))
+                 retry, delay, cap["id"]))
             await conn.execute(
                 "UPDATE capture.items SET status = %s, latest_capture_id = %s, resolved_url = COALESCE(%s, resolved_url),"
                 " platform = %s, kind = %s, title = COALESCE(title, %s), updated_at = now() WHERE id = %s",
-                ("queued" if retry else v.verdict, cap["id"], outcome.resolved_url, outcome.platform, outcome.kind,
+                (status, cap["id"], outcome.resolved_url, outcome.platform, outcome.kind,
                  (extracted.get("title") or "")[:300] or None, item["id"]))
+            if retry and v.rate_limited and outcome.platform not in ("web", "document"):
+                # The limit is on this server, not the link: hold the platform's other queued links back too.
+                # (Not for "web": that is every other website, which one site's limit says nothing about.)
+                await conn.execute(
+                    "UPDATE capture.captures c SET run_after = GREATEST(c.run_after, now() + make_interval(mins => %s))"
+                    "  FROM capture.items i WHERE i.id = c.item_id AND c.state = 'queued' AND i.platform = %s"
+                    "   AND c.id <> %s", (delay, outcome.platform, cap["id"]))
             if not retry:
                 # Source material of an incident: the result goes into its feed (as "the system") and
                 # notifies whoever follows the incident.
@@ -103,7 +128,7 @@ async def _finish(pool, cap: dict, item: dict, outcome) -> None:
                     from .publish import refresh_for_incidents
                     await refresh_for_incidents(conn, [x["incident_id"] for x in links])
     log.info("capture %s %s -> %s%s (%s)", cap["id"], item["canonical_url"], v.verdict,
-             " (will retry)" if retry else "", "; ".join(v.reasons)[:200])
+             f" (will retry in {delay} min)" if retry else "", "; ".join(v.reasons)[:200])
 
 
 async def _crash(pool, cap: dict, item: dict, err: str) -> None:

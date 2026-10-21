@@ -57,6 +57,7 @@ See README "Run locally" (root `docker-compose.yml`) and "Deploy" (`docker-compo
 ## Invariants: capture/
 
 - **A wall is never `complete`.** Verdicts come only from `gate.py`. A Wayback link never upgrades a verdict. Wall and unavailable phrases are lowercase English and Vietnamese. Social login-wall phrases are not applied to ordinary web pages, since VN news sites carry their own login boxes.
+- **HTTP 429 is never a result.** A platform refusing this server (Meta does it to datacenter addresses) gives `failed` with `rate_limited` (gate.py). The worker retries after 30 min, 2 h, 6 h and 12 h (`worker.retry_plan`), and holds the platform's other queued links back meanwhile (not for `web`). The item shows `rate_limited` while it waits. Never retry a 429 within minutes: it prolongs the limit.
 - **Platform notices are never content.** "Không có thread", login prompts and restriction messages are excluded from post text (`gate._text_ok`). Content withheld by the platform ("This content isn't available to everyone", Meta's "legal request" notice) is `restricted`, and the notice behind "See why" is captured as evidence.
 - **Captures are versions.** Re-capturing adds a `captures` row; nothing is overwritten. Artifacts are content-addressed by SHA-256 and never modified or deleted in place.
 - **Never store yt-dlp's `.info.json`.** With cookies it can contain the session. Write the sanitised subset instead (`witnesses/media.py`). The output template stays `%(id).80B.%(ext)s`: title-based names broke on long Vietnamese captions.

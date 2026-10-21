@@ -74,6 +74,8 @@ export async function itemPage(view, id) {
             } }, t("recapture"))),
         el("h1", {}, item.title || ex.title || item.canonical_url),
         el("a", { class: "url", href: item.url, target: "_blank", rel: "noopener noreferrer" }, t("openOriginal")),
+        item.status === "rate_limited" ? el("p", { class: "notice" },
+          t("rateLimitedNote")(platformOf(item.canonical_url) || item.platform, fmtDate(item.latest_capture?.retry_at))) : "",
         cap.verdict_reasons?.length ? [sec(t("reasons")), el("ul", { class: "reasons" }, cap.verdict_reasons.map((r) => el("li", {}, r)))] : "",
         ex.restriction_notice ? el("div", { class: "notice" }, el("strong", {}, t("restrictionNotice")), el("p", {}, ex.restriction_notice)) : "",
         kv,

@@ -91,11 +91,12 @@ const VI = {
   wayback: "Internet Archive", waybackShare: "Chia sẻ với Internet Archive",
   waybackHelp: "Tự động gửi các liên kết của dự án lên Wayback Machine (bản sao công khai, độc lập). Tắt cho các dự án nhạy cảm: bản gửi là công khai.",
   sendWayback: "Gửi lên Internet Archive", waybackOpen: "Bản sao Internet Archive ↗",
+  rateLimitedNote: (platform, at) => `${platform} đang tạm từ chối yêu cầu từ máy chủ lưu trữ (HTTP 429, thường do quá nhiều yêu cầu từ địa chỉ máy chủ, không phải do liên kết). Hệ thống sẽ tự thử lại${at ? " lúc " + at : ""}; không cần làm gì.`,
   waybackState: { queued: "Đang chờ gửi", running: "Đang gửi…", done: "Đã có bản sao", error: "Lỗi", skipped: "Bỏ qua" },
   waybackNone: "Chưa gửi lên Internet Archive.",
   confirmWayback: "Gửi liên kết này lên Internet Archive? Bản lưu trên Wayback Machine là CÔNG KHAI và không thể rút lại.",
   alreadyHere: "đã có trong vụ việc này.", alsoIn: "Cũng thuộc:", fileAnother: "Thêm vào vụ việc",
-  status_: { queued: "Đang chờ", capturing: "Đang lưu…", complete: "Đã lưu đầy đủ", partial: "Lưu được một phần",
+  status_: { queued: "Đang chờ", capturing: "Đang lưu…", rate_limited: "Tạm bị giới hạn · sẽ thử lại", complete: "Đã lưu đầy đủ", partial: "Lưu được một phần",
              walled: "Bị chặn đăng nhập", restricted: "Bị hạn chế truy cập", unavailable: "Đã bị gỡ / không khả dụng",
              failed: "Lỗi" },
   incStatus: { to_do: "Cần làm", in_progress: "Đang làm", help_needed: "Cần hỗ trợ", ready_for_review: "Chờ duyệt",
@@ -270,11 +271,12 @@ const EN = {
   wayback: "Internet Archive", waybackShare: "Share with the Internet Archive",
   waybackHelp: "Automatically send this project's links to the Wayback Machine (an independent public copy). Leave off for sensitive projects: submissions are public.",
   sendWayback: "Send to the Internet Archive", waybackOpen: "Internet Archive copy ↗",
+  rateLimitedNote: (platform, at) => `${platform} is temporarily refusing requests from the archive server (HTTP 429, usually too many requests from the server's address, not a problem with the link). It will be tried again automatically${at ? " at " + at : ""}; nothing to do.`,
   waybackState: { queued: "Queued", running: "Submitting…", done: "Copy available", error: "Error", skipped: "Skipped" },
   waybackNone: "Not sent to the Internet Archive.",
   confirmWayback: "Send this link to the Internet Archive? Wayback Machine copies are PUBLIC and cannot be withdrawn.",
   alreadyHere: "is already in this incident.", alsoIn: "Also in:", fileAnother: "Add to incident",
-  status_: { queued: "Queued", capturing: "Capturing…", complete: "Fully saved", partial: "Partly saved",
+  status_: { queued: "Queued", capturing: "Capturing…", rate_limited: "Rate-limited · will retry", complete: "Fully saved", partial: "Partly saved",
              walled: "Blocked by login wall", restricted: "Restricted", unavailable: "Removed / unavailable", failed: "Failed" },
   incStatus: { to_do: "To Do", in_progress: "In Progress", help_needed: "Help Needed", ready_for_review: "Ready for Review",
                completed: "Completed", cancelled: "Cancelled" },
@@ -379,7 +381,7 @@ const STR = { vi: VI, en: EN };
 export const t = (k) => STR[state.lang][k] ?? k;
 export const STATUSES = ["to_do", "in_progress", "help_needed", "ready_for_review", "completed", "cancelled"];
 export const SENSITIVE = ["not_sensitive", "personal_info", "graphic_violence", "deleted_by_source", "deceptive"];
-export const VERDICTS = ["capturing", "complete", "partial", "walled", "restricted", "unavailable", "failed"];
+export const VERDICTS = ["capturing", "rate_limited", "complete", "partial", "walled", "restricted", "unavailable", "failed"];
 export const PALETTE = ["#2563eb", "#7c3aed", "#db2777", "#dc2626", "#ea580c", "#ca8a04", "#16a34a", "#0d9488", "#0891b2", "#475569"];
 
 // ---- DOM -------------------------------------------------------------------

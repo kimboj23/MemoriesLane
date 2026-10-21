@@ -152,3 +152,31 @@ def test_platform_notice_is_never_post_text():
     v = judge("threads", "post", {"view": view(served="", text="Không có thread", embed_text="Không có thread",
                                                 author="@user.d", embed_shot=True)})
     assert v.verdict != "complete"
+
+
+def test_http_429_is_rate_limited_not_a_result():
+    # Meta answers 429 to datacenter addresses: a blank page, nothing seen. Retry later; never a verdict on the link.
+    v = judge("threads", "post", {"view": view(status=429), "media": media(error="HTTP Error 429: Too Many Requests",
+                                                                          rate_limited=True)})
+    assert v.verdict == "failed" and v.rate_limited and "HTTP 429" in v.reasons[-1]
+    v = judge("threads", "post", {"view": view(status=200)})
+    assert v.verdict == "failed" and not v.rate_limited
+
+
+def test_content_beats_a_429_from_one_witness():
+    v = judge("threads", "post", {"view": view(text="Nội dung bài viết đủ dài để tính là có chữ.", author="user.b",
+                                               embed_shot=True, embed_text="user.b Nội dung bài viết đủ dài để tính là có chữ."),
+                                  "media": media(error="HTTP Error 429", rate_limited=True)})
+    assert v.verdict in ("complete", "partial") and not v.rate_limited
+
+
+def test_retry_plan():
+    from memlane_capture.models import Verdict
+    from memlane_capture.worker import retry_plan
+    rl, plain, ok = Verdict("failed", [], {}, rate_limited=True), Verdict("failed", [], {}), Verdict("complete", [], {})
+    assert retry_plan(ok, 1, 3) == (False, 0, "complete")
+    assert [retry_plan(plain, n, 3) for n in (1, 2, 3)] == [(True, 2, "queued"), (True, 4, "queued"), (False, 0, "failed")]
+    # 429: long waits, a few more attempts, and the item says why it is waiting
+    assert [retry_plan(rl, n, 3)[:2] for n in range(1, 7)] == [(True, 30), (True, 120), (True, 360), (True, 720),
+                                                              (True, 720), (False, 0)]
+    assert retry_plan(rl, 1, 3)[2] == "rate_limited" and retry_plan(rl, 6, 3)[2] == "failed"

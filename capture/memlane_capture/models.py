@@ -49,3 +49,4 @@ class Verdict:
     verdict: str                 # complete | partial | walled | unavailable | failed
     reasons: list[str]
     extracted: dict[str, Any]    # merged best-of content across witnesses
+    rate_limited: bool = False   # "failed" because the platform answered HTTP 429: retry later, not a result

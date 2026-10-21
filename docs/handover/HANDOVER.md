@@ -2,6 +2,28 @@
 
 Newest first. One entry per session that commits: who, which assistant, what changed and why, status, how it was tested, follow-ups with an owner, commit hashes. Details belong in the commit messages. This repo is public; see CLAUDE.md for what must never go here.
 
+## 2026-10-21 · kimboj23 with Claude Code (Opus 5.5)
+
+**What:**
+- **Threads links "failed" on the demo hub.** The cause: Threads answers HTTP 429 to the VPS address, for every request (including the home page), and the 2- and 4-minute retries only prolonged the limit.
+- **Rate-limit handling:**
+  - a 429 is now flagged by the gate;
+  - the item shows "Rate-limited · will retry" and a note with the next try;
+  - retries come after 30 min, 2 h, 6 h and 12 h;
+  - the platform's other queued links are held back meanwhile.
+  - Migration `009_rate_limited.sql`.
+- **Local dev hub reset** (`docker compose down -v`). Hundreds of test projects, sites and accounts had made the admin page slow and the e2e tests flaky; that slowness only existed locally.
+  - Recreated: the admin account, KYUC, HSNQ, and the two dev sources at key version 1, so the local spokes' keys still work.
+
+**Tested:**
+- Local `capture/` stack: 109 unit tests pass.
+- A real capture against a local always-429 server: the item shows `rate_limited` with the next try in 30 min, and another queued link on the platform is held back.
+- e2e: 8 passed in 4 of 6 runs; `test_intake_to_feed` failed twice with a bare `assert False` and passed alone (no 429 involved; not investigated).
+
+**Follow-ups:**
+- The `feat/intake-references` branch also has a `009_` migration: rename it to `010_` when rebasing. Owner: kimboj23.
+- Capture egress is still the root cause (pending ops). Owner: maintainers.
+
 ## 2026-10-19 (late night) · kimboj23 with Claude Code (Opus 5.5)
 
 **What:**
