@@ -37,17 +37,21 @@ INDEX = f"""<!doctype html>
 <style>
  html,body{{margin:0;height:100%;font:14px system-ui,sans-serif;background:#f4f6f7;color:#15212b}}
  body{{display:flex;flex-direction:column}}
- header{{padding:8px 14px;border-bottom:1px solid #d3dce2;display:flex;gap:12px;flex-wrap:wrap;align-items:baseline}}
+ header{{padding:8px 14px;border-bottom:1px solid #d3dce2;display:flex;gap:12px;flex-wrap:wrap;align-items:center}}
+ header button{{font:inherit;padding:3px 10px;border-radius:6px;border:1px solid #9fb0bc;background:transparent;color:inherit;cursor:pointer}}
+ header button[aria-pressed="true"]{{background:#1d6b86;border-color:#1d6b86;color:#fff}}
  header b{{font-weight:600}} header small{{color:#586874}}
  replay-web-page{{flex:1;min-height:0}}
  .err{{padding:24px}} a{{color:#1d6b86}}
  @media (prefers-color-scheme: dark){{html,body{{background:#0e151b;color:#e3eaef}} header{{border-color:#2a3843}} header small{{color:#96a6b3}} a{{color:#62b7d4}}}}
 </style></head>
 <body>
-<header><b>Bản lưu tương tác</b><small>Phát lại từ tệp lưu trữ (WACZ) của lần lưu này; không kết nối tới nền tảng.
+<header><b>Bản lưu tương tác</b>
+ <button id="popups" type="button" aria-pressed="true" title="Chỉ ẩn trên màn hình; tệp lưu trữ không thay đổi. Bấm để xem lại trang đúng như đã lưu.">Ẩn cửa sổ bật lên</button><small>Phát lại từ tệp lưu trữ (WACZ) của lần lưu này; không kết nối tới nền tảng.
  Trình phát: <a href="https://github.com/webrecorder/replayweb.page" target="_blank" rel="noopener">ReplayWeb.page</a> {RWP_VERSION} (AGPL-3.0).</small></header>
 <script src="/ui.js"></script>
 <script src="/start.js"></script>
+<script src="/popups.js"></script>
 </body></html>"""
 
 # The fragment carries the artifact and the page; nothing in it reaches a server log.
@@ -73,6 +77,62 @@ APP = """<!doctype html>
 <html class="no-overflow"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ReplayWeb.page</title><script src="./ui.js"></script></head>
 <body><replay-app-main></replay-app-main></body></html>"""
+
+
+# Hide the platform's login prompts in the replayed page, on screen only (the archive is untouched): the same
+# rule the view witness uses before its clean screenshot (witnesses/view.py _STRIP_OVERLAYS_JS), but hiding
+# instead of removing, so "show" restores the page exactly as served. Only documents of the replayed page
+# (/replay/w/…, same origin as this viewer) are touched, never ReplayWeb.page's own interface.
+POPUPS = r"""
+(function () {
+  var on = true, btn = document.getElementById("popups");
+  function replayed(win, out) {
+    var ok = false;
+    try { ok = win.location.pathname.indexOf("/replay/w/") === 0; } catch (e) { return out; }
+    if (ok && win.document && win.document.body) out.push(win.document);
+    for (var i = 0; i < win.frames.length; i++) replayed(win.frames[i], out);
+    return out;
+  }
+  function translucent(c) { var m = /rgba\([^)]*,\s*([\d.]+)\)/.exec(c); return m && +m[1] > 0 && +m[1] < 1; }
+  function mark(el) {
+    if (el.hasAttribute("data-ml-hidden")) return;
+    el.setAttribute("data-ml-hidden", el.style.getPropertyValue("display") || "-");
+    el.style.setProperty("display", "none", "important");
+  }
+  function hide(d) {
+    var w = d.defaultView, vw = w.innerWidth, vh = w.innerHeight;
+    d.querySelectorAll('[role="dialog"], [aria-modal="true"]').forEach(mark);
+    d.querySelectorAll("body *").forEach(function (el) {
+      if (el.hasAttribute("data-ml-hidden")) return;
+      var cs = w.getComputedStyle(el);
+      if (cs.position !== "fixed" && cs.position !== "sticky") return;
+      var r = el.getBoundingClientRect();
+      if (r.width * r.height <= 0.3 * vw * vh) return;
+      if ((parseInt(cs.zIndex, 10) || 0) > 0 || translucent(cs.backgroundColor)) mark(el);
+    });
+    [d.documentElement, d.body].forEach(function (el) {
+      if (!el.hasAttribute("data-ml-overflow")) el.setAttribute("data-ml-overflow", el.style.getPropertyValue("overflow") || "-");
+      el.style.setProperty("overflow", "auto", "important");
+    });
+  }
+  function show(d) {
+    d.querySelectorAll("[data-ml-hidden]").forEach(function (el) {
+      var v = el.getAttribute("data-ml-hidden"); el.removeAttribute("data-ml-hidden");
+      if (v === "-") el.style.removeProperty("display"); else el.style.setProperty("display", v);
+    });
+    d.querySelectorAll("[data-ml-overflow]").forEach(function (el) {
+      var v = el.getAttribute("data-ml-overflow"); el.removeAttribute("data-ml-overflow");
+      if (v === "-") el.style.removeProperty("overflow"); else el.style.setProperty("overflow", v);
+    });
+  }
+  function tick() { if (on) replayed(window, []).forEach(function (d) { try { hide(d); } catch (e) {} }); }
+  btn.addEventListener("click", function () {
+    on = !on; btn.setAttribute("aria-pressed", String(on));
+    if (on) tick(); else replayed(window, []).forEach(function (d) { try { show(d); } catch (e) {} });
+  });
+  setInterval(tick, 1500);   // platforms re-open their prompts on scroll
+})();
+"""
 
 
 def _secure(resp):
@@ -104,6 +164,11 @@ async def replay_app():
 @app.get("/start.js", include_in_schema=False)
 async def start():
     return _secure(HTMLResponse(START, media_type="text/javascript"))
+
+
+@app.get("/popups.js", include_in_schema=False)
+async def popups():
+    return _secure(HTMLResponse(POPUPS, media_type="text/javascript"))
 
 
 @app.get("/ui.js", include_in_schema=False)
