@@ -115,6 +115,20 @@ IN_PAGE = r"""
       if ((parseInt(cs.zIndex, 10) || 0) > 0 || translucent(cs.backgroundColor)) mark(el);
     });
     [d.documentElement, d.body].forEach(function (el) { el.style.setProperty("overflow", "auto", "important"); });
+    // A dialog's own layer stays behind, empty and transparent, on top of the page: it would catch every scroll and
+    // click (Threads, narrow layout). Let events pass through big fixed/absolute layers with nothing visible left.
+    d.querySelectorAll("body *").forEach(function (el) {
+      if (el.hasAttribute("data-ml-hidden") || el.hasAttribute("data-ml-through")) return;
+      var cs = getComputedStyle(el);
+      if (cs.position !== "fixed" && cs.position !== "absolute") return;
+      var r = el.getBoundingClientRect();
+      if (r.width * r.height <= 0.3 * vw * vh) return;
+      if ((el.innerText || "").trim()) return;           // innerText skips what we hid (display: none)
+      var media = el.querySelectorAll("img, video, canvas, svg, iframe");
+      for (var i = 0; i < media.length; i++) if (media[i].getClientRects().length) return;   // something still shows
+      el.setAttribute("data-ml-through", "");
+      el.style.setProperty("pointer-events", "none", "important");
+    });
   }
   setInterval(function () { try { hide(); } catch (err) {} }, 1500);   // prompts re-open on scroll
 })();
