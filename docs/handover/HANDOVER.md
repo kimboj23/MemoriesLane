@@ -31,6 +31,9 @@ Newest first. One entry per session that commits: who, which assistant, what cha
   - Measured on the server through it: Threads complete at 0.16-0.62 MB billed (it got HTTP 429 before), Instagram complete at 2.25 MB.
 - **Headful Chromium** in Xvfb with the genuine user agent; `navigator.webdriver` is false.
 
+- **Decided (WACZ, not built):** record replayable archives from the same browser visit (HAR to WACZ), not a separate browsertrix crawl, which would double paid traffic. The replay viewer goes on its own isolated origin. The capture/README "Not built yet" list is updated.
+- **Team explainer** of the pipeline, published as a private page for the team (owner kimboj23 shares it).
+
 **Follow-ups:**
 - Set a monthly traffic limit in the DataImpulse dashboard. Owner: kimboj23.
 - Done: yt-dlp now downloads media direct from Meta's file servers after extracting through the proxy. Instagram went from 2.25 to 0.59 MB billed, still complete with its video.

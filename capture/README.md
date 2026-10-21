@@ -230,7 +230,9 @@ tests/                      unit tests; e2e/ (Playwright, needs the stack); cana
 
 ## Not built yet (next steps, proposal §9)
 
-- browsertrix-crawler WACZ witness (replayable archive) and a replay viewer
+- a replayable archive (WACZ) per capture, recorded from the visit the view witness already makes (Playwright HAR
+  converted to WACZ), not a second browsertrix visit: no extra paid proxy traffic. Replay viewer (ReplayWeb.page)
+  on its own isolated origin, since replay runs the captured page's scripts (decision 2026-10-21)
 - logged-in sessions per platform (throwaway-account profiles), carousel walk, OCR guard, circuit breaker
 - RFC 3161 / OpenTimestamps on the manifest hash
 - email/Telegram notifications; Atlos API tokens per project
