@@ -36,6 +36,16 @@ services:
     depends_on: { hub-db: { condition: service_healthy } }
     restart: unless-stopped
 
+  # The replay viewer for captures' WACZ (capture/memlane_capture/replay.py): its own origin, no secrets. Needs its
+  # own HTTPS hostname in front (service workers); then set REPLAY_URL in hub.env to that address.
+  hub-replay:
+    build: ../../capture
+    command: ["uvicorn", "memlane_capture.replay:app", "--host", "0.0.0.0", "--port", "8701", "--proxy-headers"]
+    environment: { HUB_INTERNAL_URL: "http://hub-api:8700" }
+    ports: ["127.0.0.1:${REPLAY_PORT:-8704}:8701"]
+    depends_on: [hub-api]
+    restart: unless-stopped
+
   hsnq:
     build: ../../hosonhanquyen
     env_file: ./hsnq.env

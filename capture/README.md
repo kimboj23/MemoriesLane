@@ -125,6 +125,26 @@ docker compose logs -f worker          # what each capture did, and its verdict
 
 Stop with `docker compose down` (`down -v` also wipes the local DB and stored files).
 
+### Replayable archives (WACZ) and the replay viewer
+
+For social posts (`CAPTURE_WACZ_PLATFORMS`, default facebook, instagram, threads, x, tiktok) the view witness
+records its own visit (Playwright HAR) and `wacz.py` turns it into a WACZ: a WARC of every request and response, a
+CDXJ index, the page list, and a hashed datapackage. There's no second visit, so no extra paid proxy traffic. A
+Facebook post is about 10 MB, mostly Facebook's scripts, and recording added no measurable time. It is sealed with
+the capture like any other file (`kind: wacz`, label `web-archive`).
+
+People open it with "Mở bản lưu tương tác ↗" on the link's page. That opens the **replay viewer**
+(`replay.py`, compose service `replay`, port 8701, `REPLAY_URL` in the API), which serves ReplayWeb.page by
+Webrecorder (AGPL-3.0, unmodified, fetched at image build, pinned by version and checksum, not in this repo).
+
+- Replay runs the captured page's own scripts. So the viewer has **its own origin** (another port locally, another
+  hostname when deployed). It holds no token, no cookies and no API.
+- It reaches the WACZ server to server through the hub's signed artifact URL (6 h), which the hub gives only to
+  people who may read the item. The URL travels in the link's fragment, so it never reaches a server log.
+- Its CSP allows only its own origin, and ReplayWeb.page's service worker answers the replayed page's requests from
+  the archive. Checked in a browser: replaying a Facebook post made no request outside the viewer.
+- Service workers need HTTPS or localhost: deploy it on its own HTTPS hostname.
+
 ## Tests
 
 | What | Command | Needs |
@@ -230,9 +250,7 @@ tests/                      unit tests; e2e/ (Playwright, needs the stack); cana
 
 ## Not built yet (next steps, proposal §9)
 
-- a replayable archive (WACZ) per capture, recorded from the visit the view witness already makes (Playwright HAR
-  converted to WACZ), not a second browsertrix visit: no extra paid proxy traffic. Replay viewer (ReplayWeb.page)
-  on its own isolated origin, since replay runs the captured page's scripts (decision 2026-10-21)
+- replayable archives for ordinary web pages (off by default: recording doubled the time on a heavy news homepage)
 - logged-in sessions per platform (throwaway-account profiles), carousel walk, OCR guard, circuit breaker
 - RFC 3161 / OpenTimestamps on the manifest hash
 - email/Telegram notifications; Atlos API tokens per project

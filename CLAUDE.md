@@ -79,6 +79,12 @@ See README "Run locally" (root `docker-compose.yml`) and "Deploy" (`docker-compo
 - **The introduction tour** (`web/js/tour.js`) opens once per browser after sign-in (`localStorage` `mlc.onboarded`) and again from the ⓘ button. Browser e2e tests set `mlc.onboarded` before signing in, or close the tour, or its overlay blocks clicks. When a workflow changes, update the matching tour step (VI and EN).
 - **One capture, one way out** (`egress.py`). Through the proxy, a capture uses one sticky IP for all its requests, and the next capture gets another. Only `CAPTURE_PROXY_PLATFORMS` use it. Meta's file servers go direct, both in the browser (bypass list) and for yt-dlp: it extracts through the proxy, then downloads direct when every file is on those servers, and falls back to the proxy if that's refused. The proxy URL holds credentials: never log it, store it with a capture or return it from the API. Captures record only `egress: proxy|direct`.
 - **The browser says what it is.** Headful Chromium in Xvfb (`CAPTURE_HEADFUL`) sends its genuine Linux user agent, with `--disable-blink-features=AutomationControlled`. Never claim another OS (a Windows UA on Linux is a bot tell). `config.user_agent` (for yt-dlp and link resolution) must match the pinned Chromium's major version: bump it with Playwright. Playwright's driver keeps the environment it started with, so the browser gets `env=dict(os.environ)` (for `DISPLAY`).
+- **Replay runs captured scripts, so only on the replay origin.** WACZ files open only in the replay viewer
+  (`replay.py`, ReplayWeb.page, AGPL-3.0, unmodified, fetched at build and not committed). It is a separate origin
+  with no token, cookies or API, and fetches a WACZ server to server with a hub-signed URL passed in the fragment.
+  Never serve a WACZ for replay from the hub's origin, and never relax the viewer's `connect-src 'self'`.
+- **A WACZ comes from the visit we already make** (Playwright HAR → `wacz.py`), never from a second crawl (it would
+  double paid proxy traffic). It is an extra, sealed with the capture; it never decides a verdict.
 - **Unit tests stay offline.** Anything needing the network goes in `tests/e2e/` or `tests/canary.py`.
 - **Throwaway accounts only** for any cookies or profiles, per [archivebox/THROWAWAY-ACCOUNTS.md](archivebox/THROWAWAY-ACCOUNTS.md), and never committed (`capture/secrets/` and `capture/.env` are gitignored).
 

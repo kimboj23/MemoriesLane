@@ -34,7 +34,14 @@ Newest first. One entry per session that commits: who, which assistant, what cha
 - **Decided (WACZ, not built):** record replayable archives from the same browser visit (HAR to WACZ), not a separate browsertrix crawl, which would double paid traffic. The replay viewer goes on its own isolated origin. The capture/README "Not built yet" list is updated.
 - **Team explainer** of the pipeline, published as a private page for the team (owner kimboj23 shares it).
 
+- **Replayable archives built:** a WACZ for social posts from the visit we already make, opened in a new replay
+  viewer on its own origin.
+  - Locally: a Facebook post replays from the archive with no outside request.
+  - The proxy credentials never reach the archive (tested through a local proxy that requires a fake login).
+  - Not yet reachable on the demo: the viewer needs its own HTTPS hostname.
+
 **Follow-ups:**
+- A hostname for the demo's replay viewer (cloudflared ingress + DNS), then REPLAY_URL in demo hub.env. Owner: kimboj23 to approve.
 - Set a monthly traffic limit in the DataImpulse dashboard. Owner: kimboj23.
 - Done: yt-dlp now downloads media direct from Meta's file servers after extracting through the proxy. Instagram went from 2.25 to 0.59 MB billed, still complete with its video.
 - The `feat/intake-references` branch also has a `009_` migration: rename it to `011_` when rebasing. Owner: kimboj23.
