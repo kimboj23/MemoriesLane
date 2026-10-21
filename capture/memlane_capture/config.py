@@ -33,6 +33,18 @@ class Settings:
     poll_seconds: float = field(default_factory=lambda: float(os.environ.get("POLL_SECONDS", "3")))
     stuck_after_minutes: int = field(default_factory=lambda: int(os.environ.get("STUCK_AFTER_MINUTES", "30")))
     media_max_mb: int = field(default_factory=lambda: int(os.environ.get("MEDIA_MAX_MB", "750")))
+    # A replayable archive (WACZ) of the view witness's own visit (wacz.py): no second visit, only storage.
+    wacz: bool = field(default_factory=lambda: os.environ.get("CAPTURE_WACZ", "1") == "1")
+    # Social posts only by default: recording adds no time there (measured on Facebook, 2026-10-21), but on a
+    # heavy news homepage it doubled the time and the full-page screenshot timed out. YouTube streams video into
+    # the page (the media witness has the file anyway).
+    wacz_platforms: str = field(default_factory=lambda: os.environ.get(
+        "CAPTURE_WACZ_PLATFORMS", "facebook,instagram,threads,x,tiktok"))
+    wacz_max_mb: int = field(default_factory=lambda: int(os.environ.get("CAPTURE_WACZ_MAX_MB", "150")))
+    # Where people open a WACZ: the replay viewer on its own origin (replay.py). Empty: no "interactive copy" link.
+    replay_url: str = field(default_factory=lambda: os.environ.get("REPLAY_URL", "").rstrip("/"))
+    # How the replay viewer reaches the hub's artifact endpoint, server to server.
+    hub_internal_url: str = field(default_factory=lambda: os.environ.get("HUB_INTERNAL_URL", "http://api:8700").rstrip("/"))
     media_timeout_s: int = field(default_factory=lambda: int(os.environ.get("MEDIA_TIMEOUT_S", "900")))
     view_timeout_s: int = field(default_factory=lambda: int(os.environ.get("VIEW_TIMEOUT_S", "120")))
     # Optional residential/VN egress (proposal §6.4; egress.py). May contain {port} (a random port in

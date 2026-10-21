@@ -5,7 +5,19 @@ import { mount, api, el, fmtDate, modal, patch, platformOf, poll, post, projectD
 import { incidentPicker } from "./inbox.js";
 import { artifactGrid } from "./viewer.js";
 
+// The interactive copy: the capture's WACZ in the replay viewer, on its own origin (replay.py). The fragment
+// carries the signed artifact URL, so it never reaches a server log.
+function replayLink(cap, replayUrl) {
+  const w = (cap.artifacts || []).find((a) => a.kind === "wacz" && a.url);
+  if (!w || !replayUrl) return "";
+  const src = w.url.replace(/^\/v1\/artifacts\//, "");
+  const page = (cap.final_url || "").startsWith("http") ? cap.final_url : "";
+  return el("a", { class: "url", href: `${replayUrl}/#src=${encodeURIComponent(src)}&url=${encodeURIComponent(page)}`,
+    target: "_blank", rel: "noopener noreferrer", title: t("replayTip") }, t("openReplay"));
+}
+
 export async function itemPage(view, id) {
+  const replayUrl = (await api("/v1/config").catch(() => ({}))).replay_url || "";
   let item = await api(`/v1/items/${id}`);
   let versionId = null;
   let lastKey = "";
@@ -82,7 +94,9 @@ export async function itemPage(view, id) {
         corr.status ? el("p", { class: "meta" }, t("statusCorrected")(t("status_")[machine] || machine || "—", corr.by, fmtDate(corr.at)),
           corr.reason ? [" · ", el("em", {}, corr.reason)] : "") : "",
         el("h1", {}, item.title || ex.title || item.canonical_url),
-        el("a", { class: "url", href: item.url, target: "_blank", rel: "noopener noreferrer" }, t("openOriginal")),
+        el("div", { class: "row" },
+          el("a", { class: "url", href: item.url, target: "_blank", rel: "noopener noreferrer" }, t("openOriginal")),
+          replayLink(cap, replayUrl)),
         item.status === "rate_limited" ? el("p", { class: "notice" },
           t("rateLimitedNote")(platformOf(item.canonical_url) || item.platform, fmtDate(item.latest_capture?.retry_at))) : "",
         cap.verdict_reasons?.length ? [sec(t("reasons")), el("ul", { class: "reasons" }, cap.verdict_reasons.map((r) => el("li", {}, r)))] : "",

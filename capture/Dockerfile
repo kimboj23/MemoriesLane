@@ -20,6 +20,22 @@ ENV PIP_BREAK_SYSTEM_PACKAGES=1 \
     STORAGE_DIR=/data/store \
     WORK_DIR=/tmp/memlane-capture
 
+# The replay viewer's files (replay.py): ReplayWeb.page by Webrecorder, AGPL-3.0, served unmodified on its own
+# origin. Pinned by version and checksum; not kept in this repository.
+ARG REPLAYWEBPAGE_VERSION=2.5.3
+ARG REPLAYWEBPAGE_SHA256=b7d35c39c4da9b7121c5a393911d8675d4cc6f19513c380191e16b086bea812c
+RUN python3 - <<EOF
+import hashlib, io, tarfile, urllib.request
+v, want = "${REPLAYWEBPAGE_VERSION}", "${REPLAYWEBPAGE_SHA256}"
+data = urllib.request.urlopen(f"https://registry.npmjs.org/replaywebpage/-/replaywebpage-{v}.tgz", timeout=120).read()
+assert hashlib.sha256(data).hexdigest() == want, "replaywebpage tarball checksum mismatch"
+import os; os.makedirs("/opt/replaywebpage", exist_ok=True)
+with tarfile.open(fileobj=io.BytesIO(data)) as t:
+    for name in ("ui.js", "sw.js", "LICENSE"):
+        open(f"/opt/replaywebpage/{name}", "wb").write(t.extractfile(f"package/{name}").read())
+EOF
+ENV REPLAYWEBPAGE_VERSION=${REPLAYWEBPAGE_VERSION}
+
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

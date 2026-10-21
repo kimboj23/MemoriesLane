@@ -113,6 +113,7 @@ const VI = {
   // community intake, publication, feed
   feedIntake: "đã gán một bài gửi từ cộng đồng",
   feedPub: { review_requested: "đã xin ý kiến thứ hai về bản công khai", drafted: "đã soạn bản công khai", approved_manager: "đã duyệt (quản lý) bản công khai", approved_publisher: "đã duyệt (quyền công bố) bản công khai", published: "đã công bố", withdrawn: "đã rút lại bản công khai" },
+  openReplay: "Mở bản lưu tương tác ↗", replayTip: "Xem lại trang như lúc lưu: cuộn, mở bình luận, xem ảnh và video, từ tệp lưu trữ, không kết nối tới nền tảng",
   correct: "Sửa thông tin", correctTip: "Sửa trạng thái hoặc thông tin (tác giả, ngày đăng, tiêu đề…) khi máy nhận sai",
   correctHelp: "Bản lưu đã niêm phong không bị thay đổi: phần sửa được lưu bên cạnh, ghi rõ ai sửa, lúc nào và vì sao. Để trống một ô để trở về giá trị máy tìm được.",
   statusByMachine: (v) => `— Theo máy (${v}) —`, statusHelp: "Ví dụ: máy ghi “Đã bị gỡ” nhưng bài vẫn còn khi xem bằng tài khoản đã đăng nhập.",
@@ -299,6 +300,7 @@ const EN = {
             "subtitles.vi": "Subtitles (vi)", "subtitles.en": "Subtitles (en)" },
   feedIntake: "attached a community submission",
   feedPub: { review_requested: "asked for a second opinion on the public version", drafted: "drafted the public version", approved_manager: "approved (manager) the public version", approved_publisher: "approved (publication access) the public version", published: "published", withdrawn: "withdrew the public version" },
+  openReplay: "Open interactive copy ↗", replayTip: "Replay the page as captured: scroll, open replies, view photos and video, from the archive file, without contacting the platform",
   correct: "Correct", correctTip: "Correct the status or the details (author, post date, title…) when the machine got them wrong",
   correctHelp: "The sealed capture isn't changed: the correction is kept beside it, with who, when and why. Leave a field empty to go back to what the machine found.",
   statusByMachine: (v) => `— As the machine found (${v}) —`, statusHelp: "E.g. the machine says “Removed” but the post is still there when viewed logged in.",

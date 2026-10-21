@@ -197,7 +197,9 @@ async def public_config():
     return {"tile_url": settings.tile_url, "tile_subdomains": settings.tile_subdomains,
             "tile_attribution": settings.tile_attribution,
             # lets tests (and the UI) know whether a Wayback request would really be submitted (publicly)
-            "wayback_configured": bool(settings.ia_access_key and settings.ia_secret_key)}
+            "wayback_configured": bool(settings.ia_access_key and settings.ia_secret_key),
+            # the replay viewer for captures' WACZ (replay.py), on its own origin; empty: not offered
+            "replay_url": settings.replay_url}
 
 
 @app.post("/v1/inbox", status_code=201)

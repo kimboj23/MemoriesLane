@@ -31,6 +31,7 @@ services:
         required: false
     environment:
       DATABASE_URL: postgresql://capture:capture@db:5432/capture
+      REPLAY_URL: ${REPLAY_URL:-http://127.0.0.1:8701}
     ports:
       - "127.0.0.1:8700:8700"
     restart: unless-stopped
@@ -60,6 +61,18 @@ services:
     depends_on:
       db:
         condition: service_healthy
+
+  # The replay viewer for captures' WACZ files, on its own origin (another port here, another hostname when
+  # deployed): replay runs captured scripts, so it must share nothing with the hub. No database, no secrets.
+  replay:
+    build: .
+    command: ["uvicorn", "memlane_capture.replay:app", "--host", "0.0.0.0", "--port", "8701", "--proxy-headers"]
+    environment:
+      HUB_INTERNAL_URL: http://api:8700
+    ports:
+      - "127.0.0.1:8701:8701"
+    restart: unless-stopped
+    depends_on: [api]
 
 volumes:
   capture-db:

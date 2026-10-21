@@ -19,6 +19,7 @@ from playwright.async_api import Browser, BrowserContext, Page
 from playwright.async_api import Error as PWError
 from playwright.async_api import TimeoutError as PWTimeout
 
+from .. import wacz as wacz_mod
 from ..config import settings
 from ..gate import RESTRICTED_PHRASES
 from ..models import ArtifactDraft, WitnessResult
@@ -102,10 +103,13 @@ def embed_url(url: str, platform: str, kind: str) -> str | None:
     return None
 
 
-async def _new_context(browser: Browser, proxy: dict | None = None) -> BrowserContext:
+async def _new_context(browser: Browser, proxy: dict | None = None, har_path: str | None = None) -> BrowserContext:
     kwargs = dict(viewport=VIEWPORT, locale=settings.locale, timezone_id=settings.timezone,
                   ignore_https_errors=True, service_workers="block",
                   extra_http_headers={"Accept-Language": "vi-VN,vi;q=0.9,en;q=0.8"})
+    if har_path:
+        # Everything this visit fetched, with bodies, for the replayable archive (wacz.py). Written on close.
+        kwargs.update(record_har_path=har_path, record_har_content="attach", record_har_mode="full")
     # Headful Chromium sends its own, genuine user agent; headless says "HeadlessChrome", so name it ourselves.
     if settings.user_agent_override or not settings.headful:
         kwargs["user_agent"] = settings.user_agent
@@ -311,7 +315,11 @@ async def run(browser: Browser, url: str, platform: str, kind: str, work_dir: st
     res.signals["egress"] = "proxy" if proxy else "direct"
     os.makedirs(work_dir, exist_ok=True)
     started = time.monotonic()
-    context = await _new_context(browser, proxy)
+    wanted = [p.strip() for p in settings.wacz_platforms.split(",") if p.strip()]
+    har_path = (os.path.join(work_dir, "visit.har.zip")
+                if settings.wacz and (not wanted or platform in wanted) else None)
+    pages: list[dict] = []
+    context = await _new_context(browser, proxy, har_path)
     try:
         page = await context.new_page()
         main_status = None
@@ -369,9 +377,11 @@ async def run(browser: Browser, url: str, platform: str, kind: str, work_dir: st
         # gets "this post is no longer available" even for a public post.
         landed = canonicalize(res.final_url) if res.final_url and not is_login_url(res.final_url) else None
         e_url = embed_url(landed if platform in ("threads", "facebook") and landed else url, platform, kind)
+        pages.append({"url": res.final_url, "title": meta.get("title")})
         if e_url:
             embed = await _capture_embed(context, e_url, work_dir, res)
             res.signals["embed"] = {k: v for k, v in embed.items() if k != "text"}
+            pages.append({"url": e_url, "title": "embed"})
 
         ld = _ld_fields(meta.get("ld") or [])
         embed_text = (embed or {}).get("text") or None
@@ -398,4 +408,27 @@ async def run(browser: Browser, url: str, platform: str, kind: str, work_dir: st
     finally:
         res.seconds = time.monotonic() - started
         await context.close()
+    if har_path and pages and os.path.exists(har_path):
+        await _web_archive(res, har_path, work_dir, pages, browser.version)
     return res
+
+
+async def _web_archive(res: WitnessResult, har_path: str, work_dir: str, pages: list[dict], version: str) -> None:
+    """The visit as a WACZ (wacz.py). Never fails the witness: the archive is an extra, not the evidence."""
+    import asyncio
+    try:
+        if os.path.getsize(har_path) > settings.wacz_max_mb * 1024 * 1024:
+            res.signals["wacz"] = {"skipped": f"over {settings.wacz_max_mb} MB"}
+            return
+        out = os.path.join(work_dir, "visit.wacz")
+        stats = await asyncio.to_thread(wacz_mod.har_to_wacz, har_path, out, pages=pages,
+                                        software=f"MemoryLane capture (Playwright HAR, Chromium {version})")
+        res.artifacts.append(ArtifactDraft("wacz", "context", "web-archive", out, mime="application/wacz"))
+        res.signals["wacz"] = stats
+    except Exception as e:  # noqa: BLE001
+        res.signals["wacz"] = {"error": f"{type(e).__name__}: {e}"[:200]}
+    finally:
+        try:
+            os.remove(har_path)
+        except OSError:
+            pass
