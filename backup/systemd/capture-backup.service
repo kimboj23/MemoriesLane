@@ -1,0 +1,11 @@
+[Unit]
+Description=MemoryLane capture hub nightly backup (encrypted DB dump + store copy to Backblaze B2, prefix capture/)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=debian
+ExecStart=/home/debian/memlane-demo/backup/capture-backup.sh
+StandardOutput=append:/home/debian/backups/capture-backup.log
+StandardError=append:/home/debian/backups/capture-backup.log
