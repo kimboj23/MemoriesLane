@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MemoryLane Capture Pipeline</title>
+<link rel="stylesheet" href="pipeline.css">
+</head>
+<body>
+<div class="wrap">
+  <p class="backlink"><a href="../">← Lưu trữ MemoryLane</a></p>
+
+  <header class="lede">
+    <span class="eyebrow">MemoryLane · capture service · team explainer</span>
+    <h1>How a saved link becomes evidence</h1>
+    <p>What happens between someone pressing “+ Lưu liên kết” and a sealed, checkable copy of a post: which tools do the work, which ideas we took from Atlos and Bellingcat’s auto-archiver, how we judge whether a capture really worked, and what it costs to run.</p>
+    <div class="meta-row"><span>State as of 21 October 2026</span><span><span class="chip built">Built</span> runs today</span><span><span class="chip plan">Planned</span> not built yet</span></div>
+  </header>
+
+  <section aria-labelledby="overview">
+    <span class="eyebrow">Overview</span>
+    <h2 id="overview">The whole pipeline on one line</h2>
+    <div class="diagram" role="img" aria-label="Flow: community sites and the team save links; a Postgres queue; capture with yt-dlp and Chromium; a verdict and a SHA-256 seal; projects, incidents and a signed public feed read by the community sites. Optional Internet Archive copy, and people reviewing and correcting results.">
+      <svg viewBox="0 0 1000 340" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-head"/></marker>
+          <marker id="ahm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-head muted"/></marker>
+        </defs>
+        <!-- community sites -->
+        <rect x="300" y="8" width="400" height="56" rx="8" class="d-box side"/>
+        <text x="500" y="31" text-anchor="middle" class="d-title">Community sites</text>
+        <text x="500" y="51" text-anchor="middle" class="d-text">community map · Hồ sơ Nhân quyền (send in, show what’s published)</text>
+        <path d="M330,64 C250,80 140,84 110,108" class="d-arrow dash" marker-end="url(#ahm)"/>
+        <path d="M880,108 C860,84 760,80 670,64" class="d-arrow dash" marker-end="url(#ahm)"/>
+
+        <!-- main row -->
+        <rect x="20" y="112" width="160" height="116" rx="8" class="d-box"/>
+        <text x="34" y="134" class="d-num">1</text><text x="34" y="156" class="d-title">Save a link</text>
+        <text x="34" y="178" class="d-text">team or community</text><text x="34" y="196" class="d-text">clean the URL</text><text x="34" y="214" class="d-text">one link = one item</text>
+
+        <rect x="215" y="112" width="160" height="116" rx="8" class="d-box"/>
+        <text x="229" y="134" class="d-num">2</text><text x="229" y="156" class="d-title">Queue</text>
+        <text x="229" y="178" class="d-text">a Postgres table</text><text x="229" y="196" class="d-text">2 captures at a time</text><text x="229" y="214" class="d-text">retries with backoff</text>
+
+        <rect x="410" y="112" width="160" height="116" rx="8" class="d-box key"/>
+        <text x="424" y="134" class="d-num">3–4</text><text x="424" y="156" class="d-title">Capture</text>
+        <text x="424" y="178" class="d-text">yt-dlp: media files</text><text x="424" y="196" class="d-text">Chromium: page, embed</text><text x="424" y="214" class="d-text">VN proxy for Meta only</text>
+
+        <rect x="605" y="112" width="160" height="116" rx="8" class="d-box sealbox"/>
+        <text x="619" y="134" class="d-num">5–6</text><text x="619" y="156" class="d-title">Judge &amp; seal</text>
+        <text x="619" y="178" class="d-text">verdict, not “archived”</text><text x="619" y="196" class="d-text">SHA-256 + manifest</text><text x="619" y="214" class="d-text">every capture a version</text>
+
+        <rect x="800" y="112" width="180" height="116" rx="8" class="d-box"/>
+        <text x="814" y="134" class="d-num">8–9</text><text x="814" y="156" class="d-title">Organise &amp; publish</text>
+        <text x="814" y="178" class="d-text">projects, incidents, roles</text><text x="814" y="196" class="d-text">one approval to publish</text><text x="814" y="214" class="d-text">signed public feed</text>
+
+        <path d="M180,170 L211,170" class="d-arrow" marker-end="url(#ah)"/>
+        <path d="M375,170 L406,170" class="d-arrow" marker-end="url(#ah)"/>
+        <path d="M570,170 L601,170" class="d-arrow" marker-end="url(#ah)"/>
+        <path d="M765,170 L796,170" class="d-arrow" marker-end="url(#ah)"/>
+
+        <!-- side branches -->
+        <rect x="560" y="272" width="250" height="56" rx="8" class="d-box side"/>
+        <text x="685" y="295" text-anchor="middle" class="d-title">Internet Archive</text>
+        <text x="685" y="315" text-anchor="middle" class="d-text">optional public copy · never the evidence</text>
+        <path d="M685,228 L685,268" class="d-arrow dash" marker-end="url(#ahm)"/>
+
+        <rect x="830" y="272" width="150" height="56" rx="8" class="d-box side"/>
+        <text x="905" y="295" text-anchor="middle" class="d-title">7 · People check</text>
+        <text x="905" y="315" text-anchor="middle" class="d-text">review, correct, file</text>
+        <path d="M890,268 L890,232" class="d-arrow dash" marker-end="url(#ahm)"/>
+      </svg>
+    </div>
+  </section>
+
+  <section aria-labelledby="stations">
+    <span class="eyebrow">Step by step</span>
+    <h2 id="stations">The nine stations</h2>
+    <ol class="stations">
+
+      <li class="station"><span class="badge">1</span><div class="station-body">
+        <h3>Save a link</h3>
+        <p>A team member presses <b>“+ Lưu liên kết”</b> on any page of the hub, or a community site forwards what a member of the public submitted. Community sites sign every request with their own key, which can only send, never read.</p>
+        <ul>
+          <li>The link is cleaned: tracking parameters (<code>fbclid</code>, <code>igsh</code>, <code>mibextid</code>…) are dropped and the address is put in one standard form.</li>
+          <li>The same link saved twice is <b>one item</b>. It can be filed under any number of incidents, and it is captured once.</li>
+          <li>Share links (<code>facebook.com/share/…</code>, <code>threads.com/share/…</code>) are followed to the real post.</li>
+        </ul>
+        <div class="facts"><span class="chip built">Built</span><span class="chip">urls.py · inbox_core.py · intake.py</span><span class="chip">idea: “save from anywhere” (raindrop.io, Zotero)</span><span class="chip plan">Planned: phone share sheet, browser extension</span></div>
+      </div></li>
+
+      <li class="station"><span class="badge">2</span><div class="station-body">
+        <h3>Queue</h3>
+        <p>Each save becomes a row in a Postgres table. Workers claim the next row with <code>FOR UPDATE SKIP LOCKED</code>, so several can run side by side without a separate queue server. Each worker runs two captures at a time.</p>
+        <div class="facts"><span class="chip built">Built</span><span class="chip">worker.py</span><span class="chip">from Atlos: the job queue lives in the same Postgres (Oban), no Redis</span></div>
+      </div></li>
+
+      <li class="station"><span class="badge">3</span><div class="station-body">
+        <h3>Choose the way out</h3>
+        <p>Meta refuses requests from our server’s datacenter address: Threads answers <b>HTTP 429</b>, and Instagram redirects to its login page. So <b>Threads and Instagram</b> go out through a residential connection in Vietnam (DataImpulse). Facebook and ordinary websites still work from the server and go direct, at no cost.</p>
+        <ul>
+          <li><b>One capture, one IP.</b> Each capture gets a random sticky port, so all its requests come from one Vietnamese home or mobile address, and the next capture gets another.</li>
+          <li><b>Only pages and data are proxied.</b> Images, videos and scripts come from Meta’s file servers, which serve our server fine, so they go direct. That cut paid traffic by 4–10×.</li>
+          <li>The proxy password lives only in server settings. Captures record “proxy” or “direct”, nothing more.</li>
+        </ul>
+        <div class="facts"><span class="chip built">Built</span><span class="chip">egress.py</span><span class="chip">decided 21 Oct 2026</span></div>
+      </div></li>
+
+      <li class="station"><span class="badge">4</span><div class="station-body">
+        <h3>Two witnesses capture at the same time</h3>
+        <p>Like two people independently recording the same scene, two tools capture each link in parallel. Either one can save the capture if the other fails.</p>
+        <div class="split">
+          <div class="panel"><h4>Media witness · yt-dlp</h4>
+            <ul>
+              <li>Downloads the post’s <b>video, audio, photos, thumbnails and subtitles</b> (Facebook, Instagram, TikTok, YouTube, X).</li>
+              <li>Keeps a cleaned copy of the post’s metadata (author, date, counts). Never the raw <code>.info.json</code>, which can contain a login session.</li>
+              <li>Behind the proxy: reads the post through it, then downloads the files direct, and falls back to the proxy if refused.</li>
+            </ul>
+            <div class="facts"><span class="chip">yt-dlp 2026.8.19, pinned</span><span class="chip">as in auto-archiver’s generic extractor</span></div>
+          </div>
+          <div class="panel"><h4>View witness · Chromium</h4>
+            <ul>
+              <li>Opens the post in a real browser (Playwright, Chromium 153) with a Vietnamese language and timezone, in a virtual display rather than headless.</li>
+              <li>Saves a screenshot <b>as served</b> (login walls included, as evidence), a full-page screenshot with pop-ups removed, the HTML, the text and the page’s metadata.</li>
+              <li>Also captures the platform’s <b>public embed</b> (Facebook plugin, Threads <code>/embed</code>, Instagram <code>/embed/captioned</code>), which often shows a post a logged-out visitor can’t see.</li>
+              <li>Keeps the platform’s own restriction notice, such as Meta’s “legal request” text behind “See why”.</li>
+              <li>For social posts, also records everything the browser fetched during this same visit into a <b>replayable archive (WACZ)</b>. “Mở bản lưu tương tác ↗” replays the post as captured, from the file alone, without contacting the platform.</li>
+            </ul>
+            <div class="facts"><span class="chip">Playwright 1.63, pinned</span><span class="chip">embed capture: ours</span></div>
+          </div>
+        </div>
+        <div class="facts"><span class="chip built">Built</span><span class="chip">witnesses/media.py · witnesses/view.py · pipeline.py</span><span class="chip built">Built: a replayable archive (WACZ) of the same browser visit, for social posts</span></div>
+      </div></li>
+
+      <li class="station"><span class="badge">5</span><div class="station-body">
+        <h3>Judge: a verdict instead of “archived”</h3>
+        <p>The old platform marked a link “archived” even when it had only saved a login page. Now a quality gate reads what both witnesses brought back and gives one verdict. These are the labels the hub shows:</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Verdict</th><th>Hub label</th><th>Means</th></tr></thead>
+          <tbody>
+            <tr><td><span class="verdict v-complete">complete</span></td><td>Đã lưu đầy đủ</td><td>Author, full text and the media or embed were captured.</td></tr>
+            <tr><td><span class="verdict v-partial">partial</span></td><td>Lưu được một phần</td><td>Real content, with something missing, e.g. text cut short without a login.</td></tr>
+            <tr><td><span class="verdict v-walled">walled</span></td><td>Bị chặn đăng nhập</td><td>Only a login wall came back. <b>A wall is never “complete”.</b></td></tr>
+            <tr><td><span class="verdict v-restricted">restricted</span></td><td>Bị hạn chế truy cập</td><td>The platform withholds it from this region or viewer. Its notice is kept as evidence.</td></tr>
+            <tr><td><span class="verdict v-unavailable">unavailable</span></td><td>Đã bị gỡ / không khả dụng</td><td>The platform says it’s gone. Logged out on Facebook this is uncertain, so it gives “walled” with a note to check while logged in.</td></tr>
+            <tr><td><span class="verdict v-rl">rate-limited</span></td><td>Tạm bị giới hạn · sẽ thử lại</td><td>The platform refused our server (HTTP 429). Not a result: retried after 30 min, 2 h, 6 h, 12 h, 12 h, holding the platform’s other links back too.</td></tr>
+            <tr><td><span class="verdict v-failed">failed</span></td><td>Lỗi</td><td>Nothing usable after all attempts.</td></tr>
+          </tbody>
+        </table></div>
+        <p class="note">Wall, removal and restriction messages are matched in Vietnamese and English. A platform’s notice (“Không có thread”, a login prompt) is never taken as the post’s text.</p>
+        <div class="facts"><span class="chip built">Built</span><span class="chip">gate.py</span><span class="chip">wall phrases: the hosted auto-archiver’s Facebook list, extended</span><span class="chip plan">Planned: OCR check of screenshots</span></div>
+      </div></li>
+
+      <li class="station"><span class="badge">6</span><div class="station-body">
+        <h3>Seal and store</h3>
+        <p>Every file is hashed with SHA-256. A <b>manifest</b> lists every file, its hash, the tools and versions used, and the verdict. The manifest is hashed too, so one hash pins the whole capture:</p>
+        <p class="hash" aria-label="example manifest hash">manifest sha256 · 4f2a9c…e81d  (example)</p>
+        <ul>
+          <li>Files are stored under their own hash, so a stored file can’t be changed without its name changing.</li>
+          <li>Capturing again adds a <b>new version</b>. Nothing is overwritten or deleted.</li>
+        </ul>
+        <div class="panel">
+          <h4>Why this matters, in plain words</h4>
+          <p>A hash is a <b>fingerprint</b> for a file. The same file always gives the same fingerprint, and changing even one pixel or one comma gives a completely different one. The manifest is the capture’s <b>packing list</b>, and its fingerprint stands for the whole capture.</p>
+          <ul>
+            <li><b>Proof nothing was altered.</b> If someone says “you edited that screenshot”, anyone can recompute the fingerprint and compare it with the one recorded when it was captured.</li>
+            <li><b>One code covers everything.</b> Quote the manifest’s fingerprint; any change to any file, or to the list, breaks it.</li>
+            <li><b>History stays honest.</b> New captures and people’s corrections sit beside the sealed one, never inside it.</li>
+          </ul>
+          <p class="note">It turns “trust us, this is what the post looked like” into “check it yourself”. The fingerprint alone proves a file hasn’t changed since it was sealed, not <i>when</i> it was sealed. That is what the trusted timestamps below add.</p>
+        </div>
+        <div class="panel">
+          <h4>Trusted timestamps: proof of <i>when</i></h4>
+          <p>Minutes after a capture is sealed, its manifest fingerprint is sent to <b>two independent timestamping authorities</b> (FreeTSA and DigiCert, standard RFC 3161). Each signs “this fingerprint existed at this time”. They receive only the fingerprint, never the content.</p>
+          <ul>
+            <li>The link’s page shows “⏱ Thời điểm đã được chứng thực” with both times, and each signed token can be downloaded.</li>
+            <li>Anyone can check a token offline with standard tools (<code>openssl ts -verify</code>), without trusting us or our server.</li>
+            <li>Two authorities, so one going away or being doubted doesn’t remove the proof.</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h4>Off-site copy</h4>
+          <p>Every night the stored files and an <b>encrypted</b> database dump are copied to Backblaze B2, into the same bucket the old archive already used, under its own folder. The bucket uses Object Lock: nothing uploaded can be changed or deleted for 90 days, even by someone who takes over our server. The copy never deletes anything, and stored files are named by their fingerprint, so a changed file is refused, never overwritten.</p>
+        </div>
+        <div class="facts"><span class="chip built">Built</span><span class="chip">seal.py · storage.py · tsa.py · backup/capture-backup.sh</span><span class="chip">from Atlos: versioned, immutable “media versions”</span><span class="chip">from auto-archiver: hash every artifact, RFC 3161 timestamps</span></div>
+      </div></li>
+
+      <li class="station"><span class="badge">7</span><div class="station-body">
+        <h3>People check, and correct the machine</h3>
+        <p>Everything new lands in the <b>Inbox</b>. The whole team’s links show by default, filtered behind one “Bộ lọc” button. Captured pages are opened only in a locked-down viewer, because captured content can be hostile.</p>
+        <ul>
+          <li>When the machine is wrong (say, “removed” for a post that only needs login), <b>“Sửa thông tin”</b> corrects the status from a dropdown, with a required reason, plus the title, author, post date and text.</li>
+          <li>The sealed capture is never touched. The correction sits beside it with who, when and why, and the page shows both: <i>“Sửa tay bởi … ; máy ghi: …”</i>.</li>
+          <li><b>Duplicate photos.</b> Every photo gets a small visual fingerprint that survives resizing and recompression. A link or a community submission shows “Ảnh tương tự đã có trong kho” when the same picture is already in the archive, among what the person may see.</li>
+        </ul>
+        <div class="facts"><span class="chip built">Built</span><span class="chip">item corrections, logged</span><span class="chip">phash.py (difference hash, Pillow only)</span><span class="chip">idea: Atlos and auto-archiver’s perceptual hashes</span></div>
+      </div></li>
+
+
+
+      <li class="station"><span class="badge">8</span><div class="station-body">
+        <h3>Organise into projects and incidents</h3>
+        <p>Projects group incidents by theme. An incident has attributes (status, date, location, tags, custom fields), source material, and a feed of changes and comments. Type <code>@reviewer</code> or <code>@name</code> to bring people in.</p>
+        <ul>
+          <li>Five roles per project: Owner, Manager, Editor, Viewer, Data-only viewer. Someone outside a project gets “not found”, never “forbidden”.</li>
+          <li>Data-only viewers never see names, comments or the feed.</li>
+        </ul>
+        <div class="facts"><span class="chip built">Built</span><span class="chip">workspace.py · access.py · people.py</span><span class="chip">from Atlos: its design (projects, incidents, roles, update feed), not its code (GPLv3)</span></div>
+      </div></li>
+
+      <li class="station"><span class="badge">9</span><div class="station-body">
+        <h3>Publish to the community sites</h3>
+        <p>Nothing leaves the hub until someone entitled (a manager, or a member with publication access) approves a <b>public version</b>. One approval is enough, and “Xin ý kiến thứ hai” asks for a second opinion when unsure.</p>
+        <ul>
+          <li>Locations are blurred by policy (a private home is never exact), and photos are stripped of GPS and camera data.</li>
+          <li>Published records go into a <b>signed public feed</b>. The community map and Hồ sơ Nhân quyền check the signature before showing anything, so nobody can fake a record. A withdrawal leaves a tombstone, and the sites remove the record.</li>
+        </ul>
+        <div class="facts"><span class="chip built">Built</span><span class="chip">publish.py · geo.py · derive.py · feed.py</span><span class="chip plan">Planned: the production signing key ceremony</span></div>
+      </div></li>
+    </ol>
+
+    <div class="panel">
+        <h4>Alongside: keeping watch</h4>
+        <p>Two checks in <b>Quản trị</b> (Admin) tell the team when a platform starts blocking us or a tool breaks, before people notice it link by link. Any alert puts a ⚠ on the Admin link.</p>
+        <ul>
+          <li><b>Captures by platform:</b> for each of the last 7 days, how many captures per platform were blocked (login wall, rate-limited, failed) out of all. It is built from results already recorded, so it costs nothing.</li>
+          <li><b>Scheduled canary:</b> once a day, a fixed list of known links (a public post that should be complete, a known restricted post…) is captured <i>without storing anything</i>, and each result is compared with what it should be. A worse result raises the alert. This uses a little paid proxy traffic for Threads and Instagram links, about 0.5 MB each per run.</li>
+        </ul>
+        <div class="facts"><span class="chip built">Built</span><span class="chip">health.py · upkeep.py</span><span class="chip">from auto-archiver: platform_status canary</span></div>
+      </div>
+
+    <div class="panel">
+      <h4>Side branch: the Internet Archive</h4>
+      <p>A project can choose “Share with the Internet Archive” (off by default). Submissions there are <b>public and permanent</b>, so the hub never sends anything automatically otherwise. The Wayback copy is an extra, external copy. It is never part of a sealed capture and never changes a verdict. Threads and Instagram are skipped, because the Archive would only store their login page. For Facebook it is sent the public embed address.</p>
+      <div class="facts"><span class="chip built">Built</span><span class="chip">external.py · Save Page Now 2</span></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="ledger">
+    <span class="eyebrow">Ledger</span>
+    <h2 id="ledger">What we built on, and where it came from</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Part</th><th>What we use</th><th>Taken from</th><th>How we use it</th></tr></thead>
+      <tbody>
+        <tr><td>Workspace design</td><td>Projects, incidents, five roles, attributes, update feed</td><td><a href="https://github.com/atlosdotorg/atlos" target="_blank" rel="noopener">Atlos</a></td><td>Design only. Atlos is GPLv3, so we wrote our own code.</td></tr>
+        <tr><td>Versioned captures, Postgres queue</td><td>Every capture is a new version; jobs in the same database</td><td>Atlos</td><td>Same principles, our implementation.</td></tr>
+        <tr><td>Media download</td><td><a href="https://github.com/yt-dlp/yt-dlp" target="_blank" rel="noopener">yt-dlp</a>, pinned</td><td>The tool behind <a href="https://github.com/bellingcat/auto-archiver" target="_blank" rel="noopener">Bellingcat’s auto-archiver</a> extractors</td><td>Called directly as a library, with our own cleaned metadata and direct file downloads.</td></tr>
+        <tr><td>Wall detection</td><td>Facebook login-wall phrases</td><td>The hosted auto-archiver (<a href="https://github.com/djhmateer/auto-archiver" target="_blank" rel="noopener">djhmateer fork</a>)</td><td>Extended to Vietnamese, Threads and Instagram, and applied to page text.</td></tr>
+        <tr><td>Hash everything, per-platform canary</td><td>SHA-256 of every file; a test of real links per platform</td><td>auto-archiver (<code>hash_enricher</code>, <code>platform_status</code>)</td><td>Our sealed manifest; <code>tests/canary.py</code>.</td></tr>
+        <tr><td>Browser capture</td><td><a href="https://playwright.dev" target="_blank" rel="noopener">Playwright</a> with Chromium, pinned</td><td>Our own adapters</td><td>Screenshots as served, embeds, notices; headful, with its real user agent.</td></tr>
+        <tr><td>Replayable archive</td><td>WACZ format; <a href="https://replayweb.page" target="_blank" rel="noopener">ReplayWeb.page</a> viewer</td><td>Webrecorder (format and viewer; viewer is AGPL-3.0)</td><td>The archive is written from our own browser visit (no second visit). The viewer is unmodified, on its own address with nothing to steal, because replay runs the captured page’s scripts.</td></tr>
+        <tr><td>Residential egress</td><td><a href="https://dataimpulse.com/residential-proxies/" target="_blank" rel="noopener">DataImpulse</a>, Vietnam, sticky ports</td><td>Vendor service</td><td>Only for Threads and Instagram pages; one IP per capture.</td></tr>
+        <tr><td>Public copy</td><td>Internet Archive Save Page Now 2</td><td>Ported from our old worker</td><td>Opt-in per project; never evidence.</td></tr>
+        <tr><td>Trusted timestamps</td><td>RFC 3161 tokens from <a href="https://freetsa.org" target="_blank" rel="noopener">FreeTSA</a> and DigiCert</td><td>Open standard; auto-archiver’s timestamping enricher</td><td>Only the manifest fingerprint is sent; tokens checkable offline with openssl.</td></tr>
+        <tr><td>Off-site copy</td><td>Backblaze B2 with Object Lock, rclone</td><td>The old archive’s backup setup, reused</td><td>Same bucket and credentials, its own folder; copy only, database encrypted.</td></tr>
+        <tr><td>Duplicate photos</td><td>Difference hash (dHash) with Pillow</td><td>Perceptual hashing, as in Atlos and auto-archiver</td><td>No new library; matches only within what the person may see.</td></tr>
+        <tr><td>Old stack</td><td>ArchiveBox 0.7.4 + our worker</td><td>The previous platform</td><td>Not in use; left untouched until migration.</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section aria-labelledby="cost">
+    <span class="eyebrow">Running cost</span>
+    <h2 id="cost">What the residential proxy costs</h2>
+    <p>Only Threads and Instagram use paid traffic. Facebook, websites and every media file go direct. These figures were measured on 21 October 2026, on the server, through the proxy, with a byte counter in front of it:</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Capture</th><th>Paid traffic before the split</th><th>Paid traffic now</th><th>Result</th></tr></thead>
+      <tbody>
+        <tr><td>Threads, text and image</td><td class="num">5.8–6.9 MB</td><td class="num">0.38–0.62 MB</td><td><span class="verdict v-complete">complete</span></td></tr>
+        <tr><td>Threads, text only</td><td class="num">1.8 MB</td><td class="num">0.16 MB</td><td><span class="verdict v-restricted">restricted</span> (a known restricted post)</td></tr>
+        <tr><td>Instagram, video post</td><td class="num">2.25 MB</td><td class="num">0.59 MB</td><td><span class="verdict v-complete">complete</span>, with its video</td></tr>
+      </tbody>
+    </table></div>
+    <div class="cost">
+      <div class="figure"><span class="eyebrow">Per save</span><span class="big">≈ 0.5 MB</span><span class="small">Threads or Instagram, typical</span></div>
+      <div class="figure"><span class="eyebrow">2,000 saves a month</span><span class="big">≈ 1 GB</span><span class="small">including about 20% for retries and re-captures</span></div>
+      <div class="figure"><span class="eyebrow">Monthly bill</span><span class="big">$1–2</span><span class="small">at $1/GB, pay-as-you-go; unused traffic doesn’t expire</span></div>
+    </div>
+    <p class="note">The scheduled canary adds about 0.5 MB per Threads or Instagram link per day, a few cents a month. We target the country (Vietnam), not a city: platforms restrict content by country, and city targeting costs extra. Long threads with many images, and videos on Threads, cost more per save. A monthly traffic limit in the DataImpulse dashboard caps the bill. Prices from DataImpulse’s <a href="https://dataimpulse.com/residential-proxies/" target="_blank" rel="noopener">pricing page</a>; sticky ports from its <a href="https://docs.dataimpulse.com/proxies/types-of-connections" target="_blank" rel="noopener">docs</a>.</p>
+  </section>
+
+  <section aria-labelledby="gaps">
+    <span class="eyebrow">Not built yet</span>
+    <h2 id="gaps">Known gaps</h2>
+    <div class="split">
+      <div class="panel"><h4>Capture</h4><ul>
+        <li>Replayable archives for ordinary web pages (built for social posts; web pages are off because recording slowed heavy pages)</li>
+        <li>Logged-in capture for Facebook (decision pending: throwaway accounts, a hosted service, or logged-out only)</li>
+        <li>OCR check of screenshots for walls</li>
+        <li>Treat Threads, Instagram and Facebook as one “Meta”, and run one Meta capture at a time. Today a block on one platform holds back only that platform’s queue, and two captures can hit Meta at once. Since Meta’s limits tend to arrive together (Threads and Instagram limited our server the same day), this would back off sooner and spend less on blocked attempts.</li>
+      </ul></div>
+      <div class="panel"><h4>Integrity and operations</h4><ul>
+        <li>The production feed signing key: the step-by-step runbook is written (docs/runbooks/feed-signing-keys.md); the designated maintainer has to create the root key offline. The demo uses demo keys.</li>
+        <li>Duplicate detection for videos (photos are done)</li>
+      </ul></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="refs">
+    <span class="eyebrow">References</span>
+    <h2 id="refs">Read more</h2>
+    <ul class="refs">
+      <li>In the repo: <code>docs/archiving-platform-proposal.md</code> (the audit and the comparison with auto-archiver and Atlos) and <code>docs/integration-design.md</code> (publication, the signed feed, location policy)</li>
+      <li><a href="https://github.com/atlosdotorg/atlos" target="_blank" rel="noopener">Atlos</a> · <a href="https://github.com/bellingcat/auto-archiver" target="_blank" rel="noopener">Bellingcat auto-archiver</a> · <a href="https://github.com/djhmateer/auto-archiver" target="_blank" rel="noopener">hosted auto-archiver fork</a></li>
+      <li><a href="https://github.com/yt-dlp/yt-dlp" target="_blank" rel="noopener">yt-dlp</a> · <a href="https://playwright.dev" target="_blank" rel="noopener">Playwright</a></li>
+      <li><a href="https://dataimpulse.com/residential-proxies/" target="_blank" rel="noopener">DataImpulse pricing</a> · <a href="https://docs.dataimpulse.com/proxies/types-of-connections" target="_blank" rel="noopener">DataImpulse sticky sessions</a></li>
+    </ul>
+  </section>
+
+</div>
+</body></html>

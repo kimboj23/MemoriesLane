@@ -31,7 +31,8 @@ const STEPS = {
              "Gửi lên Internet Archive là công khai và vĩnh viễn: chỉ làm khi chắc chắn. Liên hệ của người gửi được niêm phong; chỉ quản lý mở được và mỗi lần mở đều được ghi lại."] },
     { icon: "ⓘ", target: "#tour-btn", title: "Xong!",
       body: ["Bấm nút ⓘ ở góc trên bên phải để xem lại phần hướng dẫn này bất cứ lúc nào.",
-             "Di chuột lên các nút để xem giải thích ngắn."] },
+             "Di chuột lên các nút để xem giải thích ngắn."],
+      link: { href: "docs/pipeline.html", label: "Tìm hiểu cách nền tảng lưu trữ và niêm phong bằng chứng ↗" } },
   ],
   en: [
     { icon: "◈", title: "Welcome to the MemoryLane archive",
@@ -60,7 +61,8 @@ const STEPS = {
              "Sending to the Internet Archive is public and permanent: only when sure. Submitters' contact details are sealed; only managers can open them, and each opening is logged."] },
     { icon: "ⓘ", target: "#tour-btn", title: "Done!",
       body: ["Press the ⓘ button at the top right to see this introduction again at any time.",
-             "Hover over buttons for short explanations."] },
+             "Hover over buttons for short explanations."],
+      link: { href: "docs/pipeline.html", label: "How the platform captures and seals evidence ↗" } },
   ],
 };
 const LABELS = { vi: { next: "Tiếp", back: "Quay lại", skip: "Bỏ qua", done: "Bắt đầu dùng", of: "/" },
@@ -92,6 +94,7 @@ export function startTour() {
         el("button", { type: "button", class: "link small", onclick: close }, L.skip)),
       el("h2", { id: "tour-title" }, s.title),
       ...s.body.map((p) => el("p", {}, p)),
+      s.link ? el("p", {}, el("a", { href: s.link.href, target: "_blank", rel: "noopener" }, s.link.label)) : "",
       el("div", { class: "tour-dots", "aria-hidden": "true" }, steps.map((_, k) => el("span", { class: k === i ? "on" : "" }))),
       el("div", { class: "row" },
         i > 0 ? el("button", { type: "button", onclick: () => go(-1) }, "← " + L.back) : "",
