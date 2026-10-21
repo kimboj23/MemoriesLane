@@ -27,7 +27,13 @@ Newest first. One entry per session that commits: who, which assistant, what cha
 - **Instagram is rate-limiting the VPS too**, more quietly than Threads: a redirect to its login page with `is_from_rle`. The capture was labelled "partial" because the login page's text counted as the post's. It's now rate-limited (long retries), and Instagram's login wording is a wall phrase.
 - **Residential proxy sizing:** a Threads capture moved 1.8 to 6.9 MB through a counting proxy (3 posts, no video), about half of it Instagram's static JS.
 
+- **Residential egress live on the demo** (DataImpulse, VN, a sticky port per capture, Threads/Instagram only, Meta's file servers direct). Credentials are only in the gitignored env files on the laptop and the server.
+  - Measured on the server through it: Threads complete at 0.16-0.62 MB billed (it got HTTP 429 before), Instagram complete at 2.25 MB.
+- **Headful Chromium** in Xvfb with the genuine user agent; `navigator.webdriver` is false.
+
 **Follow-ups:**
+- Set a monthly traffic limit in the DataImpulse dashboard. Owner: kimboj23.
+- yt-dlp sends media through the proxy too (most of Instagram's 2.25 MB): download media direct from Meta's file servers after extracting through the proxy. Owner: whoever works on capture/.
 - The `feat/intake-references` branch also has a `009_` migration: rename it to `011_` when rebasing. Owner: kimboj23.
 - Capture egress is still the root cause (pending ops). Owner: maintainers.
 

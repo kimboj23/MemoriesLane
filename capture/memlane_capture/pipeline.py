@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 import yt_dlp
 from playwright.async_api import Browser
 
-from . import gate, seal
+from . import egress, gate, seal
 from .config import settings
 from .models import Verdict, WitnessResult
 from .resolve import resolve
@@ -50,16 +50,19 @@ async def run_capture(browser: Browser, item: dict, capture: dict) -> Outcome:
     try:
         url = item.get("resolved_url") or item["canonical_url"]
         resolved = item.get("resolved_url")
+        # One way out for the whole capture (one IP, if through the proxy): see egress.py.
+        out = egress.for_capture(classify(url).platform)
         if not resolved and needs_resolution(url):
-            resolved = await resolve(url)
+            resolved = await resolve(url, out.url)
             if resolved:
                 url = resolved
         cls = classify(url)
 
         tasks = {
-            "media": _guard("media", asyncio.to_thread(media.run, url, cls.platform, cls.kind, work),
+            "media": _guard("media", asyncio.to_thread(media.run, url, cls.platform, cls.kind, work, out.url),
                             settings.media_timeout_s),
-            "view": _guard("view", view.run(browser, url, cls.platform, cls.kind, os.path.join(work, "view")),
+            "view": _guard("view", view.run(browser, url, cls.platform, cls.kind, os.path.join(work, "view"),
+                                            out.playwright()),
                            settings.view_timeout_s * 3),
         }
         done = await asyncio.gather(*tasks.values())

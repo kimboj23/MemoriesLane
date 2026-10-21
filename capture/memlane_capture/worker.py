@@ -144,6 +144,24 @@ async def _crash(pool, cap: dict, item: dict, err: str) -> None:
     log.error("capture %s crashed (%s): %s", cap["id"], "will retry" if retry else "giving up", err[:300])
 
 
+_XVFB = None
+
+
+def _ensure_display() -> None:
+    """Headful Chromium needs a display: start a virtual one (Xvfb, in the image) unless one is set."""
+    global _XVFB
+    if os.environ.get("DISPLAY") and (_XVFB is None or _XVFB.poll() is None):
+        return
+    import subprocess
+    import time
+    num = 90 + os.getpid() % 9
+    _XVFB = subprocess.Popen(["Xvfb", f":{num}", "-screen", "0", "1920x1080x24", "-nolisten", "tcp"],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    os.environ["DISPLAY"] = f":{num}"
+    time.sleep(0.5)
+    log.info("started Xvfb on display :%s", num)
+
+
 class BrowserHolder:
     """One Chromium per process, relaunched if it dies."""
 
@@ -153,7 +171,16 @@ class BrowserHolder:
     async def get(self):
         async with self.lock:
             if self.browser is None or not self.browser.is_connected():
-                self.browser = await self.pw.chromium.launch(args=["--disable-dev-shm-usage"])
+                if settings.headful:
+                    _ensure_display()
+                # env: Playwright's driver took its environment when it started, before DISPLAY was set.
+                self.browser = await self.pw.chromium.launch(headless=not settings.headful, env=dict(os.environ),
+                                                             args=["--disable-dev-shm-usage",
+                                                                   # no calls of its own (Google services): billed, and not a visitor's
+                                                                   "--disable-background-networking", "--disable-component-update",
+                                                                   "--no-pings", "--disable-domain-reliability",
+                                                                   # navigator.webdriver would say "automated"
+                                                                   "--disable-blink-features=AutomationControlled"])
                 log.info("launched chromium %s", self.browser.version)
             return self.browser
 

@@ -21,7 +21,7 @@ Several people work on this repo through AI coding assistants, and each needs to
 | Item | Owner | Notes |
 |---|---|---|
 | Decide on logged-in capture for Facebook (throwaway accounts vs. a hosted service vs. logged-out only) | maintainers | proposal §10.1; blocks Facebook "complete" for photo/text posts |
-| Decide on capture egress (residential/VN proxy, or move the VPS region) | maintainers | proposal §10.2; datacenter IPs get worse results from Meta/YouTube |
+| Capture egress: DataImpulse residential VN chosen (kimboj23, 2026-10-21) for Threads/Instagram; set a monthly traffic limit in its dashboard, and decide the production account and budget | maintainers | capture/.env.example; about 0.2-0.6 MB billed per Threads save, about 2 MB for Instagram with media |
 | Decide who reviews `walled` / `unavailable` captures, and where | maintainers | proposal §10.4 |
 | Create a B2 bucket + key for `capture/` artifacts (S3 backend) before any deployment | maintainers | `capture/.env.example`; keep it separate from the backup bucket |
 | Generate the production feed root key offline, make the sealed backup, delegate an online key (`feedkeys.py`), write the revocation runbook, before anything is published | the designated maintainer | docs/integration-design.md §13 (one holder + sealed backup for now; "2 of 3" to be reconsidered) |
@@ -77,6 +77,8 @@ See README "Run locally" (root `docker-compose.yml`) and "Deploy" (`docker-compo
 - **The feed root key never touches a server.** The server holds only the online key and the root's time-limited delegation (feedkeys.py). Dev keys in `capture/secrets/dev-feed-*` are for local use only.
 - **Long explanations go behind an ⓘ, not on the page.** Use `infoButton(title, body)` from `core.js` beside the section title (`sec([title, infoButton(...)])`). Keep only short hints and tooltips inline.
 - **The introduction tour** (`web/js/tour.js`) opens once per browser after sign-in (`localStorage` `mlc.onboarded`) and again from the ⓘ button. Browser e2e tests set `mlc.onboarded` before signing in, or close the tour, or its overlay blocks clicks. When a workflow changes, update the matching tour step (VI and EN).
+- **One capture, one way out** (`egress.py`). Through the proxy, a capture uses one sticky IP for all its requests, and the next capture gets another. Only `CAPTURE_PROXY_PLATFORMS` use it, and in the browser Meta's file servers go direct. The proxy URL holds credentials: never log it, store it with a capture or return it from the API. Captures record only `egress: proxy|direct`.
+- **The browser says what it is.** Headful Chromium in Xvfb (`CAPTURE_HEADFUL`) sends its genuine Linux user agent, with `--disable-blink-features=AutomationControlled`. Never claim another OS (a Windows UA on Linux is a bot tell). `config.user_agent` (for yt-dlp and link resolution) must match the pinned Chromium's major version: bump it with Playwright. Playwright's driver keeps the environment it started with, so the browser gets `env=dict(os.environ)` (for `DISPLAY`).
 - **Unit tests stay offline.** Anything needing the network goes in `tests/e2e/` or `tests/canary.py`.
 - **Throwaway accounts only** for any cookies or profiles, per [archivebox/THROWAWAY-ACCOUNTS.md](archivebox/THROWAWAY-ACCOUNTS.md), and never committed (`capture/secrets/` and `capture/.env` are gitignored).
 

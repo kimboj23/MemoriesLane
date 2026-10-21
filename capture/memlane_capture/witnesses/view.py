@@ -102,12 +102,15 @@ def embed_url(url: str, platform: str, kind: str) -> str | None:
     return None
 
 
-async def _new_context(browser: Browser) -> BrowserContext:
+async def _new_context(browser: Browser, proxy: dict | None = None) -> BrowserContext:
     kwargs = dict(viewport=VIEWPORT, locale=settings.locale, timezone_id=settings.timezone,
-                  user_agent=settings.user_agent, ignore_https_errors=True, service_workers="block",
+                  ignore_https_errors=True, service_workers="block",
                   extra_http_headers={"Accept-Language": "vi-VN,vi;q=0.9,en;q=0.8"})
-    if settings.http_proxy:
-        kwargs["proxy"] = {"server": settings.http_proxy}
+    # Headful Chromium sends its own, genuine user agent; headless says "HeadlessChrome", so name it ourselves.
+    if settings.user_agent_override or not settings.headful:
+        kwargs["user_agent"] = settings.user_agent
+    if proxy:
+        kwargs["proxy"] = proxy
     return await browser.new_context(**kwargs)
 
 
@@ -302,11 +305,13 @@ def _has_any(text: str, phrases: list[str]) -> bool:
     return any(p in t for p in phrases)
 
 
-async def run(browser: Browser, url: str, platform: str, kind: str, work_dir: str) -> WitnessResult:
+async def run(browser: Browser, url: str, platform: str, kind: str, work_dir: str,
+              proxy: dict | None = None) -> WitnessResult:
     res = WitnessResult(name="view", tool_version=f"chromium {browser.version}")
+    res.signals["egress"] = "proxy" if proxy else "direct"
     os.makedirs(work_dir, exist_ok=True)
     started = time.monotonic()
-    context = await _new_context(browser)
+    context = await _new_context(browser, proxy)
     try:
         page = await context.new_page()
         main_status = None

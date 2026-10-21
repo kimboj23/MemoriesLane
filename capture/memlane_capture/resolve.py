@@ -13,12 +13,12 @@ from .config import settings
 from .urls import canonicalize, is_login_url
 
 
-async def resolve(url: str) -> str | None:
+async def resolve(url: str, proxy: str | None = None) -> str | None:
     """Canonical URL the link leads to, or None if it could not be resolved."""
     headers = {"User-Agent": settings.user_agent, "Accept-Language": "vi-VN,vi;q=0.9,en;q=0.8"}
     try:
         async with httpx.AsyncClient(follow_redirects=True, max_redirects=10, timeout=20,
-                                     headers=headers, proxy=settings.http_proxy or None) as client:
+                                     headers=headers, proxy=proxy) as client:
             r = await client.get(url)
             chain = [str(h.url) for h in r.history] + [str(r.url)]
     except httpx.HTTPError:

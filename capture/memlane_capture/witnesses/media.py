@@ -82,7 +82,7 @@ def _extracted_from(info: dict) -> dict:
     }.items() if v not in (None, "")}
 
 
-def run(url: str, platform: str, kind: str, work_dir: str) -> WitnessResult:
+def run(url: str, platform: str, kind: str, work_dir: str, proxy: str | None = None) -> WitnessResult:
     """Blocking; the pipeline runs it in a thread."""
     res = WitnessResult(name="media", tool_version=f"yt-dlp {yt_dlp.version.__version__}")
     if platform not in SUPPORTED:
@@ -112,10 +112,11 @@ def run(url: str, platform: str, kind: str, work_dir: str) -> WitnessResult:
         "socket_timeout": 30,
         "retries": 3,
         "fragment_retries": 3,
-        "http_headers": {"Accept-Language": "vi-VN,vi;q=0.9,en;q=0.8"},
+        "http_headers": {"Accept-Language": "vi-VN,vi;q=0.9,en;q=0.8", "User-Agent": settings.user_agent},
     }
-    if settings.http_proxy:
-        opts["proxy"] = settings.http_proxy
+    if proxy:
+        opts["proxy"] = proxy
+    res.signals["egress"] = "proxy" if proxy else "direct"
     cookies = settings.cookies_for(platform)
     if cookies:
         opts["cookiefile"] = cookies

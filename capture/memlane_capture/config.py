@@ -35,14 +35,26 @@ class Settings:
     media_max_mb: int = field(default_factory=lambda: int(os.environ.get("MEDIA_MAX_MB", "750")))
     media_timeout_s: int = field(default_factory=lambda: int(os.environ.get("MEDIA_TIMEOUT_S", "900")))
     view_timeout_s: int = field(default_factory=lambda: int(os.environ.get("VIEW_TIMEOUT_S", "120")))
-    # Optional proxy for all outbound capture traffic, e.g. a residential/VN egress (proposal §6.4).
+    # Optional residential/VN egress (proposal §6.4; egress.py). May contain {port} (a random port in
+    # CAPTURE_PROXY_PORTS per capture: DataImpulse sticky ports) or {session}. Holds credentials: never log it.
     http_proxy: str = field(default_factory=lambda: os.environ.get("CAPTURE_PROXY", ""))
+    proxy_ports: str = field(default_factory=lambda: os.environ.get("CAPTURE_PROXY_PORTS", "10000-20000"))
+    # Only these platforms go through the proxy (empty: all). Facebook and the web still work from the server.
+    proxy_platforms: str = field(default_factory=lambda: os.environ.get("CAPTURE_PROXY_PLATFORMS", "threads,instagram"))
+    # In the browser, these hosts go direct: Meta's file servers (scripts, images), most of the billed bytes.
+    proxy_bypass: str = field(default_factory=lambda: os.environ.get(
+        "CAPTURE_PROXY_BYPASS", ".cdninstagram.com,.fbcdn.net"))
+    # Chromium with a real (virtual) display instead of headless: fewer automation tells. The worker starts Xvfb.
+    headful: bool = field(default_factory=lambda: os.environ.get("CAPTURE_HEADFUL", "1") == "1")
     # Netscape cookies.txt for yt-dlp, per platform: COOKIES_FACEBOOK=/secrets/fb.txt etc.
     # Only ever from throwaway accounts (archivebox/THROWAWAY-ACCOUNTS.md).
+    # What the browser really is (Chromium on Linux, the version Playwright pins: keep in step when bumping).
+    # A Windows user agent on a Linux browser is a known bot tell. Headful, the browser sends its own; this is
+    # for link resolution and yt-dlp, and for headless runs. CAPTURE_USER_AGENT overrides it everywhere.
+    user_agent_override: str = field(default_factory=lambda: os.environ.get("CAPTURE_USER_AGENT", ""))
     user_agent: str = field(default_factory=lambda: os.environ.get(
         "CAPTURE_USER_AGENT",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/141.0.0.0 Safari/537.36"))
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36"))
     locale: str = field(default_factory=lambda: os.environ.get("CAPTURE_LOCALE", "vi-VN"))
     timezone: str = field(default_factory=lambda: os.environ.get("CAPTURE_TIMEZONE", "Asia/Ho_Chi_Minh"))
 
