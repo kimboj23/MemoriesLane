@@ -41,6 +41,9 @@ def _classify_error(msg: str) -> dict:
     m = msg.lower()
     if "unsupported url" in m:
         return {"unsupported": True}
+    # Before "login": Instagram's rate-limit message also says "redirected to the login page" and "cookies".
+    if "429" in m or "rate-limit" in m or "rate limit" in m or "too many requests" in m:
+        return {"rate_limited": True}
     if any(s in m for s in ("registered users", "log in", "login", "cookies", "sign in to confirm", "authentication")):
         return {"login_required": True}
     if any(s in m for s in ("not available", "unavailable", "removed", "private video", "does not exist",

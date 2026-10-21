@@ -183,6 +183,19 @@ def test_facebook_logged_out_not_available_is_a_wall_not_a_removal():
     assert v.verdict == "unavailable"
 
 
+def test_instagram_rate_limit_redirect_is_rate_limited_not_partial():
+    # Seen 2026-10-21: the post redirects to /accounts/login/?next=…&is_from_rle, whose og:description is the
+    # login page's ("Tạo tài khoản hoặc đăng nhập vào Instagram – …"); yt-dlp says it is a rate limit.
+    login = "Tạo tài khoản hoặc đăng nhập vào Instagram – Chia sẻ những gì bạn yêu thích"
+    v = judge("instagram", "post", {
+        "view": view(text=login, login=True, final_url="https://www.instagram.com/accounts/login/?next=%2Fp%2FPostCode001%2F&is_from_rle"),
+        "media": media(error="The webpage request was redirected to the login page. You have exceeded the rate-limit for"
+                             " accessing posts anonymously. Use --cookies", rate_limited=True)})
+    assert v.verdict == "failed" and v.rate_limited and "text" not in v.extracted
+    from memlane_capture.witnesses.media import _classify_error
+    assert _classify_error("redirected to the login page. You have exceeded the rate-limit … --cookies") == {"rate_limited": True}
+
+
 def test_retry_plan():
     from memlane_capture.models import Verdict
     from memlane_capture.worker import retry_plan

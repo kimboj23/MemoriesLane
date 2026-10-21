@@ -32,6 +32,9 @@ SOCIAL_WALL_PHRASES = [
     # Threads / Instagram
     "log in or sign up for threads", "say more with threads", "đăng nhập hoặc đăng ký threads",
     "sign up to see photos and videos from", "log in to see photos and videos", "đăng ký để xem ảnh và video",
+    # Instagram's login page (its og:description too; seen 2026-10-21 when Instagram rate-limited the server)
+    "tạo tài khoản hoặc đăng nhập vào instagram", "đăng nhập vào instagram", "create an account or log in to instagram",
+    "log in to instagram", "log into instagram",
     # YouTube / Google consent
     "before you continue to youtube", "trước khi bạn tiếp tục truy cập youtube", "sign in to confirm you’re not a bot",
     "sign in to confirm you're not a bot",
@@ -202,7 +205,10 @@ def judge(platform: str, kind: str, results: dict[str, WitnessResult]) -> Verdic
 
     # HTTP 429: the platform refuses requests from this server for now (Meta does this to datacenter addresses).
     # Nothing was seen, so it is not a result: "failed" with a flag, and the worker retries much later.
-    if (view and view.signals.get("http_status") == 429) or (media and media.signals.get("rate_limited")):
+    # Instagram's quieter form: a redirect to its login page with "is_from_rle" (rate limit exceeded), and
+    # yt-dlp's "You have exceeded the rate-limit for accessing posts anonymously".
+    rle = "is_from_rle" in final_urls or "is_from_rle" in str((view.signals.get("embed") or {}).get("final_url") if view else "")
+    if (view and view.signals.get("http_status") == 429) or (media and media.signals.get("rate_limited")) or rle:
         return Verdict("failed", reasons + [f"rate-limited by {platform} (HTTP 429): the platform is refusing requests"
                                             " from this server for now"], merged, rate_limited=True)
 

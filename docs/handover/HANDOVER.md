@@ -24,6 +24,9 @@ Newest first. One entry per session that commits: who, which assistant, what cha
 - **Corrections:** "Sửa thông tin" on a link: status (dropdown), title, author, post date, text, with a reason. Kept beside the sealed capture and logged. Migration `010_item_corrections.sql`.
 - **Facebook "removed" mislabel:** logged out, Facebook's "may have been removed" (and a 404) now gives `walled` with an explanation, and the embed uses the post URL instead of the share link.
 
+- **Instagram is rate-limiting the VPS too**, more quietly than Threads: a redirect to its login page with `is_from_rle`. The capture was labelled "partial" because the login page's text counted as the post's. It's now rate-limited (long retries), and Instagram's login wording is a wall phrase.
+- **Residential proxy sizing:** a Threads capture moved 1.8 to 6.9 MB through a counting proxy (3 posts, no video), about half of it Instagram's static JS.
+
 **Follow-ups:**
 - The `feat/intake-references` branch also has a `009_` migration: rename it to `011_` when rebasing. Owner: kimboj23.
 - Capture egress is still the root cause (pending ops). Owner: maintainers.
