@@ -41,38 +41,40 @@ INDEX = f"""<!doctype html>
  header button{{font:inherit;padding:3px 10px;border-radius:6px;border:1px solid #9fb0bc;background:transparent;color:inherit;cursor:pointer}}
  header button[aria-pressed="true"]{{background:#1d6b86;border-color:#1d6b86;color:#fff}}
  header b{{font-weight:600}} header small{{color:#586874}}
- replay-web-page{{flex:1;min-height:0}}
+ #rwp{{flex:1;min-height:0;width:100%;border:0}}
  .err{{padding:24px}} a{{color:#1d6b86}}
  @media (prefers-color-scheme: dark){{html,body{{background:#0e151b;color:#e3eaef}} header{{border-color:#2a3843}} header small{{color:#96a6b3}} a{{color:#62b7d4}}}}
 </style></head>
 <body>
 <header><b>Bản lưu tương tác</b>
- <button id="popups" type="button" aria-pressed="true" title="Chỉ ẩn trên màn hình; tệp lưu trữ không thay đổi. Bấm để xem lại trang đúng như đã lưu.">Ẩn cửa sổ bật lên</button><small>Phát lại từ tệp lưu trữ (WACZ) của lần lưu này; không kết nối tới nền tảng.
+ <button id="popups" type="button" aria-pressed="true" title="Chỉ ẩn trên màn hình; tệp lưu trữ không thay đổi. Bấm để tải lại trang đúng như đã lưu.">Ẩn cửa sổ bật lên</button><small>Phát lại từ tệp lưu trữ (WACZ) của lần lưu này; không kết nối tới nền tảng.
  Trình phát: <a href="https://github.com/webrecorder/replayweb.page" target="_blank" rel="noopener">ReplayWeb.page</a> {RWP_VERSION} (AGPL-3.0).</small></header>
-<script src="/ui.js"></script>
 <script src="/start.js"></script>
 <script src="/popups.js"></script>
 </body></html>"""
 
-# The fragment carries the artifact and the page; nothing in it reaches a server log.
-START = """
+# The fragment carries the artifact and the page; nothing in it reaches a server log. ReplayWeb.page's app
+# runs in a frame we load ourselves, so the toggle can reload it with or without the in-page hider (below).
+START = r"""
 (function () {
   var p = new URLSearchParams(location.hash.slice(1));
   var src = p.get("src") || "", url = p.get("url") || "";
-  var m = src.match(/^([0-9a-f-]{36})\\?(exp=[^&]+&sig=[^&]+)$/);
+  var m = src.match(/^([0-9a-f-]{36})\?(exp=[^&]+&sig=[^&]+)$/);
   if (!m) { document.body.insertAdjacentHTML("beforeend", "<p class='err'>Thiếu hoặc sai liên kết bản lưu.</p>"); return; }
-  var el = document.createElement("replay-web-page");
-  el.setAttribute("source", "/archive/" + m[1] + ".wacz?" + m[2]);
-  el.setAttribute("replayBase", "/replay/");
-  if (/^https?:\\/\\//.test(url)) el.setAttribute("url", url);
-  el.setAttribute("embed", "default");
-  document.body.appendChild(el);
+  var f = document.createElement("iframe");
+  f.id = "rwp";
+  f.title = "Bản lưu tương tác";
+  f.allow = "fullscreen";
+  // ruffle=1: ReplayWeb.page injects /replay/ruffle/ruffle.js into replayed pages; that slot is our pop-up hider.
+  var q = new URLSearchParams({ source: "/archive/" + m[1] + ".wacz?" + m[2], embed: "default", ruffle: "1" });
+  f.src = "/replay/?" + q.toString() + "#view=pages" + (/^https?:\/\//.test(url) ? "&url=" + encodeURIComponent(url) : "");
+  document.body.appendChild(f);
 })();
 """
 
 
-# ReplayWeb.page's own app page: <replay-web-page> loads it in an iframe from replayBase (/replay/), and its
-# service worker (/replay/sw.js) serves the replayed page under /replay/w/ from the archive.
+# ReplayWeb.page's own app page, at /replay/; its service worker (/replay/sw.js) serves the replayed page under
+# /replay/w/ from the archive, in a sandboxed frame we can't reach into (good: captured scripts stay isolated).
 APP = """<!doctype html>
 <html class="no-overflow"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ReplayWeb.page</title><script src="./ui.js"></script></head>
@@ -81,56 +83,60 @@ APP = """<!doctype html>
 
 # Hide the platform's login prompts in the replayed page, on screen only (the archive is untouched): the same
 # rule the view witness uses before its clean screenshot (witnesses/view.py _STRIP_OVERLAYS_JS), but hiding
-# instead of removing, so "show" restores the page exactly as served. Only documents of the replayed page
-# (/replay/w/…, same origin as this viewer) are touched, never ReplayWeb.page's own interface.
-POPUPS = r"""
+# instead of removing, so "show" restores the page exactly as served.
+#
+# The replayed page runs in ReplayWeb.page's sandboxed frame, which the viewer can't (and shouldn't) reach into.
+# ReplayWeb.page injects one script into every replayed page: "ruffle/ruffle.js", its Flash player, loaded from
+# this origin. We don't need Flash, so that slot carries this hider instead (no change to ReplayWeb.page's code).
+# "Show as served": the toggle sets a preference cookie (ml_popups=off; a choice, not a credential) and reloads,
+# and this route then sends an empty script, so nothing of ours runs in the page. The service worker fetches the
+# script from this origin, with this origin's cookies.
+IN_PAGE = r"""
 (function () {
-  var on = true, btn = document.getElementById("popups");
-  function replayed(win, out) {
-    var ok = false;
-    try { ok = win.location.pathname.indexOf("/replay/w/") === 0; } catch (e) { return out; }
-    if (ok && win.document && win.document.body) out.push(win.document);
-    for (var i = 0; i < win.frames.length; i++) replayed(win.frames[i], out);
-    return out;
-  }
+  if (window.__mlPopups) return;
+  window.__mlPopups = true;
   function translucent(c) { var m = /rgba\([^)]*,\s*([\d.]+)\)/.exec(c); return m && +m[1] > 0 && +m[1] < 1; }
   function mark(el) {
     if (el.hasAttribute("data-ml-hidden")) return;
-    el.setAttribute("data-ml-hidden", el.style.getPropertyValue("display") || "-");
+    el.setAttribute("data-ml-hidden", "");
     el.style.setProperty("display", "none", "important");
   }
-  function hide(d) {
-    var w = d.defaultView, vw = w.innerWidth, vh = w.innerHeight;
+  function hide() {
+    var d = document, vw = innerWidth, vh = innerHeight;
+    if (!d.body) return;
     d.querySelectorAll('[role="dialog"], [aria-modal="true"]').forEach(mark);
     d.querySelectorAll("body *").forEach(function (el) {
       if (el.hasAttribute("data-ml-hidden")) return;
-      var cs = w.getComputedStyle(el);
+      var cs = getComputedStyle(el);
       if (cs.position !== "fixed" && cs.position !== "sticky") return;
       var r = el.getBoundingClientRect();
       if (r.width * r.height <= 0.3 * vw * vh) return;
       if ((parseInt(cs.zIndex, 10) || 0) > 0 || translucent(cs.backgroundColor)) mark(el);
     });
-    [d.documentElement, d.body].forEach(function (el) {
-      if (!el.hasAttribute("data-ml-overflow")) el.setAttribute("data-ml-overflow", el.style.getPropertyValue("overflow") || "-");
-      el.style.setProperty("overflow", "auto", "important");
-    });
+    [d.documentElement, d.body].forEach(function (el) { el.style.setProperty("overflow", "auto", "important"); });
   }
-  function show(d) {
-    d.querySelectorAll("[data-ml-hidden]").forEach(function (el) {
-      var v = el.getAttribute("data-ml-hidden"); el.removeAttribute("data-ml-hidden");
-      if (v === "-") el.style.removeProperty("display"); else el.style.setProperty("display", v);
-    });
-    d.querySelectorAll("[data-ml-overflow]").forEach(function (el) {
-      var v = el.getAttribute("data-ml-overflow"); el.removeAttribute("data-ml-overflow");
-      if (v === "-") el.style.removeProperty("overflow"); else el.style.setProperty("overflow", v);
-    });
+  setInterval(function () { try { hide(); } catch (err) {} }, 1500);   // prompts re-open on scroll
+})();
+"""
+
+# The viewer's toggle: remember the choice, then reload the replay with the hider (default) or without it.
+POPUPS = r"""
+(function () {
+  var btn = document.getElementById("popups");
+  var on = document.cookie.indexOf("ml_popups=off") === -1;
+  function paint() {
+    btn.setAttribute("aria-pressed", String(on));
+    btn.textContent = on ? "Ẩn cửa sổ bật lên" : "Đang xem đúng như đã lưu";
   }
-  function tick() { if (on) replayed(window, []).forEach(function (d) { try { hide(d); } catch (e) {} }); }
+  paint();
   btn.addEventListener("click", function () {
-    on = !on; btn.setAttribute("aria-pressed", String(on));
-    if (on) tick(); else replayed(window, []).forEach(function (d) { try { show(d); } catch (e) {} });
+    on = !on;
+    document.cookie = "ml_popups=" + (on ? "on" : "off") + "; path=/; SameSite=Strict; Max-Age=31536000" +
+                      (location.protocol === "https:" ? "; Secure" : "");
+    paint();
+    var f = document.getElementById("rwp");
+    if (f) f.contentWindow.location.reload();
   });
-  setInterval(tick, 1500);   // platforms re-open their prompts on scroll
 })();
 """
 
@@ -169,6 +175,15 @@ async def start():
 @app.get("/popups.js", include_in_schema=False)
 async def popups():
     return _secure(HTMLResponse(POPUPS, media_type="text/javascript"))
+
+
+@app.get("/replay/ruffle/ruffle.js", include_in_schema=False)
+async def in_page(request: Request):
+    """The slot ReplayWeb.page injects into replayed pages (IN_PAGE above); empty when "as served" is chosen."""
+    off = request.cookies.get("ml_popups") == "off"
+    r = HTMLResponse("/* shown as served */" if off else IN_PAGE, media_type="text/javascript")
+    r.headers["Cache-Control"] = "no-cache"
+    return _secure(r)
 
 
 @app.get("/ui.js", include_in_schema=False)
