@@ -12,6 +12,7 @@ yt-dlp[default]==2026.8.19
 # must match the base image tag in Dockerfile
 playwright==1.63.0
 warcio==1.8.1
+asn1crypto==1.5.1
 pytest==9.1.1
 # feed signing (Ed25519), sealed contacts (libsodium), cleaned public images
 cryptography==50.0.2

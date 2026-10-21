@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, Field
 
-from . import __version__, intake, people, publish, workspace
+from . import __version__, health, intake, people, publish, workspace
 from .auth import Principal, current_principal, require
 from .config import settings
 from .db import make_pool, migrate
@@ -26,7 +26,7 @@ from .external import queue_wayback
 from .inbox_core import (ITEM_SELECT, add_update, can_see_item, intake_role, item_json, item_json_for, link_item, new_capture,
                          project_ids, save_link, unlink_item)
 from .serve import stored_response
-from .signing import artifact_url, verify
+from .signing import artifact_url, timestamp_url, verify
 
 log = logging.getLogger("memlane.api")
 
@@ -46,6 +46,7 @@ app.include_router(people.router)
 app.include_router(intake.router)
 app.include_router(intake.spoke)
 app.include_router(publish.router)
+app.include_router(health.router)
 
 # The workspace UI: static files, no build step (memlane_capture/web).
 WEB_DIR = pathlib.Path(__file__).resolve().parent / "web"
@@ -262,6 +263,17 @@ async def get_item(item_id: str, request: Request, p: Principal = Depends(curren
         by_cap.setdefault(a["capture_id"], []).append(a)
     item["captures"] = [{**c, "id": str(c["id"]), "artifacts": by_cap.get(str(c["id"]), [])} for c in caps]
     async with request.app.state.pool.connection() as conn:
+        stamps = await (await conn.execute(
+            "SELECT capture_id, tsa, state, gen_time, token_sha256 FROM capture.capture_timestamps"
+            " WHERE capture_id = ANY(%s) ORDER BY gen_time NULLS LAST", ([c["id"] for c in caps],))).fetchall()
+    by_cap_ts: dict[str, list] = {}
+    for s in stamps:
+        by_cap_ts.setdefault(str(s["capture_id"]), []).append({
+            "authority": urlsplit(s["tsa"]).hostname, "state": s["state"], "time": s["gen_time"],
+            "url": timestamp_url(s["token_sha256"]) if s["token_sha256"] else None})
+    for c in item["captures"]:
+        c["timestamps"] = by_cap_ts.get(c["id"], [])
+    async with request.app.state.pool.connection() as conn:
         item["wayback"] = await _wayback(conn, item_id)
         item["can_edit"] = await _can_edit_material(conn, p, await _get_item(conn, item_id, p))
     return item
@@ -323,6 +335,71 @@ async def _item_out(conn, p: Principal, item_id: str) -> dict:
         (item_id,))).fetchall()
     out["corrections_log"] = [dict(h) for h in hist]
     return out
+
+
+@app.get("/v1/timestamps/{token_sha256}.tsr")
+async def get_timestamp(token_sha256: str, request: Request, exp: str | None = None, sig: str | None = None):
+    """A capture's RFC 3161 token (upkeep.py), for offline checking with `openssl ts -verify`."""
+    async with request.app.state.pool.connection() as conn:
+        t = await (await conn.execute(
+            "SELECT t.token_key, t.token_sha256, c.item_id FROM capture.capture_timestamps t"
+            " JOIN capture.captures c ON c.id = t.capture_id WHERE t.token_sha256 = %s", (token_sha256,))).fetchone()
+        if not t:
+            raise HTTPException(404, "timestamp not found")
+        if not verify("ts:" + token_sha256, exp, sig):
+            await _get_item(conn, t["item_id"], await current_principal(request))
+    return stored_response(request, storage_key=t["token_key"], size=None, mime="application/timestamp-reply",
+                           sha256=t["token_sha256"])
+
+
+@app.get("/v1/similar-images")
+async def similar_images(request: Request, item_id: str | None = None, intake_id: str | None = None,
+                         p: Principal = Depends(current_principal)):
+    """Photos already in the archive that look like this link's or this submission's (phash.py), among what
+    the viewer may see. Same picture resized or recompressed: at most SIMILAR_BITS of 64 bits differ."""
+    from .intake import _get_intake
+    from .phash import SIMILAR_BITS
+    async with request.app.state.pool.connection() as conn:
+        if item_id:
+            await _get_item(conn, item_id, p)
+            hashes = [r["phash"] for r in await (await conn.execute(
+                "SELECT a.phash FROM capture.artifacts a JOIN capture.captures c ON c.id = a.capture_id"
+                " WHERE c.item_id = %s AND a.phash IS NOT NULL AND a.phash <> 0", (item_id,))).fetchall()]
+        elif intake_id:
+            await _get_intake(conn, intake_id, p)
+            hashes = [r["phash"] for r in await (await conn.execute(
+                "SELECT phash FROM capture.intake_files WHERE intake_id = %s AND phash IS NOT NULL AND phash <> 0",
+                (intake_id,))).fetchall()]
+        else:
+            raise HTTPException(422, "item_id or intake_id")
+        found: dict[tuple, int] = {}
+        for h in set(hashes):
+            for r in await (await conn.execute(
+                    "SELECT 'item' AS type, c.item_id AS id, bit_count((a.phash # %s)::bit(64)) AS d"
+                    "  FROM capture.artifacts a JOIN capture.captures c ON c.id = a.capture_id"
+                    " WHERE a.phash IS NOT NULL AND a.phash <> 0 AND c.item_id IS DISTINCT FROM %s::uuid"
+                    "   AND bit_count((a.phash # %s)::bit(64)) <= %s"
+                    " UNION ALL "
+                    "SELECT 'intake', f.intake_id, bit_count((f.phash # %s)::bit(64)) FROM capture.intake_files f"
+                    " WHERE f.phash IS NOT NULL AND f.phash <> 0 AND f.intake_id IS DISTINCT FROM %s::uuid"
+                    "   AND bit_count((f.phash # %s)::bit(64)) <= %s LIMIT 50",
+                    (h, item_id, h, SIMILAR_BITS, h, intake_id, h, SIMILAR_BITS))).fetchall():
+                key = (r["type"], str(r["id"]))
+                found[key] = min(found.get(key, 99), r["d"])
+        out = []
+        for (kind, oid), d in sorted(found.items(), key=lambda x: x[1])[:20]:
+            try:                                   # only what this person may see
+                if kind == "item":
+                    it = await _get_item(conn, oid, p)
+                    out.append({"type": "item", "id": oid, "title": it["title"] or it["canonical_url"], "distance": d})
+                else:
+                    k, _ = await _get_intake(conn, oid, p)
+                    pl = k["payload"] or {}
+                    out.append({"type": "intake", "id": oid, "distance": d, "source": k["source_name"],
+                                "title": (pl.get("title") or pl.get("text") or pl.get("note") or "")[:120]})
+            except HTTPException:
+                continue
+    return {"similar": out[:10]}
 
 
 @app.post("/v1/items/{item_id}/wayback", status_code=202)

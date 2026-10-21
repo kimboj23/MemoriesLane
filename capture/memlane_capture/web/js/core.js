@@ -113,6 +113,17 @@ const VI = {
   // community intake, publication, feed
   feedIntake: "đã gán một bài gửi từ cộng đồng",
   feedPub: { review_requested: "đã xin ý kiến thứ hai về bản công khai", drafted: "đã soạn bản công khai", approved_manager: "đã duyệt (quản lý) bản công khai", approved_publisher: "đã duyệt (quyền công bố) bản công khai", published: "đã công bố", withdrawn: "đã rút lại bản công khai" },
+  healthTitle: "Tình trạng lưu theo nền tảng", platform: "Nền tảng", healthWaiting: "Đang chờ", waitingTip: "Liên kết đang chờ thử lại vì nền tảng tạm giới hạn",
+  healthHelp: "Mỗi ô: số lần lưu bị chặn (bị chặn đăng nhập, bị giới hạn, lỗi) trên tổng số lần lưu trong ngày, theo giờ UTC. Một nền tảng bỗng đỏ nhiều nghĩa là nó đang chặn máy chủ hoặc công cụ lưu bị hỏng.",
+  healthLegend: "Bị chặn / tổng số lần lưu mỗi ngày (7 ngày). Đỏ: từ một nửa trở lên; vàng: từ 20%. Di chuột lên ô để xem chi tiết.",
+  canaryTitle: "Kiểm tra định kỳ (canary)", canaryHelp: "Định kỳ lưu thử một danh sách liên kết đã biết kết quả (tệp CANARY_FILE), không lưu gì vào kho. Kết quả kém hơn mong đợi sẽ hiện ⚠ ở mục Quản trị, để biết công cụ hỏng trước khi việc lưu thật thất bại. Threads/Instagram dùng proxy trả phí: khoảng 0,5 MB mỗi liên kết mỗi lần.",
+  canaryNone: "Chưa có danh sách liên kết kiểm tra (CANARY_FILE).", canaryMeta: (n, h, last, next) => `${n} liên kết · ${h > 0 ? `mỗi ${h} giờ` : "đang tắt (CANARY_INTERVAL_H)"} · lần gần nhất ${last} · lần tới ${next}`,
+  canaryLink: "Liên kết", canaryExpected: "Mong đợi", canaryGot: "Kết quả", canaryWorse: "kém hơn mong đợi",
+  alertCanary: (p, n) => `Kiểm tra định kỳ: ${p} (${n}) kém hơn mong đợi`, alertBlocked: (p, b, n) => `${p}: ${b}/${n} lần lưu hôm nay bị chặn`,
+  similarTitle: "Ảnh tương tự đã có trong kho", similarHelp: "Ảnh có “dấu vân tay” gần giống (cùng ảnh dù đổi cỡ, nén lại hoặc cắt nhẹ). Chỉ hiện những gì bạn được xem.",
+  similarDistance: (d) => (d === 0 ? "giống hệt" : `khác ${d}/64`), savedLink: "liên kết đã lưu",
+  timestamped: "Thời điểm đã được chứng thực:", timestampPending: "Đang chờ chứng thực thời điểm…", timestampDownload: "Tải chứng thực (.tsr) để tự kiểm tra",
+  timestampTip: "Một tổ chức chứng thực thời gian độc lập (RFC 3161) đã ký rằng mã băm của bản lưu này tồn tại vào lúc đó. Họ chỉ nhận mã băm, không nhận nội dung.",
   openReplay: "Mở bản lưu tương tác ↗", replayTip: "Xem lại trang như lúc lưu: cuộn, mở bình luận, xem ảnh và video, từ tệp lưu trữ, không kết nối tới nền tảng",
   correct: "Sửa thông tin", correctTip: "Sửa trạng thái hoặc thông tin (tác giả, ngày đăng, tiêu đề…) khi máy nhận sai",
   correctHelp: "Bản lưu đã niêm phong không bị thay đổi: phần sửa được lưu bên cạnh, ghi rõ ai sửa, lúc nào và vì sao. Để trống một ô để trở về giá trị máy tìm được.",
@@ -300,6 +311,17 @@ const EN = {
             "subtitles.vi": "Subtitles (vi)", "subtitles.en": "Subtitles (en)" },
   feedIntake: "attached a community submission",
   feedPub: { review_requested: "asked for a second opinion on the public version", drafted: "drafted the public version", approved_manager: "approved (manager) the public version", approved_publisher: "approved (publication access) the public version", published: "published", withdrawn: "withdrew the public version" },
+  healthTitle: "Captures by platform", platform: "Platform", healthWaiting: "Waiting", waitingTip: "Links waiting for a retry because the platform is rate-limiting us",
+  healthHelp: "Each cell: captures blocked (login wall, rate-limited, failed) out of all captures that day, UTC. A platform turning red means it is blocking the server or a capture tool broke.",
+  healthLegend: "Blocked / total captures per day (7 days). Red: half or more; amber: from 20%. Hover a cell for details.",
+  canaryTitle: "Scheduled canary", canaryHelp: "Regularly captures a list of links with known results (CANARY_FILE), storing nothing. A worse result shows ⚠ on Admin, so a broken tool shows before real saves fail. Threads/Instagram use the paid proxy: about 0.5 MB per link per run.",
+  canaryNone: "No canary links configured (CANARY_FILE).", canaryMeta: (n, h, last, next) => `${n} links · ${h > 0 ? `every ${h} h` : "off (CANARY_INTERVAL_H)"} · last ${last} · next ${next}`,
+  canaryLink: "Link", canaryExpected: "Expected", canaryGot: "Got", canaryWorse: "worse than expected",
+  alertCanary: (p, n) => `Canary: ${p} (${n}) worse than expected`, alertBlocked: (p, b, n) => `${p}: ${b}/${n} captures blocked today`,
+  similarTitle: "Similar photos already in the archive", similarHelp: "Photos with a near-identical fingerprint (the same picture resized, recompressed or lightly cropped). Only what you may see.",
+  similarDistance: (d) => (d === 0 ? "identical" : `${d}/64 apart`), savedLink: "saved link",
+  timestamped: "Time certified:", timestampPending: "Waiting for a trusted timestamp…", timestampDownload: "Download the token (.tsr) to check it yourself",
+  timestampTip: "An independent timestamping authority (RFC 3161) signed that this capture's hash existed at that time. It receives only the hash, never the content.",
   openReplay: "Open interactive copy ↗", replayTip: "Replay the page as captured: scroll, open replies, view photos and video, from the archive file, without contacting the platform",
   correct: "Correct", correctTip: "Correct the status or the details (author, post date, title…) when the machine got them wrong",
   correctHelp: "The sealed capture isn't changed: the correction is kept beside it, with who, when and why. Leave a field empty to go back to what the machine found.",
@@ -689,6 +711,20 @@ export function modal(title, body, { wide = false } = {}) {
   document.addEventListener("keydown", onKey);
   document.body.append(wrap);
   return close;
+}
+
+// "Similar photos already in the archive" (phash.py): fills itself in; empty when there are none.
+export function similarBlock(query) {
+  const box = el("section", { class: "card", hidden: true });
+  api(`/v1/similar-images?${query}`).then(({ similar }) => {
+    if (!similar.length) return;
+    box.hidden = false;
+    box.replaceChildren(sec([t("similarTitle"), infoButton(t("similarTitle"), el("p", {}, t("similarHelp")))]),
+      el("ul", { class: "plain" }, similar.map((s) => el("li", {},
+        el("a", { href: s.type === "item" ? `#/items/${s.id}` : `#/intake/${s.id}` }, s.title || s.id),
+        el("span", { class: "meta" }, ` · ${s.type === "intake" ? s.source : t("savedLink")} · ${t("similarDistance")(s.distance)}`)))));
+  }).catch(() => {});
+  return box;
 }
 
 export function sec(title, ...right) { return el("div", { class: "sec-row" }, el("h3", { class: "sec-head" }, title), ...right); }

@@ -43,6 +43,28 @@ async def _guard(name: str, coro, timeout: float) -> WitnessResult:
         return WitnessResult(name=name, error=f"{type(e).__name__}: {e}"[:300])
 
 
+async def probe(browser: Browser, url: str) -> tuple[Verdict, str, str, float]:
+    """A capture that stores nothing (the scheduled canary, upkeep.py): (verdict, platform, egress, seconds).
+    Same steps as run_capture, without the archive recording or sealing; its files are deleted at once."""
+    started = datetime.now(timezone.utc)
+    os.makedirs(settings.work_dir, exist_ok=True)
+    work = tempfile.mkdtemp(prefix="probe-", dir=settings.work_dir)
+    try:
+        url = canonicalize(url)
+        out = egress.for_capture(classify(url).platform)
+        if needs_resolution(url):
+            url = await resolve(url, out.url) or url
+        cls = classify(url)
+        results = dict(zip(("media", "view"), await asyncio.gather(
+            _guard("media", asyncio.to_thread(media.run, url, cls.platform, cls.kind, work, out.url), settings.media_timeout_s),
+            _guard("view", view.run(browser, url, cls.platform, cls.kind, os.path.join(work, "view"), out.playwright(),
+                                    record=False), settings.view_timeout_s * 3))))
+        return (gate.judge(cls.platform, cls.kind, results), cls.platform, out.label,
+                (datetime.now(timezone.utc) - started).total_seconds())
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
 async def run_capture(browser: Browser, item: dict, capture: dict) -> Outcome:
     started_at = datetime.now(timezone.utc)
     os.makedirs(settings.work_dir, exist_ok=True)

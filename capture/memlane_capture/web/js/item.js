@@ -1,6 +1,6 @@
 // One saved link (source material): verdict, what was extracted, its capture versions, and every
 // artifact viewable in the browser.
-import { mount, api, el, fmtDate, modal, patch, platformOf, poll, post, projectDot, sec, state, t, toast, verdictChip, loadVocab, suggestInput,
+import { mount, api, el, fmtDate, modal, patch, platformOf, poll, post, projectDot, sec, similarBlock, state, t, toast, verdictChip, loadVocab, suggestInput,
          VERDICTS } from "./core.js";
 import { incidentPicker } from "./inbox.js";
 import { artifactGrid } from "./viewer.js";
@@ -113,6 +113,8 @@ export async function itemPage(view, id) {
       primary.length ? [sec(t("content")), artifactGrid(primary, { blur })] : "",
       sec(t("evidence")), artifactGrid(context, { blur }),
       cap.manifest_sha256 ? el("p", { class: "hash" }, `${t("manifest")}: ${cap.manifest_sha256}`) : "",
+      timestampsLine(cap),
+      similarBlock(`item_id=${id}`),
       el("form", { class: "card", onsubmit: async (e) => {
         e.preventDefault();
         try {
@@ -148,6 +150,17 @@ export async function itemPage(view, id) {
   poll(() => {
     if (["queued", "capturing"].includes(item.status) || ["queued", "running"].includes(item.wayback?.state)) reload(false).catch(() => {});
   }, 4000);
+}
+
+// When the sealed capture provably existed: RFC 3161 timestamps of its manifest hash (upkeep.py, tsa.py).
+function timestampsLine(cap) {
+  const ts = cap.timestamps || [];
+  if (!cap.manifest_sha256 || !ts.length) return "";
+  const done = ts.filter((x) => x.state === "done");
+  return el("p", { class: "meta", title: t("timestampTip") }, "⏱ ",
+    done.length ? [t("timestamped"), " ", done.map((x, i) => [i ? " · " : "", fmtDate(x.time), " ",
+      el("a", { href: x.url, title: t("timestampDownload") }, x.authority)])]
+      : t("timestampPending"));
 }
 
 const fieldVal = (k, v) => (k === "status" ? t("status_")[v] || v : v) || "—";

@@ -1,7 +1,7 @@
 // Community submissions forwarded by the public sites (intake.py): their rows in the inbox, the detail page
 // (triage), and the admin's Sources panel.
 // Everything a submitter wrote is hostile text: it is inserted only with el() (textContent), never as HTML.
-import { ago, api, atLeast, copyText, el, fmtDate, infoButton, isAdmin, loadProjects, modal, mount, patch, post, projectDot, sec, t, toast,
+import { ago, api, atLeast, copyText, el, fmtDate, infoButton, isAdmin, similarBlock, loadProjects, modal, mount, patch, post, projectDot, sec, t, toast,
          verdictChip } from "./core.js";
 import { artifactGrid } from "./viewer.js";
 
@@ -86,6 +86,7 @@ export async function intakeDetailPage(view, id) {
               el("p", { class: "meta" }, Object.entries(k.consents).map(([c, v]) => `${c}: ${v ? "✓" : "✗"}`).join(" · "))] : ""),
           k.files.length ? el("section", { class: "card" }, sec(t("communityFiles")),
             el("p", { class: "meta" }, t("providedByContributor")), fileCards(k.files)) : "",
+          k.files.some((f) => f.kind === "image") ? similarBlock(`intake_id=${id}`) : "",
           el("section", { class: "card" }, sec(t("capturedLinks")),
             k.items.length ? k.items.map((it) => el("div", { class: "material" },
               el("div", { class: "row" }, verdictChip(it.status), el("span", { class: "badge" }, it.platform)),

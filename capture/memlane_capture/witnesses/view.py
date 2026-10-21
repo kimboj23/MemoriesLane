@@ -310,14 +310,14 @@ def _has_any(text: str, phrases: list[str]) -> bool:
 
 
 async def run(browser: Browser, url: str, platform: str, kind: str, work_dir: str,
-              proxy: dict | None = None) -> WitnessResult:
+              proxy: dict | None = None, record: bool = True) -> WitnessResult:
     res = WitnessResult(name="view", tool_version=f"chromium {browser.version}")
     res.signals["egress"] = "proxy" if proxy else "direct"
     os.makedirs(work_dir, exist_ok=True)
     started = time.monotonic()
     wanted = [p.strip() for p in settings.wacz_platforms.split(",") if p.strip()]
     har_path = (os.path.join(work_dir, "visit.har.zip")
-                if settings.wacz and (not wanted or platform in wanted) else None)
+                if record and settings.wacz and (not wanted or platform in wanted) else None)
     pages: list[dict] = []
     context = await _new_context(browser, proxy, har_path)
     try:

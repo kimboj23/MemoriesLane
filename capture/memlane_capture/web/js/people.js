@@ -2,6 +2,7 @@
 import { ago, api, atLeast, copyText, el, fmtDate, isAdmin, loadContributors, mount, patch, post, sec, state, t, toast } from "./core.js";
 import { sourcesPanel } from "./intake.js";
 import { feedPanel } from "./publish.js";
+import { healthPanels } from "./health.js";
 
 const ROLES = ["data_only_viewer", "viewer", "editor", "manager", "owner"];
 const INVITE_ROLES = ["data_only_viewer", "viewer", "editor", "manager"];
@@ -173,6 +174,6 @@ export async function adminPage(view) {
       } catch (err) { toast(err.message, true); }
     } }, sec(t("newPerson")), el("div", { class: "row two" }, el("label", {}, t("name"), name), el("label", {}, t("email"), email)),
       el("label", {}, t("globalRole"), role), el("button", { type: "submit" }, t("add"))),
-    out, await sourcesPanel(), await feedPanel());
+    await healthPanels(), out, await sourcesPanel(), await feedPanel());
   await draw();
 }

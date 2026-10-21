@@ -341,3 +341,11 @@ input[type=date] { cursor: pointer; }
 .filter-row { align-items: center; gap: 10px; flex-wrap: wrap; }
 .filter-toggle .count { margin-left: 6px; background: var(--accent); color: #fff; border-radius: 9px; padding: 0 6px; font-size: .75rem; }
 .filter-panel { border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin: 8px 0 12px; display: grid; gap: 10px; }
+
+/* admin health: block rate per platform and day */
+.health-table td.num, .health-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.health-ok { color: var(--muted); }
+.health-warn { background: var(--yellow-bg); color: var(--yellow); }
+.health-bad { background: var(--red-bg); color: var(--red); font-weight: 600; }
+.health-bad-row td { background: var(--red-bg); }
+.nav-alert { color: var(--red); font-weight: 700; }

@@ -34,6 +34,15 @@ class Settings:
     stuck_after_minutes: int = field(default_factory=lambda: int(os.environ.get("STUCK_AFTER_MINUTES", "30")))
     media_max_mb: int = field(default_factory=lambda: int(os.environ.get("MEDIA_MAX_MB", "750")))
     # A replayable archive (WACZ) of the view witness's own visit (wacz.py): no second visit, only storage.
+    # Upkeep (upkeep.py). Both OFF unless a deployment turns them on (.env.example), so a development stack never
+    # contacts outside services or spends paid proxy traffic by itself.
+    # Timestamping authorities for manifest hashes (RFC 3161); only the hash is sent. Deployments:
+    # TIMESTAMP_TSAS=https://freetsa.org/tsr,http://timestamp.digicert.com
+    timestamp_tsas: str = field(default_factory=lambda: os.environ.get("TIMESTAMP_TSAS", ""))
+    # Known links with their expected minimum verdict (gitignored: real posts). 0 hours: no scheduled canary.
+    canary_file: str = field(default_factory=lambda: os.environ.get("CANARY_FILE", "/secrets/canary.json"))
+    canary_interval_h: float = field(default_factory=lambda: float(os.environ.get("CANARY_INTERVAL_H", "0")))
+    upkeep_seconds: int = field(default_factory=lambda: int(os.environ.get("UPKEEP_SECONDS", "300")))
     wacz: bool = field(default_factory=lambda: os.environ.get("CAPTURE_WACZ", "1") == "1")
     # Social posts only by default: recording adds no time there (measured on Facebook, 2026-10-21), but on a
     # heavy news homepage it doubled the time and the full-page screenshot timed out. YouTube streams video into

@@ -1,5 +1,6 @@
 // Boot, connect (personal token), navigation, notification bell and the hash router.
 import { $, api, el, isAdmin, localSet, modal, state, t } from "./core.js";
+import { adminBadge } from "./health.js";
 import { inboxPage, saveSheet } from "./inbox.js";
 import { incidentPage, incidentsPage, newIncidentPage } from "./incidents.js";
 import { intakeDetailPage, intakeRedirect } from "./intake.js";
@@ -73,7 +74,8 @@ function renderShell() {
     el("a", { href: "#/incidents" }, t("navIncidents")),
     el("a", { href: "#/inbox" }, t("navInbox")),
     el("a", { href: "#/projects" }, t("navProjects")),
-    isAdmin() ? el("a", { href: "#/admin" }, t("admin")) : "");
+    isAdmin() ? el("a", { href: "#/admin", id: "nav-admin" }, t("admin")) : "");
+  if (isAdmin()) adminBadge($("nav-admin"));
   $("quick-save").textContent = "+ " + t("saveLink");
   $("quick-save").title = state.lang === "vi" ? "Lưu một liên kết vào kho (từ bất kỳ trang nào)" : "Save a link to the archive (from any page)";
   $("bell").title = t("notifications");

@@ -223,6 +223,24 @@ async def _external_loop(pool, stop: asyncio.Event) -> None:
                 pass
 
 
+async def _upkeep_loop(pool, browsers, stop: asyncio.Event) -> None:
+    """Timestamps, photo fingerprints and the scheduled canary (upkeep.py), every UPKEEP_SECONDS."""
+    from . import upkeep
+    while not stop.is_set():
+        for name, job in (("timestamps", lambda: upkeep.stamp(pool)), ("fingerprints", lambda: upkeep.fingerprint(pool)),
+                          ("canary", lambda: upkeep.canary_if_due(pool, browsers))):
+            try:
+                n = await job()
+                if n:
+                    log.info("upkeep %s: %d", name, n)
+            except Exception:  # noqa: BLE001 - one job failing must not stop the others
+                log.exception("upkeep %s failed", name)
+        try:
+            await asyncio.wait_for(stop.wait(), settings.upkeep_seconds)
+        except asyncio.TimeoutError:
+            pass
+
+
 async def _feed_loop(pool, stop: asyncio.Event) -> None:
     """Rebuild the publication feed after approvals and withdrawals (feed.py)."""
     while not stop.is_set():
@@ -261,7 +279,7 @@ async def main() -> None:
         log.info("worker %s started: %d slot(s), storage=%s", WORKER_ID, settings.worker_concurrency,
                  settings.storage_backend)
         await asyncio.gather(*(_loop(pool, browsers, stop, i) for i in range(settings.worker_concurrency)),
-                             _external_loop(pool, stop), _feed_loop(pool, stop))
+                             _external_loop(pool, stop), _feed_loop(pool, stop), _upkeep_loop(pool, browsers, stop))
     await pool.close()
 
 

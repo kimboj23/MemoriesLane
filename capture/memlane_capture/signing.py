@@ -34,6 +34,12 @@ def intake_file_url(file_id) -> str:
     return f"/v1/intake-files/{file_id}?exp={exp}&sig={_mac('if:' + str(file_id), exp)}"
 
 
+def timestamp_url(token_sha256: str) -> str:
+    """A capture's RFC 3161 token (upkeep.py); its own namespace."""
+    exp = int(time.time()) + TTL_SECONDS
+    return f"/v1/timestamps/{token_sha256}.tsr?exp={exp}&sig={_mac('ts:' + token_sha256, exp)}"
+
+
 def verify(artifact_id: str, exp: str | None, sig: str | None) -> bool:
     if not exp or not sig or not exp.isdigit() or int(exp) < time.time():
         return False
