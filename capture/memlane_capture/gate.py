@@ -53,6 +53,9 @@ UNAVAILABLE_PHRASES = [
     "this post is unavailable", "bài viết này không có sẵn", "thread không hiển thị", "post unavailable",
     "this account doesn’t exist", "this account doesn't exist", "page not found", "không tìm thấy trang",
     "không có thread", "thread unavailable",
+    # Facebook's embed and logged-out page (seen 2026-10-21); also shown for posts that only need login.
+    "bài viết này trên facebook không còn nữa", "có thể đã bị gỡ", "this facebook post is no longer available",
+    "it may have been removed", "this content is no longer available",
 ]
 # Withheld from this viewer/region rather than gone. Meta's wording (verified on a Threads post,
 # 2026-10-18): "This content isn't available to everyone / It can't be seen by certain audiences",
@@ -76,6 +79,11 @@ _TRUNCATION = re.compile(r"^\s*(xem thêm|see more)\s*$|(…|\.\.\.)\s*((xem th�
 def _has(text: str, phrases: list[str]) -> list[str]:
     t = (text or "").lower()
     return [p for p in phrases if p in t]
+
+
+FB_LOGGED_OUT_NOTE = ("Facebook says the post isn't available, but it tells logged-out visitors the same for posts"
+                      " that need login (friends-only, groups): it may not be removed. Check with a logged-in account,"
+                      " then correct the status by hand if needed")
 
 
 def _text_ok(text: str | None) -> bool:
@@ -180,7 +188,12 @@ def judge(platform: str, kind: str, results: dict[str, WitnessResult]) -> Verdic
     else:  # profile / page / story
         content = "complete" if text_ok and not walls else ("partial" if text_ok else None)
 
+    # Facebook logged out: with a wall served, "not available" (embed notice, a 404 for yt-dlp) is not evidence of
+    # removal. Call it what we saw, a wall, and say why.
+    fb_unsure = platform == "facebook" and bool(unavailable) and (walls or login) and not restricted
     if content:
+        if fb_unsure and content == "partial" and not (has_video or has_images):
+            return Verdict("walled", reasons + [FB_LOGGED_OUT_NOTE], merged)
         if unavailable and content == "partial" and not (has_video or has_images):
             # e.g. an embed that only says "this content isn't available"
             reasons.append("platform reports content unavailable: " + ", ".join(unavailable[:2]))
@@ -201,6 +214,8 @@ def judge(platform: str, kind: str, results: dict[str, WitnessResult]) -> Verdic
         if notice:
             merged["restriction_notice"] = notice[:2000]
         return Verdict("restricted", [r for r in reasons if not r.startswith("wall served")] + out, merged)
+    if fb_unsure:
+        return Verdict("walled", reasons + [FB_LOGGED_OUT_NOTE], merged)
     if unavailable:
         return Verdict("unavailable", reasons + ["unavailable: " + ", ".join(unavailable[:3])], merged)
     if walls or login:

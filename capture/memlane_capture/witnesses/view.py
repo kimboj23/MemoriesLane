@@ -359,9 +359,11 @@ async def run(browser: Browser, url: str, platform: str, kind: str, work_dir: st
         await page.close()
 
         embed = None
-        # Threads share links resolve to a URL with tracking parameters: canonicalise before adding /embed.
-        e_url = embed_url(canonicalize(res.final_url) if platform == "threads" and res.final_url else url,
-                          platform, kind)
+        # Share links (threads.com/share, facebook.com/share/p) only resolve in the browser: embed the post the
+        # browser landed on, canonicalised (tracking parameters dropped). A share URL in Facebook's embed plugin
+        # gets "this post is no longer available" even for a public post.
+        landed = canonicalize(res.final_url) if res.final_url and not is_login_url(res.final_url) else None
+        e_url = embed_url(landed if platform in ("threads", "facebook") and landed else url, platform, kind)
         if e_url:
             embed = await _capture_embed(context, e_url, work_dir, res)
             res.signals["embed"] = {k: v for k, v in embed.items() if k != "text"}

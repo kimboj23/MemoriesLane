@@ -170,6 +170,19 @@ def test_content_beats_a_429_from_one_witness():
     assert v.verdict in ("complete", "partial") and not v.rate_limited
 
 
+def test_facebook_logged_out_not_available_is_a_wall_not_a_removal():
+    # Seen 2026-10-21: a share link, logged out. Login wall, the embed says the post "may have been removed",
+    # yt-dlp gets a 404. Facebook says all this for posts that only need login too.
+    notice = "Bài viết này trên Facebook không còn nữa vì có thể đã bị gỡ"
+    v = judge("facebook", "post", {"view": view(served=FB_WALL, text=notice, embed_text=notice, embed_shot=True),
+                                   "media": media(error="HTTP Error 404: Not Found", unavailable=True)})
+    assert v.verdict == "walled" and "may not be removed" in v.reasons[-1]
+    assert "text" not in v.extracted                       # the notice is never the post's text
+    # No wall served: the platform's own "removed" stands.
+    v = judge("facebook", "post", {"view": view(text=notice, embed_text=notice, embed_shot=True)})
+    assert v.verdict == "unavailable"
+
+
 def test_retry_plan():
     from memlane_capture.models import Verdict
     from memlane_capture.worker import retry_plan
