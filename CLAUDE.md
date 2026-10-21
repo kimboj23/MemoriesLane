@@ -23,8 +23,8 @@ Several people work on this repo through AI coding assistants, and each needs to
 | Decide on logged-in capture for Facebook (throwaway accounts vs. a hosted service vs. logged-out only) | maintainers | proposal §10.1; blocks Facebook "complete" for photo/text posts |
 | Capture egress: DataImpulse residential VN chosen (kimboj23, 2026-10-21) for Threads/Instagram; set a monthly traffic limit in its dashboard, and decide the production account and budget | maintainers | capture/.env.example; about 0.2-0.6 MB billed per Threads save, about 2 MB for Instagram with media |
 | Decide who reviews `walled` / `unavailable` captures, and where | maintainers | proposal §10.4 |
-| Create a B2 bucket + key for `capture/` artifacts (S3 backend) before any deployment | maintainers | `capture/.env.example`; keep it separate from the backup bucket |
-| Generate the production feed root key offline, make the sealed backup, delegate an online key (`feedkeys.py`), write the revocation runbook, before anything is published | the designated maintainer | docs/integration-design.md §13 (one holder + sealed backup for now; "2 of 3" to be reconsidered) |
+| Install the capture backup timer on any new server (`backup/systemd/capture-backup.*`); it reuses the archive's B2 bucket and key under `capture/` | whoever deploys `capture/` | backup/capture-backup.sh; installed on the demo VPS 2026-10-21 |
+| Generate the production feed root key offline, make the sealed backup, delegate an online key, before anything is published | the designated maintainer | step by step: docs/runbooks/feed-signing-keys.md (one holder + sealed backup for now) |
 | Deploy the hub's intake + feed: `INTAKE_KEY_SECRET`, `CONTACT_SECRET_KEY`, feed keys, `FEED_*` for the B2 bucket; register the sources | whoever deploys `capture/` | capture/README "Community intake and the public feed" |
 | Switch the community map to the hub: `HUB_*`, `PUBLIC_SOURCE=both`, run `scripts/export-to-hub.js --commit`, approve the legacy batch, later `PUBLIC_SOURCE=feed` | maintainers | backend/README "Connecting to the MemoryLane hub" |
 | Hồ sơ Nhân quyền: implement the spoke on its own codebase | its developers | docs/spoke-integration.md |
@@ -85,6 +85,10 @@ See README "Run locally" (root `docker-compose.yml`) and "Deploy" (`docker-compo
   Never serve a WACZ for replay from the hub's origin, and never relax the viewer's `connect-src 'self'`.
 - **A WACZ comes from the visit we already make** (Playwright HAR → `wacz.py`), never from a second crawl (it would
   double paid proxy traffic). It is an extra, sealed with the capture; it never decides a verdict.
+- **Timestamps sit beside the seal, never in it.** RFC 3161 tokens (`tsa.py`, `upkeep.stamp`) certify the manifest hash after sealing, in `capture.capture_timestamps`. Only the hash is ever sent to an authority.
+- **Upkeep that reaches outside is off unless a deployment turns it on.** `TIMESTAMP_TSAS` and `CANARY_INTERVAL_H` default to off in code, so a development stack (and the e2e tests) never contacts outside services or spends paid proxy traffic by itself. This was learned the hard way: on 2026-10-21 a dev stack started with them on and ran a canary through the proxy.
+- **The canary stores nothing** (`pipeline.probe`): no item, no artifacts, no WACZ. Its links stay in the gitignored `secrets/canary.json`; the database keeps only their hash and note.
+- **Off-site copies only ever add.** `backup/capture-backup.sh` uses `rclone copy --immutable` (never sync or delete) into the Object-Locked B2 bucket, and encrypts the database dump and host secrets before upload. Don't make it sync.
 - **Unit tests stay offline.** Anything needing the network goes in `tests/e2e/` or `tests/canary.py`.
 - **Throwaway accounts only** for any cookies or profiles, per [archivebox/THROWAWAY-ACCOUNTS.md](archivebox/THROWAWAY-ACCOUNTS.md), and never committed (`capture/secrets/` and `capture/.env` are gitignored).
 

@@ -125,6 +125,28 @@ docker compose logs -f worker          # what each capture did, and its verdict
 
 Stop with `docker compose down` (`down -v` also wipes the local DB and stored files).
 
+### Upkeep: trusted timestamps, duplicate photos, block rate and the canary
+
+One worker loop (`upkeep.py`, every `UPKEEP_SECONDS`):
+- **Trusted timestamps** (`tsa.py`): each sealed capture's manifest hash goes to every authority in `TIMESTAMP_TSAS`
+  (RFC 3161; deployments use FreeTSA and DigiCert), with retries. The link's page shows the signed times and offers
+  each token; check one with `openssl ts -verify -digest <manifest sha256> -in token.tsr -CAfile <authority CA>`.
+- **Photo fingerprints** (`phash.py`, a 64-bit difference hash with Pillow): for captured and community photos.
+  `/v1/similar-images` lists near-identical ones (at most 6 of 64 bits apart) among what the person may see.
+- **Scheduled canary**: every `CANARY_INTERVAL_H` hours the links in `CANARY_FILE` are captured without storing
+  anything (`pipeline.probe`) and compared with their expected verdict. Admin → "Kiểm tra định kỳ" shows the last
+  run, and a worse result puts ⚠ on the Admin link. Threads/Instagram links cost about 0.5 MB of proxy traffic each.
+- Admin → "Tình trạng lưu theo nền tảng": blocked captures per platform per day, from the recorded verdicts.
+
+Both outward-facing jobs are **off unless set** (`.env.example`).
+
+### Off-site backup
+
+`backup/capture-backup.sh` (systemd timer `backup/systemd/capture-backup.*`, nightly 03:30 UTC) reuses the
+archive's Backblaze B2 bucket and key (`backup/b2.env`, B2-SETUP.md: Object Lock, compliance, 90 days) under the
+prefix `capture/`: the store with `rclone copy --immutable`, plus an encrypted `pg_dump` and an encrypted bundle of
+the deployment's env and secrets (same passphrase as the archive's secrets bundle). Restore steps are in the script.
+
 ### Replayable archives (WACZ) and the replay viewer
 
 For social posts (`CAPTURE_WACZ_PLATFORMS`, default facebook, instagram, threads, x, tiktok) the view witness

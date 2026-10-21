@@ -2,6 +2,29 @@
 
 Newest first. One entry per session that commits: who, which assistant, what changed and why, status, how it was tested, follow-ups with an owner, commit hashes. Details belong in the commit messages. This repo is public; see CLAUDE.md for what must never go here.
 
+## 2026-10-21 (afternoon) · kimboj23 with Claude Code (Opus 5.5)
+
+**What:** the four gaps from the team explainer.
+- **Trusted timestamps** (RFC 3161: FreeTSA and DigiCert) for every sealed capture. The page shows them; tokens are downloadable and verify with openssl.
+- **Duplicate photos:** a dHash fingerprint with Pillow, and "Ảnh tương tự đã có trong kho" on links and submissions.
+- **Block rate and canary:** Admin → captures blocked per platform per day; the scheduled canary (stores nothing) with a ⚠ alert.
+- **Off-site backup:** `backup/capture-backup.sh` reuses the archive's B2 bucket/key under `capture/`; the timer is installed on the VPS.
+- **Signing-key runbook:** docs/runbooks/feed-signing-keys.md.
+- **Explainer in the hub:** `/app/docs/pipeline.html`, linked from slide 9 of the tour; the claude.ai page is updated too.
+- Migration `011_upkeep.sql`: the WACZ references branch must now become **012**.
+
+**Tested:**
+- Local `capture/` stack: 120 unit and 14 e2e tests pass. New e2e: a duplicate photo is found, a different one isn't, an outsider gets 404, admin endpoints.
+- Real tokens from both authorities, verified with openssl.
+- Screenshots of Admin, the link page and slide 9.
+- On the demo after deploying.
+
+**Paid traffic and outside requests:** a dev stack briefly ran with the canary and timestamps on (about 0.5 MB of proxy traffic; 20 test hashes timestamped). Both are now off by default in code.
+
+**Follow-ups:**
+- The production signing-key ceremony (the designated maintainer, runbook).
+- Rename the references branch's migration to 012.
+
 ## 2026-10-21 · kimboj23 with Claude Code (Opus 5.5)
 
 **What:**
