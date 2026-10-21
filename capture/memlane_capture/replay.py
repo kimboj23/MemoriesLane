@@ -78,6 +78,10 @@ APP = """<!doctype html>
 def _secure(resp):
     resp.headers.update({"X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer",
                          "Cross-Origin-Opener-Policy": "same-origin"})
+    # no-transform: a CDN in front (Cloudflare) must not inject its own scripts (analytics beacons) into the viewer,
+    # which must make no request outside this origin.
+    cc = resp.headers.get("Cache-Control")
+    resp.headers["Cache-Control"] = f"{cc}, no-transform" if cc else "no-transform"
     return resp
 
 
