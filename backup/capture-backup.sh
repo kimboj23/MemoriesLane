@@ -58,11 +58,14 @@ find "$LOCAL" -name 'db-*.sql.gz.enc' -mtime +30 -delete
 SECRET_PATHS=()
 for p in "$DEPLOY/hub.env" "$DEPLOY/hsnq.env" "$DEPLOY/secrets"; do [ -e "$p" ] && SECRET_PATHS+=("$p"); done
 if [ ${#SECRET_PATHS[@]} -gt 0 ]; then
-  SHASH="$(find "${SECRET_PATHS[@]}" -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -c1-12)"
+  # Read through docker, like archivebox-backup.sh: secrets/ belongs to the containers' user (mode 700).
+  mounts=(); for p in "${SECRET_PATHS[@]}"; do mounts+=(-v "$p:$p:ro"); done
+  SHASH="$(docker run --rm "${mounts[@]}" alpine sh -c 'find "$@" -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum' \
+             _ "${SECRET_PATHS[@]}" | cut -c1-12)"
   if [ -f "$LOCAL/secrets-$SHASH.tar.enc" ]; then
     log "secrets unchanged ($SHASH)"
   else
-    tar czf - "${SECRET_PATHS[@]}" 2>/dev/null | enc "$LOCAL/secrets-$SHASH.tar.enc"
+    docker run --rm "${mounts[@]}" alpine tar czf - "${SECRET_PATHS[@]}" | enc "$LOCAL/secrets-$SHASH.tar.enc"
     log "secrets bundle written ($SHASH)"
   fi
   ls -t "$LOCAL"/secrets-*.tar.enc 2>/dev/null | tail -n +4 | xargs -r rm -f   # keep the newest 3 locally
