@@ -8,11 +8,12 @@ badge reads.
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Query, Request
+import psycopg
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from .auth import Principal, require
 from .config import settings
-from .upkeep import load_canary
+from .upkeep import PAID_MB_PER_LINK, load_canary, proxied_links
 
 router = APIRouter(prefix="/v1/admin")
 
@@ -54,8 +55,30 @@ async def _canary(conn) -> dict:
             " WHERE run_at = %s ORDER BY ok, platform, note", (runs[0]["run_at"],))).fetchall()]
     interval = settings.canary_interval_h
     next_run = (runs[0]["run_at"] + timedelta(hours=interval)) if runs and interval > 0 else None
-    return {"links": len(load_canary()), "interval_h": interval, "next_run": next_run,
-            "runs": [dict(r) for r in runs], "latest": latest}
+    req = await (await conn.execute(
+        "SELECT requested_at, started_at FROM capture.canary_requests WHERE finished_at IS NULL LIMIT 1")).fetchone()
+    last_req = await (await conn.execute(
+        "SELECT finished_at, error FROM capture.canary_requests WHERE finished_at IS NOT NULL"
+        " ORDER BY finished_at DESC LIMIT 1")).fetchone()
+    links = load_canary()
+    paid = proxied_links(links)
+    return {"links": len(links), "interval_h": interval, "next_run": next_run,
+            "runs": [dict(r) for r in runs], "latest": latest, "request": dict(req) if req else None,
+            "last_request_error": last_req["error"] if last_req else None,
+            "proxied_links": paid, "est_paid_mb": round(paid * PAID_MB_PER_LINK, 1)}
+
+
+@router.post("/canary/run", status_code=202)
+async def run_canary_now(request: Request, p: Principal = Depends(require("admin"))):
+    """Ask the worker to run the canary now (it holds the browser); one run at a time."""
+    if not load_canary():
+        raise HTTPException(409, "no canary links configured (CANARY_FILE)")
+    async with request.app.state.pool.connection() as conn:
+        try:
+            await conn.execute("INSERT INTO capture.canary_requests (requested_by) VALUES (%s)", (p.contributor_id,))
+        except psycopg.errors.UniqueViolation:
+            raise HTTPException(409, "a canary run is already waiting or running") from None
+        return await _canary(conn)
 
 
 @router.get("/capture-stats")

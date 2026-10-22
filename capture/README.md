@@ -133,9 +133,10 @@ One worker loop (`upkeep.py`, every `UPKEEP_SECONDS`):
   each token; check one with `openssl ts -verify -digest <manifest sha256> -in token.tsr -CAfile <authority CA>`.
 - **Photo fingerprints** (`phash.py`, a 64-bit difference hash with Pillow): for captured and community photos.
   `/v1/similar-images` lists near-identical ones (at most 6 of 64 bits apart) among what the person may see.
-- **Scheduled canary**: every `CANARY_INTERVAL_H` hours the links in `CANARY_FILE` are captured without storing
-  anything (`pipeline.probe`) and compared with their expected verdict. Admin → "Kiểm tra định kỳ" shows the last
-  run, and a worse result puts ⚠ on the Admin link. Threads/Instagram links cost about 0.5 MB of proxy traffic each.
+- **Canary**: the links in `CANARY_FILE` are captured without storing anything (`pipeline.probe`) and compared with
+  their expected verdict, when an admin presses **"Chạy kiểm tra ngay"** in Admin → "Kiểm tra bằng liên kết mẫu"
+  (the button shows the paid traffic a run will use), and on a schedule only if `CANARY_INTERVAL_H` is set (off by
+  default). A worse result puts ⚠ on the Admin link. Threads/Instagram links cost about 0.5 MB of proxy traffic each.
 - Admin → "Tình trạng lưu theo nền tảng": blocked captures per platform per day, from the recorded verdicts.
 
 Both outward-facing jobs are **off unless set** (`.env.example`).

@@ -2,6 +2,18 @@
 
 Newest first. One entry per session that commits: who, which assistant, what changed and why, status, how it was tested, follow-ups with an owner, commit hashes. Details belong in the commit messages. This repo is public; see CLAUDE.md for what must never go here.
 
+## 2026-10-22 · kimboj23 with Claude Code (Opus 5.5)
+
+**What:**
+- **Manual canary run:** an Admin button, "Chạy kiểm tra ngay", that shows its paid-traffic estimate. The worker picks the request up within 15 s; one run at a time. Migration `012_canary_requests.sql`.
+- **No canary schedule by default**, the demo included (`CANARY_INTERVAL_H` removed from its env).
+- **YouTube from the VPS:** the PO-token helper (bgutil 2.0.1) does not get past YouTube's bot check on the datacenter IP (tested; test container removed). Options A/B/C are with kimboj23.
+- The WACZ references branch's migration must now become **013**.
+
+**Tested:**
+- Local `capture/` stack: 120 unit and 14 e2e tests pass.
+- The button against a temporary direct-only test list (no paid traffic): queued, running, results; a second request gets 409.
+
 ## 2026-10-21 (afternoon) · kimboj23 with Claude Code (Opus 5.5)
 
 **What:** the four gaps from the team explainer.
@@ -11,7 +23,7 @@ Newest first. One entry per session that commits: who, which assistant, what cha
 - **Off-site backup:** `backup/capture-backup.sh` reuses the archive's B2 bucket/key under `capture/`; the timer is installed on the VPS.
 - **Signing-key runbook:** docs/runbooks/feed-signing-keys.md.
 - **Explainer in the hub:** `/app/docs/pipeline.html`, linked from slide 9 of the tour; the claude.ai page is updated too.
-- Migration `011_upkeep.sql`: the WACZ references branch must now become **012**.
+- Migration `011_upkeep.sql`: the WACZ references branch must now become **012** (now 013, see 2026-10-22).
 
 **Tested:**
 - Local `capture/` stack: 120 unit and 14 e2e tests pass. New e2e: a duplicate photo is found, a different one isn't, an outsider gets 404, admin endpoints.

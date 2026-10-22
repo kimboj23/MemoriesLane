@@ -30,10 +30,13 @@ def test_admin_health_endpoints():
             assert d["blocked"] <= d["total"] == sum(d["counts"].values())
     s, canary = api("GET", "/v1/admin/canary")
     assert s == 200 and {"links", "interval_h", "runs", "latest"} <= set(canary)
+    assert {"request", "proxied_links", "est_paid_mb"} <= set(canary)            # the Run button's state and cost
     s, health = api("GET", "/v1/admin/health")
     assert s == 200 and isinstance(health["alerts"], list)
     s, viewer = api("POST", "/v1/admin/contributors", {"name": "Health check viewer"})
     assert api("GET", "/v1/admin/health", token=viewer["token"])[0] == 403       # admins only
+    # Only admins can start a canary run (no run is started here: it would use the real links and the proxy).
+    assert api("POST", "/v1/admin/canary/run", token=viewer["token"])[0] == 403
 
 
 def _jpeg(size, quality, seed) -> bytes:

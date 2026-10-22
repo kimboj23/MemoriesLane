@@ -224,11 +224,17 @@ async def _external_loop(pool, stop: asyncio.Event) -> None:
 
 
 async def _upkeep_loop(pool, browsers, stop: asyncio.Event) -> None:
-    """Timestamps, photo fingerprints and the scheduled canary (upkeep.py), every UPKEEP_SECONDS."""
+    """Timestamps, photo fingerprints and the scheduled canary (upkeep.py) every UPKEEP_SECONDS; a canary run asked
+    for in Admin within 15 seconds."""
     from . import upkeep
+    last_round = 0.0
     while not stop.is_set():
-        for name, job in (("timestamps", lambda: upkeep.stamp(pool)), ("fingerprints", lambda: upkeep.fingerprint(pool)),
-                          ("canary", lambda: upkeep.canary_if_due(pool, browsers))):
+        jobs = [("canary (requested)", lambda: upkeep.canary_requested(pool, browsers))]
+        if asyncio.get_running_loop().time() - last_round >= settings.upkeep_seconds:
+            last_round = asyncio.get_running_loop().time()
+            jobs += [("timestamps", lambda: upkeep.stamp(pool)), ("fingerprints", lambda: upkeep.fingerprint(pool)),
+                     ("canary", lambda: upkeep.canary_if_due(pool, browsers))]
+        for name, job in jobs:
             try:
                 n = await job()
                 if n:
@@ -236,7 +242,7 @@ async def _upkeep_loop(pool, browsers, stop: asyncio.Event) -> None:
             except Exception:  # noqa: BLE001 - one job failing must not stop the others
                 log.exception("upkeep %s failed", name)
         try:
-            await asyncio.wait_for(stop.wait(), settings.upkeep_seconds)
+            await asyncio.wait_for(stop.wait(), 15)
         except asyncio.TimeoutError:
             pass
 

@@ -3,8 +3,9 @@
 - trusted timestamps (RFC 3161, tsa.py) for every sealed capture's manifest hash, from each authority in
   TIMESTAMP_TSAS, retried with backoff;
 - photo fingerprints (phash.py) for captured photos and community photos, to spot duplicates;
-- the scheduled canary: the known links in CANARY_FILE captured every CANARY_INTERVAL_H hours *without storing
-  anything*, each verdict compared with the expected one (shown in Admin; a worse one raises an alert there).
+- the canary: the known links in CANARY_FILE captured *without storing anything*, each verdict compared with the
+  expected one (shown in Admin; a worse one raises an alert there). It runs when someone presses "Chạy kiểm tra
+  ngay" in Admin (canary_requests), and on a schedule only if CANARY_INTERVAL_H is set (off by default).
   Threads/Instagram canaries go through the residential proxy: about 0.5 MB of paid traffic per link per run.
 """
 
@@ -107,7 +108,18 @@ def load_canary() -> list[dict]:
         return []
 
 
+PAID_MB_PER_LINK = 0.5    # measured 2026-10-21 for Threads/Instagram through the proxy
+
+
+def proxied_links(links: list[dict]) -> int:
+    """How many canary links would go through the paid proxy (for the cost shown next to the Run button)."""
+    from .egress import for_capture
+    from .urls import classify
+    return sum(1 for c in links if for_capture(classify(c["url"]).platform).url)
+
+
 async def canary_if_due(pool, browsers) -> int:
+    """The schedule, only if CANARY_INTERVAL_H is set (off by default)."""
     if settings.canary_interval_h <= 0:
         return 0
     links = load_canary()
@@ -118,6 +130,34 @@ async def canary_if_due(pool, browsers) -> int:
     now = datetime.now(timezone.utc)
     if last and (now - last).total_seconds() < settings.canary_interval_h * 3600:
         return 0
+    return await run_canary(pool, browsers, links)
+
+
+async def canary_requested(pool, browsers) -> int:
+    """A run someone asked for in Admin (health.py): take it, run it, mark it done."""
+    async with pool.connection() as conn:
+        req = await (await conn.execute(
+            "UPDATE capture.canary_requests SET started_at = now() WHERE id = (SELECT id FROM capture.canary_requests"
+            " WHERE started_at IS NULL AND finished_at IS NULL ORDER BY requested_at LIMIT 1) RETURNING id")).fetchone()
+    if not req:
+        return 0
+    links, error = load_canary(), None
+    try:
+        if not links:
+            error = "no canary links (CANARY_FILE)"
+        else:
+            await run_canary(pool, browsers, links)
+    except Exception as e:  # noqa: BLE001
+        error = f"{type(e).__name__}: {e}"[:300]
+        log.exception("requested canary run failed")
+    async with pool.connection() as conn:
+        await conn.execute("UPDATE capture.canary_requests SET finished_at = now(), links = %s, error = %s WHERE id = %s",
+                           (len(links), error, req["id"]))
+    return len(links)
+
+
+async def run_canary(pool, browsers, links: list[dict]) -> int:
+    now = datetime.now(timezone.utc)
     from .pipeline import probe
     browser = await browsers.get()
     for c in links:
